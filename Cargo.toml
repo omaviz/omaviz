@@ -1,0 +1,10 @@
+[package]
+name = "omaviz"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+anyhow = "1.0.104"
+clap = { version = "4.6.6", features = ["derive"] }
+pipewire = "0.10"
+realfft = "3"
