@@ -1,0 +1,9 @@
+{
+  "custom/omaviz": {
+    "exec": "omaviz mini --width 14",
+    "return-type": "json",
+    "format": "{}",
+    "tooltip": true,
+    "escape": false
+  }
+}

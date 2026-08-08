@@ -5,6 +5,14 @@ edition = "2024"
 
 [dependencies]
 anyhow = "1.0.104"
+bytemuck = { version = "1.25.2", features = ["derive"] }
 clap = { version = "4.6.6", features = ["derive"] }
+eframe = { version = "0.33", default-features = false, features = ["glow", "wayland", "x11"] }
+egui = "0.33"
 pipewire = "0.10"
+pollster = "1.0.1"
 realfft = "3"
+serde = { version = "1.0.229", features = ["derive"] }
+toml = "1.1.4"
+wgpu = "27"
+winit = "0.30"

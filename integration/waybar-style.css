@@ -1,0 +1,14 @@
+/* omaviz waybar mini-mode styling.
+   Append to ~/.config/waybar/style.css */
+
+#custom-omaviz {
+    /* Monospace keeps the block glyphs from jittering the bar layout. */
+    font-family: "JetBrainsMono Nerd Font", monospace;
+    font-size: 13px;
+    padding: 0 8px;
+    color: #7ac9f0;
+}
+
+#custom-omaviz.silent {
+    color: rgba(122, 201, 240, 0.25);
+}
