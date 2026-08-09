@@ -104,10 +104,11 @@ DATA_HOME="${XDG_DATA_HOME:-$HOME/.local/share}"
 APPS_DIR="$DATA_HOME/applications"
 ICON_DIR="$DATA_HOME/icons/hicolor/scalable/apps"
 mkdir -p "$APPS_DIR" "$ICON_DIR"
-# Force the absolute Exec path and a desktop-window launch (per user feedback:
-# the menu/app entry should open the visualizer window, not settings).
+# Force the absolute Exec path. Launching from the app menu runs `omaviz
+# start`, which ensures the daemon is up and the mini module is present (it
+# reappears after an Exit). The visualizer itself appears as the waybar mini bar.
 install -Dm644 "$SRC/assets/omaviz.desktop" "$APPS_DIR/omaviz.desktop"
-sed -i -e "s|^Exec=.*|Exec=$BIN desktop|" "$APPS_DIR/omaviz.desktop"
+sed -i -e "s|^Exec=.*|Exec=$BIN start|" "$APPS_DIR/omaviz.desktop"
 install -Dm644 "$SRC/assets/omaviz.svg" "$ICON_DIR/omaviz.svg"
 # Refresh the desktop database so it shows in the launcher (fuzzel/rofi/etc).
 if command -v update-desktop-database >/dev/null; then
@@ -135,46 +136,83 @@ if [ "$DO_WAYBAR" = 1 ]; then
   step "wiring waybar mini mode"
   if [ ! -f "$WAYBAR_CFG" ]; then
     warn "no $WAYBAR_CFG — skipping"
-  elif grep -q "custom/omaviz" "$WAYBAR_CFG"; then
-    say "already present in waybar config"
   else
     backup "$WAYBAR_CFG"
-    # Regenerate the right-click menu and splice its actions into the module.
     mkdir -p "$WAYBAR_DIR"
     MENU_XML="$WAYBAR_DIR/omaviz-menu.xml"
     "$BIN" menu --out "$MENU_XML" >/dev/null
-    MENU_ACTIONS="$("$BIN" menu --out "$MENU_XML" 2>&1 | tail -n +2)"
-    python3 - "$WAYBAR_CFG" "$MENU_XML" "$MENU_ACTIONS" <<'PY'
-import re, sys
-p, menu_xml, menu_actions = sys.argv[1], sys.argv[2], sys.argv[3]
+    BIN_EXEC="$BIN"
+    # Remove any prior omaviz module (brace-aware — the module object contains
+    # nested braces from the menu-actions block) and re-add a fresh one with
+    # the absolute binary path. waybar's PATH does NOT include ~/.local/bin.
+    python3 - "$WAYBAR_CFG" "$MENU_XML" "$BIN_EXEC" <<'PY'
+import sys
+p, menu_xml, bin_exec = sys.argv[1], sys.argv[2], sys.argv[3]
 
-menu_entry = f'''  "custom/omaviz": {{
-    "exec": "omaviz mini --width 14",
-    "return-type": "json",
-    "format": "{{}}",
-    "tooltip": true,
-    "escape": false,
-    "on-click": "omaviz toggle",
-    "exec-on-event": false,
-    "on-scroll-up": "omaviz sensitivity +0.1",
-    "on-scroll-down": "omaviz sensitivity -0.1",
-    "menu": "on-click-right",
-    "menu-file": "{menu_xml}",
-{menu_actions}
-  }},
-'''
-
+# --- remove existing custom/omaviz (array ref + module object) ---
 s = open(p).read()
-for key in ("modules-right", "modules-center", "modules-left"):
-    m = re.search(r'("%s"\s*:\s*\[)' % key, s)
-    if m:
-        s = s[:m.end()] + '\n    "custom/omaviz",' + s[m.end():]
-        break
-else:
-    sys.exit("no modules-* array found")
+s = s.replace('"custom/omaviz",', '')
+needle = '"custom/omaviz":'
+start = s.find(needle)
+if start != -1:
+    brace = s[start:].find('{')
+    if brace != -1:
+        open_b = start + brace
+        depth = 0
+        close = None
+        for i, c in enumerate(s[open_b:]):
+            if c == '{':
+                depth += 1
+            elif c == '}':
+                depth -= 1
+                if depth == 0:
+                    close = open_b + i
+                    break
+        if close is not None:
+            end = close + 1
+            while end < len(s) and s[end] in (' ', '\t'):
+                end += 1
+            if end < len(s) and s[end] == ',':
+                end += 1
+            obj_start = start
+            while obj_start > 0 and s[obj_start - 1] in ('\n', ' ', '\t'):
+                obj_start -= 1
+            s = s[:obj_start] + s[end:]
 
-m = re.search(r'^\s*\{\s*\n', s)
-s = s[:m.end()] + menu_entry + s[m.end():]
+# --- add a fresh module (uses menu-file, absolute path) ---
+module = (
+    '  "custom/omaviz": {\n'
+    '    "exec": "%s mini --width 14",\n'
+    '    "return-type": "json",\n'
+    '    "format": "{}",\n'
+    '    "tooltip": true,\n'
+    '    "escape": false,\n'
+    '    "on-click": "%s toggle",\n'
+    '    "on-click-right": "%s menu --out %s",\n'
+    '    "exec-on-event": false,\n'
+    '    "on-scroll-up": "%s sensitivity +0.1",\n'
+    '    "on-scroll-down": "%s sensitivity -0.1",\n'
+    '    "menu": "on-click-right",\n'
+    '    "menu-file": "%s"\n'
+    '  },\n'
+) % (bin_exec, bin_exec, bin_exec, menu_xml, bin_exec, bin_exec, menu_xml)
+
+ref_added = False
+for key in ("modules-right", "modules-center", "modules-left"):
+    m = s.find('"%s"' % key)
+    if m != -1:
+        b = s[m:].find('[')
+        if b != -1:
+            at = m + b + 1
+            s = s[:at] + '\n    "custom/omaviz",' + s[at:]
+            ref_added = True
+            break
+
+b = s.find('{')
+if b != -1 and ref_added:
+    at = b + 1
+    s = s[:at] + '\n' + module + s[at:]
+
 open(p, "w").write(s)
 PY
     say "added custom/omaviz module + generated menu ($MENU_XML)"

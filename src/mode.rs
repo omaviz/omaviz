@@ -1,113 +1,410 @@
-//! Display-mode state machine (off / mini / desktop / mini+desktop).
+//! Mode / on-screen state machine for omaviz.
 //!
-//! State lives in one small file so the waybar menu, the CLI and the settings
-//! panel all agree. Changing it spawns or kills the desktop window; the mini
-//! module reads it to decide whether to draw anything.
+//! Two live states:
+//! - `Mini`    -> visualization shown as bars in the waybar module, desktop window closed.
+//! - `Desktop` -> visualization shown in the floating desktop window, waybar module shows icon-only.
+//! `Off` is not a mode in the menu but an orthogonal "paused" flag: the daemon keeps
+//! running and the mini module stays in the bar (dimmed) but audio capture is suspended.
+//!
+//! `Exit` (Quit) is a hard teardown: close window, stop daemon, remove from waybar.
 
-use anyhow::Result;
-use std::path::PathBuf;
+use crate::ipc::Frame;
+use std::io::Write;
+use std::process::Command;
+use std::sync::Mutex;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum DisplayMode {
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Mode {
     Off,
     Mini,
     Desktop,
-    MiniDesktop,
 }
 
-impl DisplayMode {
-    pub fn as_str(self) -> &'static str {
-        match self {
-            DisplayMode::Off => "off",
-            DisplayMode::Mini => "mini",
-            DisplayMode::Desktop => "desktop",
-            DisplayMode::MiniDesktop => "mini+desktop",
-        }
-    }
-
-    pub fn parse(s: &str) -> Option<DisplayMode> {
-        match s.trim() {
-            "off" => Some(DisplayMode::Off),
-            "mini" => Some(DisplayMode::Mini),
-            "desktop" => Some(DisplayMode::Desktop),
-            "mini+desktop" | "both" => Some(DisplayMode::MiniDesktop),
+impl Mode {
+    pub fn parse(s: &str) -> Option<Mode> {
+        match s.trim().to_ascii_lowercase().as_str() {
+            "off" => Some(Mode::Off),
+            "mini" | "mini+desktop" | "mini+full" => Some(Mode::Mini),
+            "desktop" | "full" => Some(Mode::Desktop),
             _ => None,
         }
     }
 
-    pub fn shows_mini(self) -> bool {
-        matches!(self, DisplayMode::Mini | DisplayMode::MiniDesktop)
-    }
-
+    /// Whether this state wants the desktop window open.
     pub fn shows_desktop(self) -> bool {
-        matches!(self, DisplayMode::Desktop | DisplayMode::MiniDesktop)
+        matches!(self, Mode::Desktop)
+    }
+
+    /// Whether the waybar module should render live bars (mini active).
+    pub fn shows_mini(self) -> bool {
+        matches!(self, Mode::Mini)
+    }
+
+    /// Whether the waybar module should render icon-only (desktop open).
+    pub fn shows_icon(self) -> bool {
+        matches!(self, Mode::Desktop)
     }
 }
 
-pub fn state_path() -> PathBuf {
-    let base = std::env::var("XDG_RUNTIME_DIR").unwrap_or_else(|_| "/tmp".into());
-    PathBuf::from(base).join("omaviz.mode")
+impl std::fmt::Display for Mode {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let s = match self {
+            Mode::Off => "off",
+            Mode::Mini => "mini",
+            Mode::Desktop => "desktop",
+        };
+        f.write_str(s)
+    }
 }
 
-pub fn get() -> DisplayMode {
-    std::fs::read_to_string(state_path())
-        .ok()
-        .and_then(|s| DisplayMode::parse(&s))
-        .unwrap_or(DisplayMode::Mini)
+/// Orthogonal "paused" flag (set by `Off`, cleared by any mode select / toggle).
+static PAUSED: Mutex<bool> = Mutex::new(false);
+
+pub fn is_paused() -> bool {
+    *PAUSED.lock().unwrap()
 }
 
-pub fn set(m: DisplayMode) -> Result<()> {
-    std::fs::write(state_path(), m.as_str())?;
-    Ok(())
+pub fn set_paused(p: bool) {
+    *PAUSED.lock().unwrap() = p;
 }
 
-fn desktop_running() -> bool {
-    // acquire returns None when another instance already holds the lock.
-    matches!(
-        crate::instance::acquire(crate::instance::WindowKind::Desktop),
-        Ok(None)
-    )
+const MODE_FILE: &str = "mode";
+
+pub fn read_raw() -> Option<String> {
+    let mut p = dirs().ok()?;
+    p.push(MODE_FILE);
+    std::fs::read_to_string(p).ok().map(|s| s.trim().to_string())
+}
+
+pub fn current() -> Mode {
+    read_raw()
+        .as_deref()
+        .and_then(Mode::parse)
+        .unwrap_or(Mode::Mini)
+}
+
+/// Persistent module "exited" flag: when set, the mini module should render
+/// nothing (the user chose Exit and removed it from the bar).
+const EXITED_FILE: &str = "exited";
+
+fn exited_path() -> Option<std::path::PathBuf> {
+    dirs().ok().map(|mut p| {
+        p.push(EXITED_FILE);
+        p
+    })
+}
+
+pub fn is_exited() -> bool {
+    exited_path().map(|p| p.exists()).unwrap_or(false)
+}
+
+pub fn set_exited(v: bool) {
+    if let Some(p) = exited_path() {
+        if v {
+            let _ = std::fs::write(&p, "1");
+        } else if p.exists() {
+            let _ = std::fs::remove_file(&p);
+        }
+    }
+}
+
+fn dirs() -> Result<std::path::PathBuf, ()> {
+    let base = std::env::var("XDG_RUNTIME_DIR")
+        .map(std::path::PathBuf::from)
+        .or_else(|_| -> Result<std::path::PathBuf, ()> {
+            let uid = unsafe { libc::getuid() };
+            if uid == 0 {
+                Ok(std::path::PathBuf::from("/run"))
+            } else {
+                Ok(std::path::PathBuf::from(format!("/run/user/{}", uid)))
+            }
+        });
+    let mut p = base.map_err(|_| ())?;
+    p.push("omaviz");
+    std::fs::create_dir_all(&p).map_err(|_| ())?;
+    Ok(p)
+}
+
+fn write_mode(m: Mode) {
+    if let Some(mut p) = dirs().ok() {
+        p.push(MODE_FILE);
+        if let Ok(mut f) = std::fs::File::create(&p) {
+            let _ = f.write_all(m.to_string().as_bytes());
+        }
+    }
+}
+
+/// Apply a mode: write it, and start/stop the desktop window accordingly.
+pub fn apply(m: Mode) {
+    // Selecting any mode clears the paused + exited flags.
+    set_paused(false);
+    set_exited(false);
+
+    let was_desktop = current().shows_desktop();
+    write_mode(m);
+
+    match m {
+        Mode::Off => {
+            // Pause audio capture but keep daemon + mini module (dimmed).
+            set_paused(true);
+            stop_desktop();
+            // Refresh the waybar module so it shows the dimmed/off state.
+            refresh_waybar();
+        }
+        Mode::Mini => {
+            if was_desktop {
+                stop_desktop();
+            }
+            refresh_waybar();
+        }
+        Mode::Desktop => {
+            if !was_desktop {
+                spawn_desktop();
+            }
+            refresh_waybar();
+        }
+    }
+}
+
+/// Toggle between Mini and Desktop (the left-click behavior).
+pub fn toggle() {
+    if is_exited() {
+        return;
+    }
+    match current() {
+        Mode::Desktop => apply(Mode::Mini),
+        _ => apply(Mode::Desktop),
+    }
+}
+
+/// Off button: pause + close desktop, keep mini module visible (dimmed).
+pub fn off() {
+    set_exited(false);
+    apply(Mode::Off);
+}
+
+/// Quit (Exit menu item): close desktop, stop daemon, remove from waybar.
+pub fn quit() {
+    set_exited(true);
+    stop_desktop();
+    // Remove the waybar module and reload so it disappears from the bar.
+    remove_from_waybar();
+    refresh_waybar();
+    // Stop the daemon (and thus the whole app).
+    stop_daemon();
+}
+
+/// Called by the desktop window when the user closes it: fall back to Mini.
+pub fn window_closed() {
+    // Only fall back if we're currently in Desktop; otherwise leave as-is.
+    if current().shows_desktop() && !is_paused() {
+        write_mode(Mode::Mini);
+        refresh_waybar();
+    }
 }
 
 fn spawn_desktop() {
-    let exe = std::env::current_exe().unwrap_or_else(|_| "omaviz".into());
-    let _ = std::process::Command::new(exe)
+    // Launch the desktop window as a separate process (singleton-guarded).
+    let _ = Command::new(omaviz_bin())
         .arg("desktop")
-        .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null())
         .spawn();
 }
 
-fn kill_desktop() {
-    // The desktop client watches the mode file and exits on its own; this is
-    // the fallback for a client that predates that or is wedged.
-    let _ = std::process::Command::new("pkill")
+fn stop_desktop() {
+    // Close any running desktop/full window process. Target ONLY the window
+    // clients (not `omaviz quit`/daemon) so we don't kill our own process.
+    let _ = Command::new("pkill")
         .args(["-f", "omaviz desktop"])
+        .status();
+    let _ = Command::new("pkill")
+        .args(["-f", "omaviz full"])
         .status();
 }
 
-/// Apply a mode: start or stop the desktop window to match.
-pub fn apply(m: DisplayMode) -> Result<()> {
-    set(m)?;
-    if m.shows_desktop() {
-        if !desktop_running() {
-            spawn_desktop();
+fn omaviz_bin() -> String {
+    // Prefer the installed binary on PATH; fall back to the local build.
+    if let Ok(out) = Command::new("which").arg("omaviz").output() {
+        if out.status.success() {
+            let s = String::from_utf8_lossy(&out.stdout).trim().to_string();
+            if !s.is_empty() {
+                return s;
+            }
         }
-    } else if desktop_running() {
-        kill_desktop();
     }
-    Ok(())
+    "omaviz".to_string()
 }
 
-/// Toggle the desktop window on/off, preserving whether mini is shown.
-pub fn toggle_desktop() -> Result<DisplayMode> {
-    let cur = get();
-    let next = match cur {
-        DisplayMode::Off => DisplayMode::Desktop,
-        DisplayMode::Mini => DisplayMode::MiniDesktop,
-        DisplayMode::Desktop => DisplayMode::Off,
-        DisplayMode::MiniDesktop => DisplayMode::Mini,
+fn stop_daemon() {
+    // Stop the user service if it is how omaviz is launched; otherwise kill the daemon.
+    if Command::new("systemctl")
+        .args(["--user", "is-active", "--quiet", "omaviz.service"])
+        .status()
+        .map(|s| s.success())
+        .unwrap_or(false)
+    {
+        let _ = Command::new("systemctl").args(["--user", "stop", "omaviz.service"]).status();
+    } else {
+        let _ = Command::new("pkill").args(["-x", "omaviz"]).status();
+    }
+}
+
+pub fn refresh_waybar() {
+    // Signal waybar to reload its config so module changes take effect.
+    let _ = Command::new("pkill").args(["-USR2", "waybar"]).status();
+}
+
+fn remove_from_waybar() {
+    // Strip the custom/omaviz module from the waybar config so it disappears
+    // from the bar after Exit. The install splice logic lives in install.sh;
+    // this is the runtime counterpart. We do brace-aware removal (the module
+    // object contains nested braces from the menu-actions block).
+    let cfg = std::env::var("XDG_CONFIG_HOME")
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(|_| {
+            std::path::PathBuf::from(std::env::var("HOME").unwrap_or_default()).join(".config")
+        })
+        .join("waybar/config.jsonc");
+    if !cfg.exists() {
+        return;
+    }
+    let Ok(mut s) = std::fs::read_to_string(&cfg) else { return };
+
+    // 1) Remove the reference in a "modules-*" array: "custom/omaviz",
+    s = s.replace("\"custom/omaviz\",", "");
+
+    // 2) Remove the module definition object (brace-aware), plus the trailing
+    //    comma and the leading newline+indent so no dangling punctuation remains.
+    let needle = "\"custom/omaviz\":";
+    if let Some(start) = s.find(needle) {
+        if let Some(brace) = s[start..].find('{') {
+            let open = start + brace;
+            let mut depth = 0i32;
+            let mut close = None;
+            for (i, c) in s[open..].char_indices() {
+                match c {
+                    '{' => depth += 1,
+                    '}' => {
+                        depth -= 1;
+                        if depth == 0 {
+                            close = Some(open + i);
+                            break;
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            if let Some(close) = close {
+                // End just past the closing brace.
+                let mut end = close + 1;
+                // Consume a trailing comma if present.
+                while end < s.len() && (s.as_bytes()[end] == b' ' || s.as_bytes()[end] == b'\t') {
+                    end += 1;
+                }
+                if end < s.len() && s.as_bytes()[end] == b',' {
+                    end += 1;
+                }
+                // Trim leading newline + indentation before the object.
+                let mut obj_start = start;
+                while obj_start > 0 && (s.as_bytes()[obj_start - 1] == b'\n'
+                    || s.as_bytes()[obj_start - 1] == b' '
+                    || s.as_bytes()[obj_start - 1] == b'\t')
+                {
+                    obj_start -= 1;
+                }
+                s.drain(obj_start..end);
+            }
+        }
+    }
+    let _ = std::fs::write(&cfg, &s);
+    let _ = std::process::Command::new("pkill").args(["-SIGUSR2", "waybar"]).status();
+}
+
+/// Re-add the custom/omaviz module to the waybar config (used by `omaviz
+/// start` after an Exit removed it). Mirrors install.sh: regenerate the menu
+/// XML and splice the module with the absolute binary path.
+pub fn add_waybar_module() {
+    let cfg_home = std::env::var("XDG_CONFIG_HOME")
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(|_| {
+            std::path::PathBuf::from(std::env::var("HOME").unwrap_or_default()).join(".config")
+        });
+    let wb_cfg = cfg_home.join("waybar/config.jsonc");
+    let wb_dir = cfg_home.join("waybar");
+    if !wb_cfg.exists() {
+        return;
+    }
+    let bin = omaviz_bin();
+    // Regenerate the menu XML (waybar uses menu-file, not inline menu-actions).
+    let menu_xml = wb_dir.join("omaviz-menu.xml");
+    let _ = std::process::Command::new(&bin)
+        .args(["menu", "--out", menu_xml.to_str().unwrap()])
+        .status();
+
+    let menu_xml = menu_xml.display().to_string();
+    let module = format!(
+        "  \"custom/omaviz\": {{\n    \"exec\": \"{bin} mini --width 14\",\n    \"return-type\": \"json\",\n    \"format\": \"{{}}\",\n    \"tooltip\": true,\n    \"escape\": false,\n    \"on-click\": \"{bin} toggle\",\n    \"on-click-right\": \"{bin} menu --out {menu_xml}\",\n    \"exec-on-event\": false,\n    \"on-scroll-up\": \"{bin} sensitivity +0.1\",\n    \"on-scroll-down\": \"{bin} sensitivity -0.1\",\n    \"menu\": \"on-click-right\",\n    \"menu-file\": \"{menu_xml}\"\n  }},\n"
+    );
+
+    let Ok(s) = std::fs::read_to_string(&wb_cfg) else { return };
+    // Already present? Nothing to do.
+    if s.contains("\"custom/omaviz\":") {
+        let _ = std::process::Command::new("pkill").args(["-SIGUSR2", "waybar"]).status();
+        return;
+    }
+    let mut out = String::with_capacity(s.len() + module.len() + 64);
+    // 1) Add the module reference into the first modules-* array.
+    let mut inserted_ref = false;
+    if let Some(m) = s.find("\"modules-right\"") {
+        if let Some(b) = s[m..].find('[') {
+            let at = m + b + 1;
+            out.push_str(&s[..at]);
+            out.push_str("\n    \"custom/omaviz\",");
+            out.push_str(&s[at..]);
+            inserted_ref = true;
+        }
+    }
+    if !inserted_ref {
+        for key in ["modules-center", "modules-left"] {
+            if let Some(m) = s.find(key) {
+                if let Some(b) = s[m..].find('[') {
+                    let at = m + b + 1;
+                    out.push_str(&s[..at]);
+                    out.push_str("\n    \"custom/omaviz\",");
+                    out.push_str(&s[at..]);
+                    inserted_ref = true;
+                    break;
+                }
+            }
+        }
+    }
+    if !inserted_ref {
+        out.push_str(&s);
+    }
+    // 2) Prepend the module object right after the top-level '{'.
+    let body = if inserted_ref { out } else { s };
+    let final_out = if let Some(b) = body.find('{') {
+        let at = b + 1;
+        let mut r = String::with_capacity(body.len() + module.len());
+        r.push_str(&body[..at]);
+        r.push('\n');
+        r.push_str(&module);
+        r.push_str(&body[at..]);
+        r
+    } else {
+        body
     };
-    apply(next)?;
-    Ok(next)
+    let _ = std::fs::write(&wb_cfg, final_out);
+    let _ = std::process::Command::new("pkill").args(["-SIGUSR2", "waybar"]).status();
+}
+
+/// Background frame pump for the mini client: applies paused + mode filtering
+/// on top of the raw daemon frame.
+pub fn decorate(frame: &Frame) -> Frame {
+    let mut f = frame.clone();
+    if is_paused() {
+        // Keep last band shape but zero energy so it renders dimmed.
+        f.silent = true;
+    }
+    f
 }

@@ -1,11 +1,9 @@
 [Desktop Entry]
 Type=Application
-Name=omaviz
-Comment=Omarchy audio visualizer — settings
+Name=Omaviz
+Comment=Omarchy audio visualizer
 GenericName=Audio Visualizer
-Exec=omaviz settings
+Exec=omaviz start
 Icon=omaviz
 Terminal=false
-Categories=AudioVideo;Audio;Settings;
-# Launch once; the daemon is started by the systemd user unit.
-StartupNotify=false
+Categories=AudioVideo;Audio;

@@ -75,6 +75,9 @@ impl ApplicationHandler for App {
         if self.window.is_some() {
             return;
         }
+        if crate::debug() {
+            eprintln!("omaviz: window resumed (mode {:?})", self.mode);
+        }
 
         let mut attrs = Window::default_attributes()
             .with_title(if self.mode == Mode::Full {
@@ -124,7 +127,12 @@ impl ApplicationHandler for App {
 
     fn window_event(&mut self, event_loop: &ActiveEventLoop, _id: WindowId, event: WindowEvent) {
         match event {
-            WindowEvent::CloseRequested => event_loop.exit(),
+            WindowEvent::CloseRequested => {
+                // Notify the daemon so it falls back to Mini mode (window ->
+                // waybar bars), then exit the window event loop.
+                let _ = std::process::Command::new("omaviz").arg("window-closed").status();
+                event_loop.exit();
+            }
 
             WindowEvent::Resized(size) => {
                 if let Some(r) = self.renderer.as_mut() {
@@ -177,7 +185,7 @@ impl ApplicationHandler for App {
                 if self.mode != Mode::Full && self.mode_check.elapsed() > Duration::from_millis(500)
                 {
                     self.mode_check = Instant::now();
-                    if !mode::get().shows_desktop() {
+                    if !mode::current().shows_desktop() {
                         event_loop.exit();
                         return;
                     }

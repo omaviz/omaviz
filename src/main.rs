@@ -15,9 +15,18 @@ mod visual;
 use anyhow::Result;
 use clap::{Parser, Subcommand};
 use config::{Config, Mode};
-use mode::DisplayMode;
+use mode::Mode as AppMode;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc;
 use std::time::{Duration, Instant};
+
+/// Global debug flag, set from the `--debug` CLI flag (and inherited by child
+/// `omaviz` processes via OMAVIZ_DEBUG so spawned windows also log).
+static DEBUG: AtomicBool = AtomicBool::new(false);
+
+pub fn debug() -> bool {
+    DEBUG.load(Ordering::Relaxed)
+}
 
 #[derive(Parser)]
 #[command(name = "omaviz", version, about = "Omarchy audio visualizer")]
@@ -37,6 +46,9 @@ enum Cmd {
         /// Stop after N seconds (testing).
         #[arg(long)]
         seconds: Option<u64>,
+        /// Print a live ASCII meter instead of running silent (debugging).
+        #[arg(long)]
+        debug: bool,
     },
     /// Small floating visualizer window.
     Desktop,
@@ -53,13 +65,23 @@ enum Cmd {
     Visuals,
     /// Print the config file path.
     Config,
-    /// Get or set the display mode (off | mini | desktop | mini+desktop).
+    /// Get or set the mode (off | mini | desktop).
     Mode {
         /// New mode. Omit to print the current one.
         value: Option<String>,
     },
-    /// Toggle the desktop window (used by the waybar left-click).
+    /// Toggle the desktop window (left-click on the waybar module).
     Toggle,
+    /// Pause the visualization (Off). Mini module stays, dimmed.
+    Off,
+    /// Exit the whole app: stop daemon, remove from waybar, close window.
+    Quit,
+    /// Tell the daemon the desktop window was closed by the user.
+    WindowClosed,
+    /// Signal the desktop window to close itself.
+    WindowClose,
+    /// App-launch entry point: ensure daemon + mini module are present.
+    Start,
     /// Regenerate the waybar right-click menu from the installed visuals.
     Menu {
         /// Where to write the GtkBuilder XML.
@@ -72,7 +94,7 @@ enum Cmd {
         #[arg(allow_hyphen_values = true)]
         delta: String,
     },
-    /// Set the visualization for a mode, e.g. `omaviz select mini vu`.
+    /// Set the visualization for a mode, e.g. `omaviz select mini fire`.
     Select {
         /// desktop | full | mini
         target: String,
@@ -83,34 +105,29 @@ enum Cmd {
 
 fn main() -> Result<()> {
     let cli = Cli::parse();
+    DEBUG.store(cli.debug, Ordering::Relaxed);
+    if cli.debug {
+        // SAFETY: setting our own process-global debug flag before spawning
+        // children. Single-threaded at this point in main().
+        unsafe { std::env::set_var("OMAVIZ_DEBUG", "1") };
+    }
     let cfg = Config::load_or_init()?;
 
-    match cli.cmd.unwrap_or(Cmd::Desktop) {
-        Cmd::Daemon { seconds } => run_daemon(cfg, cli.debug, seconds),
+    match cli.cmd.unwrap_or(Cmd::Start) {
+        Cmd::Daemon { seconds, debug } => run_daemon(cfg, debug, seconds),
         Cmd::Desktop => {
-            // Launching the desktop window directly must also flip the display
-            // mode on, or the client would spawn and immediately self-close
-            // (the client closes itself when the mode stops showing desktop).
-            let cur = mode::get();
-            if !cur.shows_desktop() {
-                let next = if cur == mode::DisplayMode::Off {
-                    mode::DisplayMode::Desktop
-                } else {
-                    mode::DisplayMode::MiniDesktop
-                };
-                mode::apply(next)?;
+            // Launching the desktop window directly flips the mode to Desktop
+            // (or removes the Off pause), so the client does not self-close.
+            let cur = mode::current();
+            if cur != AppMode::Desktop {
+                mode::apply(AppMode::Desktop);
             }
             client::run(Mode::Desktop, cfg)
         }
         Cmd::Full => {
-            let cur = mode::get();
-            if !cur.shows_desktop() {
-                let next = if cur == mode::DisplayMode::Off {
-                    mode::DisplayMode::Desktop
-                } else {
-                    mode::DisplayMode::MiniDesktop
-                };
-                mode::apply(next)?;
+            let cur = mode::current();
+            if cur != AppMode::Desktop {
+                mode::apply(AppMode::Desktop);
             }
             client::run(Mode::Full, cfg)
         }
@@ -131,21 +148,70 @@ fn main() -> Result<()> {
 
         Cmd::Mode { value } => {
             match value {
-                None => println!("{}", mode::get().as_str()),
+                None => println!("{}", mode::current()),
                 Some(v) => {
-                    let Some(m) = DisplayMode::parse(&v) else {
-                        anyhow::bail!("unknown mode '{v}' (off|mini|desktop|mini+desktop)");
+                    let Some(m) = AppMode::parse(&v) else {
+                        anyhow::bail!("unknown mode '{v}' (off|mini|desktop)");
                     };
-                    mode::apply(m)?;
-                    println!("{}", m.as_str());
+                    mode::apply(m);
+                    println!("{}", m);
                 }
             }
             Ok(())
         }
 
         Cmd::Toggle => {
-            let m = mode::toggle_desktop()?;
-            println!("{}", m.as_str());
+            mode::toggle();
+            println!("{}", mode::current());
+            Ok(())
+        }
+
+        Cmd::Off => {
+            mode::off();
+            println!("off");
+            Ok(())
+        }
+
+        Cmd::Quit => {
+            mode::quit();
+            println!("quit");
+            Ok(())
+        }
+
+        Cmd::WindowClosed => {
+            mode::window_closed();
+            Ok(())
+        }
+
+        Cmd::WindowClose => {
+            // Ask any running desktop/full window client to close (so it emits
+            // `window-closed` and falls back to Mini). Target only the window
+            // clients, not the daemon or other omaviz processes.
+            let _ = std::process::Command::new("pkill")
+                .args(["-f", "omaviz desktop"])
+                .status();
+            let _ = std::process::Command::new("pkill")
+                .args(["-f", "omaviz full"])
+                .status();
+            Ok(())
+        }
+
+        Cmd::Start => {
+            // App-launch entry point. Ensure daemon is up and the mini module is
+            // present (re-added if previously removed by Quit). If we were
+            // paused (Off) and not exited, resume to Mini.
+            ensure_daemon()?;
+            ensure_waybar_module()?;
+            if !mode::is_exited() {
+                mode::set_exited(false);
+                mode::set_paused(false);
+                if mode::current() != AppMode::Mini {
+                    mode::apply(AppMode::Mini);
+                }
+            }
+            // Refresh so the module reflects state.
+            mode::refresh_waybar();
+            println!("{}", mode::current());
             Ok(())
         }
 
@@ -159,12 +225,11 @@ fn main() -> Result<()> {
                     });
                 cfg.join("waybar/omaviz-menu.xml")
             });
-            let (xml, actions) = menu::generate(&mode::get().as_str());
+            let (xml, actions) = menu::generate(&mode::current().to_string());
             if let Some(parent) = path.parent() {
                 std::fs::create_dir_all(parent)?;
             }
             std::fs::write(&path, xml)?;
-            // Print the matching menu-actions so install.sh can splice it in.
             println!("{}", path.display());
             println!("{actions}");
             Ok(())
@@ -205,6 +270,31 @@ fn main() -> Result<()> {
     }
 }
 
+/// Ensure the daemon service is running (start it via systemd if needed).
+fn ensure_daemon() -> Result<()> {
+    let active = std::process::Command::new("systemctl")
+        .args(["--user", "is-active", "--quiet", "omaviz.service"])
+        .status()
+        .map(|s| s.success())
+        .unwrap_or(false);
+    if !active {
+        let _ = std::process::Command::new("systemctl")
+            .args(["--user", "start", "omaviz.service"])
+            .status();
+    }
+    Ok(())
+}
+
+/// Re-add the waybar module if it was removed by Quit.
+fn ensure_waybar_module() -> Result<()> {
+    mode::set_exited(false);
+    // If the module was physically removed from the waybar config by Quit,
+    // re-splice it (absolute path + regenerated menu). This is what makes the
+    // mini module "come back" after a relaunch.
+    mode::add_waybar_module();
+    Ok(())
+}
+
 fn run_daemon(mut cfg: Config, debug: bool, seconds: Option<u64>) -> Result<()> {
     let Some(_guard) = instance::acquire(crate::instance::WindowKind::Daemon)? else {
         anyhow::bail!("omaviz daemon is already running");
@@ -231,6 +321,7 @@ fn run_daemon(mut cfg: Config, debug: bool, seconds: Option<u64>) -> Result<()> 
     let mut next = Instant::now();
     let mut got_audio = false;
     let mut idle_ticks: u32 = 0;
+    let mut last_cc: usize = usize::MAX;
 
     loop {
         // Hot reload: rebuild the analyzer only when the band count changes.
@@ -243,6 +334,13 @@ fn run_daemon(mut cfg: Config, debug: bool, seconds: Option<u64>) -> Result<()> 
 
         server.accept_pending();
 
+        if crate::debug() {
+            let cc = server.client_count();
+            if cc != last_cc {
+                eprintln!("omaviz: daemon clients = {cc}");
+                last_cc = cc;
+            }
+        }
         while let Ok(chunk) = rx.try_recv() {
             // Follow the device's real rate: rebuild if the sink changes to a
             // differently-clocked device (44.1k vs 48k), otherwise band edges
