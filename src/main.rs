@@ -216,23 +216,31 @@ fn main() -> Result<()> {
         }
 
         Cmd::Menu { out } => {
-            let path = out.unwrap_or_else(|| {
-                let cfg = std::env::var("XDG_CONFIG_HOME")
-                    .map(std::path::PathBuf::from)
-                    .unwrap_or_else(|_| {
-                        std::path::PathBuf::from(std::env::var("HOME").unwrap_or_default())
-                            .join(".config")
-                    });
-                cfg.join("waybar/omaviz-menu.xml")
-            });
-            let (xml, actions) = menu::generate(&mode::current().to_string());
-            if let Some(parent) = path.parent() {
-                std::fs::create_dir_all(parent)?;
+            match out {
+                // Regenerate the GtkBuilder XML (used by install/start).
+                Some(path) => {
+                    if let Some(parent) = path.parent() {
+                        std::fs::create_dir_all(parent)?;
+                    }
+                    let (xml, actions) = menu::generate(&mode::current().to_string());
+                    std::fs::write(&path, xml)?;
+                    println!("{}", path.display());
+                    println!("{actions}");
+                    Ok(())
+                }
+                // No --out: pop the interactive menu (waybar right-click) and
+                // dispatch the chosen action.
+                None => {
+                    if let Some(cmd) = menu::pop() {
+                        // Run the chosen omaviz subcommand.
+                        let _ = std::process::Command::new("sh")
+                            .arg("-c")
+                            .arg(&cmd)
+                            .spawn();
+                    }
+                    Ok(())
+                }
             }
-            std::fs::write(&path, xml)?;
-            println!("{}", path.display());
-            println!("{actions}");
-            Ok(())
         }
 
         Cmd::Sensitivity { delta } => {
