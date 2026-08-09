@@ -1,102 +1,88 @@
 //! wgpu renderer shared by desktop and fullscreen modes.
+//!
+//! Resource-swap policy (matters for "no leaks when changing visualization"):
+//! everything that depends on the *shader* lives in `Pipeline`, and everything
+//! that depends on the *band count* lives in `BandBuffer`. Swapping a visual
+//! drops the old `Pipeline` — shader module, bind group layout, bind group and
+//! render pipeline all release together, because wgpu frees a resource once the
+//! last handle is dropped. Nothing is cached per-visual, so N swaps cost the
+//! same as one. The device, queue, surface and uniform buffer are created once
+//! and reused.
 
 use crate::config::{Config, Mode};
 use crate::ipc::Frame;
+use crate::visual::{self, MAX_PARAMS, Visual};
 use anyhow::{Context, Result};
 use bytemuck::{Pod, Zeroable};
-use std::sync::{Arc, Mutex};
-use wgpu::util::DeviceExt;
+use std::sync::Arc;
 
 #[repr(C)]
-#[derive(Copy, Clone, Pod, Zeroable, Default)]
+#[derive(Copy, Clone, Debug, Pod, Zeroable)]
 struct Uniforms {
-    params: [f32; 4], // time, energy, beat, n_bands
-    view: [f32; 4],   // width, height, sensitivity, _
+    params: [f32; 4],
+    view: [f32; 4],
     low: [f32; 4],
     high: [f32; 4],
     bg: [f32; 4],
+    knobs: [f32; 4],
+    knobs2: [f32; 4],
+}
+
+/// Everything tied to one visualization. Dropped wholesale on swap.
+struct Pipeline {
+    pipeline: wgpu::RenderPipeline,
+    bind_group: wgpu::BindGroup,
+    visual: Visual,
+}
+
+/// Storage buffer sized to the band count. Recreated only when that changes.
+struct BandBuffer {
+    buffer: wgpu::Buffer,
+    len: usize,
 }
 
 pub struct Renderer {
     device: wgpu::Device,
     queue: wgpu::Queue,
     surface: wgpu::Surface<'static>,
-    surface_cfg: wgpu::SurfaceConfiguration,
-    pipeline: wgpu::RenderPipeline,
-    bind_group: wgpu::BindGroup,
-    bind_layout: wgpu::BindGroupLayout,
-    uniform_buf: wgpu::Buffer,
-    band_buf: wgpu::Buffer,
-    band_capacity: usize,
-    format: wgpu::TextureFormat,
-    uniforms: Uniforms,
-}
-
-/// Load a visual's WGSL, prepending the shared uniform/vertex preamble.
-pub fn load_shader_source(visual: &str) -> Result<String> {
-    let dirs = visual_dirs();
-    let common = read_first(&dirs, "_common.wgsl")
-        .context("missing _common.wgsl in any visuals directory")?;
-    let body = read_first(&dirs, &format!("{visual}.wgsl"))
-        .with_context(|| format!("unknown visualization '{visual}'"))?;
-    Ok(format!("{common}\n{body}"))
-}
-
-pub fn visual_dirs() -> Vec<std::path::PathBuf> {
-    let mut v = vec![crate::config::config_dir().join("visuals")];
-    if let Ok(exe) = std::env::current_exe() {
-        // ../../visuals relative to target/<profile>/omaviz for dev runs
-        if let Some(p) = exe
-            .parent()
-            .and_then(|p| p.parent())
-            .and_then(|p| p.parent())
-        {
-            v.push(p.join("visuals"));
-        }
-    }
-    v.push(std::path::PathBuf::from("visuals"));
-    v.push(std::path::PathBuf::from("/usr/share/omaviz/visuals"));
-    v
-}
-
-fn read_first(dirs: &[std::path::PathBuf], name: &str) -> Option<String> {
-    dirs.iter()
-        .map(|d| d.join(name))
-        .find_map(|p| std::fs::read_to_string(p).ok())
-}
-
-/// List available visualization names (for the settings panel).
-pub fn list_visuals() -> Vec<String> {
-    let mut out = Vec::new();
-    for d in visual_dirs() {
-        let Ok(rd) = std::fs::read_dir(&d) else {
-            continue;
-        };
-        for e in rd.flatten() {
-            let p = e.path();
-            if p.extension().and_then(|s| s.to_str()) != Some("wgsl") {
-                continue;
-            }
-            let Some(stem) = p.file_stem().and_then(|s| s.to_str()) else {
-                continue;
-            };
-            if stem.starts_with('_') {
-                continue;
-            }
-            if !out.iter().any(|s: &String| s == stem) {
-                out.push(stem.to_string());
-            }
-        }
-    }
-    out.sort();
-    out
+    surface_config: wgpu::SurfaceConfiguration,
+    uniform_buffer: wgpu::Buffer,
+    bind_group_layout: wgpu::BindGroupLayout,
+    bands: BandBuffer,
+    peaks_buf: wgpu::Buffer,
+    pipeline: Option<Pipeline>,
+    cfg: Config,
+    mode: Mode,
+    start: std::time::Instant,
+    /// Per-bar peak line carried across frames (for winamp-style peak-hold,
+    /// e.g. the `fire` visual). Indexed by band; size tracks the band buffer.
+    peaks: Vec<f32>,
+    /// Cached band values from the last frame, reused to advance `peaks`.
+    last_bands: Vec<f32>,
 }
 
 impl Renderer {
-    pub fn new(window: Arc<winit::window::Window>, cfg: &Config, mode: Mode) -> Result<Renderer> {
-        let size = window.inner_size();
-        let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor::default());
-        let surface = instance.create_surface(window.clone())?;
+    pub fn new(
+        target: Arc<dyn wgpu::WindowHandle + Send + Sync>,
+        width: u32,
+        height: u32,
+        cfg: Config,
+        mode: Mode,
+    ) -> Result<Renderer> {
+        let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor {
+            // GL-only backend. Vulkan's swapchain acquire times out on this
+            // Wayland/radv setup ("couldn't acquire next frame"), leaving the
+            // window blank; GL presents reliably. The GL/EGL backend segfaults
+            // when its EGL instance is dropped at shutdown (wgpu + Mesa +
+            // Wayland bug) — client::run leaks the renderer to avoid that.
+            backends: wgpu::Backends::GL,
+            ..Default::default()
+        });
+
+        let surface = instance
+            .create_surface(wgpu::SurfaceTarget::Window(Box::new(target)))
+            .context("creating wgpu surface")?;
+
         let adapter = pollster::block_on(instance.request_adapter(&wgpu::RequestAdapterOptions {
             power_preference: wgpu::PowerPreference::LowPower,
             compatible_surface: Some(&surface),
@@ -104,18 +90,17 @@ impl Renderer {
         }))
         .context("no suitable GPU adapter")?;
 
-        let (device, queue) =
-            pollster::block_on(adapter.request_device(&wgpu::DeviceDescriptor {
-                label: Some("omaviz-device"),
-                required_features: wgpu::Features::empty(),
-                // Use what the adapter actually offers: downlevel_defaults caps
-                // textures at 2048px, which fails on 4K displays / tiled WMs.
-                required_limits:
-                    wgpu::Limits::downlevel_defaults().using_resolution(adapter.limits()),
-                memory_hints: wgpu::MemoryHints::MemoryUsage,
-                experimental_features: wgpu::ExperimentalFeatures::disabled(),
-                trace: wgpu::Trace::Off,
-            }))?;
+        let (device, queue) = pollster::block_on(adapter.request_device(&wgpu::DeviceDescriptor {
+            label: Some("omaviz-device"),
+            required_features: wgpu::Features::empty(),
+            // Use the adapter's real limits: downlevel_defaults() caps
+            // textures at 2048px and panics on a 4K display.
+            required_limits: adapter.limits(),
+            memory_hints: wgpu::MemoryHints::MemoryUsage,
+            experimental_features: wgpu::ExperimentalFeatures::disabled(),
+            trace: wgpu::Trace::Off,
+        }))
+        .context("requesting GPU device")?;
 
         let caps = surface.get_capabilities(&adapter);
         let format = caps
@@ -125,38 +110,39 @@ impl Renderer {
             .find(|f| f.is_srgb())
             .unwrap_or(caps.formats[0]);
 
-        let surface_cfg = wgpu::SurfaceConfiguration {
+        // The GL backend only advertises Opaque alpha on this compositor;
+        // PostMultiplied/PreMultiplied are rejected at Surface::configure.
+        // Opaque means the window background is not see-through (fine for a
+        // visualizer) but present works reliably under GL + Fifo.
+        let alpha_mode = wgpu::CompositeAlphaMode::Opaque;
+
+        let surface_config = wgpu::SurfaceConfiguration {
             usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
             format,
-            width: size.width.max(1),
-            height: size.height.max(1),
-            // Fifo = vsync = no wasted frames. Never use Mailbox here.
+            width: width.max(1),
+            height: height.max(1),
+            // Fifo is the only present mode guaranteed not to time out on
+            // Wayland; AutoVsync/Vulkan would block on swapchain acquire.
             present_mode: wgpu::PresentMode::Fifo,
-            alpha_mode: caps.alpha_modes[0],
+            alpha_mode,
             view_formats: vec![],
             desired_maximum_frame_latency: 2,
         };
-        surface.configure(&device, &surface_cfg);
+        surface.configure(&device, &surface_config);
 
-        let band_capacity = cfg.bands.max(1);
-        let uniform_buf = device.create_buffer(&wgpu::BufferDescriptor {
+        let uniform_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("omaviz-uniforms"),
             size: std::mem::size_of::<Uniforms>() as u64,
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
-        let band_buf = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("omaviz-bands"),
-            contents: bytemuck::cast_slice(&vec![0f32; band_capacity]),
-            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
-        });
 
-        let bind_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+        let bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("omaviz-bgl"),
             entries: &[
                 wgpu::BindGroupLayoutEntry {
                     binding: 0,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    visibility: wgpu::ShaderStages::VERTEX_FRAGMENT,
                     ty: wgpu::BindingType::Buffer {
                         ty: wgpu::BufferBindingType::Uniform,
                         has_dynamic_offset: false,
@@ -166,7 +152,17 @@ impl Renderer {
                 },
                 wgpu::BindGroupLayoutEntry {
                     binding: 1,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    visibility: wgpu::ShaderStages::VERTEX_FRAGMENT,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Storage { read_only: true },
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 2,
+                    visibility: wgpu::ShaderStages::VERTEX_FRAGMENT,
                     ty: wgpu::BindingType::Buffer {
                         ty: wgpu::BufferBindingType::Storage { read_only: true },
                         has_dynamic_offset: false,
@@ -177,114 +173,271 @@ impl Renderer {
             ],
         });
 
-        let bind_group = make_bind_group(&device, &bind_layout, &uniform_buf, &band_buf);
+        let peaks_buf = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("omaviz-peaks"),
+            size: (cfg.bands(mode).max(1) * std::mem::size_of::<f32>()) as u64,
+            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
 
-        let visual = &cfg.mode(mode).visual;
-        let pipeline = build_pipeline(&device, &bind_layout, format, visual)?;
+        let bands = BandBuffer::new(&device, cfg.bands(mode).max(1));
+        let band_count = cfg.bands(mode).max(1);
 
-        let p = &cfg.palette;
-        let uniforms = Uniforms {
-            params: [0.0, 0.0, 0.0, band_capacity as f32],
-            view: [size.width as f32, size.height as f32, cfg.sensitivity, 0.0],
-            low: [p.low[0], p.low[1], p.low[2], 1.0],
-            high: [p.high[0], p.high[1], p.high[2], 1.0],
-            bg: p.bg,
-        };
-
-        Ok(Renderer {
+        let mut r = Renderer {
             device,
             queue,
             surface,
-            surface_cfg,
+            surface_config,
+            uniform_buffer,
+            bind_group_layout,
+            bands,
+            peaks_buf,
+            pipeline: None,
+            cfg,
+            mode,
+            start: std::time::Instant::now(),
+            peaks: vec![0f32; band_count],
+            last_bands: vec![0f32; band_count],
+        };
+
+        let want = r.cfg.mode(mode).visual.clone();
+        r.set_visual(&want)?;
+        Ok(r)
+    }
+
+    /// Swap the active visualization, releasing the previous one's GPU objects.
+    pub fn set_visual(&mut self, name: &str) -> Result<()> {
+        let Some(v) = visual::resolve_or_first(name) else {
+            anyhow::bail!("no visualizations found in {:?}", visual::visuals_dir());
+        };
+
+        let src = visual::shader_source(&v)?;
+
+        // Compile first: on a shader error keep the old pipeline running rather
+        // than leaving the window blank.
+        let module = self
+            .device
+            .create_shader_module(wgpu::ShaderModuleDescriptor {
+                label: Some(&format!("omaviz-{}", v.name)),
+                source: wgpu::ShaderSource::Wgsl(src.into()),
+            });
+
+        let layout = self
+            .device
+            .create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                label: Some("omaviz-layout"),
+                bind_group_layouts: &[&self.bind_group_layout],
+                push_constant_ranges: &[],
+            });
+
+        let pipeline = self
+            .device
+            .create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+                label: Some("omaviz-pipeline"),
+                layout: Some(&layout),
+                vertex: wgpu::VertexState {
+                    module: &module,
+                    entry_point: Some("vs_main"),
+                    buffers: &[],
+                    compilation_options: Default::default(),
+                },
+                fragment: Some(wgpu::FragmentState {
+                    module: &module,
+                    entry_point: Some("fs_main"),
+                    targets: &[Some(wgpu::ColorTargetState {
+                        format: self.surface_config.format,
+                        blend: Some(wgpu::BlendState::ALPHA_BLENDING),
+                        write_mask: wgpu::ColorWrites::ALL,
+                    })],
+                    compilation_options: Default::default(),
+                }),
+                primitive: wgpu::PrimitiveState::default(),
+                depth_stencil: None,
+                multisample: wgpu::MultisampleState::default(),
+                multiview: None,
+                cache: None,
+            });
+
+        let bind_group = self.make_bind_group();
+
+        // Assigning drops the old Pipeline here: shader module, pipeline and
+        // bind group are released together.
+        self.pipeline = Some(Pipeline {
             pipeline,
             bind_group,
-            bind_layout,
-            uniform_buf,
-            band_buf,
-            band_capacity,
-            format,
-            uniforms,
-        })
-    }
-
-    pub fn resize(&mut self, w: u32, h: u32) {
-        if w == 0 || h == 0 {
-            return;
-        }
-        self.surface_cfg.width = w;
-        self.surface_cfg.height = h;
-        self.surface.configure(&self.device, &self.surface_cfg);
-        self.uniforms.view[0] = w as f32;
-        self.uniforms.view[1] = h as f32;
-    }
-
-    /// Swap the fragment shader at runtime (config hot-reload).
-    pub fn set_visual(&mut self, visual: &str) -> Result<()> {
-        self.pipeline = build_pipeline(&self.device, &self.bind_layout, self.format, visual)?;
+            visual: v,
+        });
         Ok(())
     }
 
-    pub fn apply_config(&mut self, cfg: &Config) {
-        let p = &cfg.palette;
-        self.uniforms.low = [p.low[0], p.low[1], p.low[2], 1.0];
-        self.uniforms.high = [p.high[0], p.high[1], p.high[2], 1.0];
-        self.uniforms.bg = p.bg;
-        self.uniforms.view[2] = cfg.sensitivity;
+    fn make_bind_group(&self) -> wgpu::BindGroup {
+        self.device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("omaviz-bg"),
+            layout: &self.bind_group_layout,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: self.uniform_buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: self.bands.buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 2,
+                    resource: self.peaks_buf.as_entire_binding(),
+                },
+            ],
+        })
     }
 
-    pub fn render(&mut self, frame: &Frame, time: f32) -> Result<()> {
-        // Grow the band storage buffer if the daemon changed band count.
-        if frame.bands.len() > self.band_capacity {
-            self.band_capacity = frame.bands.len();
-            self.band_buf = self.device.create_buffer(&wgpu::BufferDescriptor {
-                label: Some("omaviz-bands"),
-                size: (self.band_capacity * 4) as u64,
+    /// Apply a reloaded config: swap the visual only when it actually changed,
+    /// and resize the band buffer only when the count changed.
+    pub fn apply_config(&mut self, cfg: Config) -> Result<()> {
+        let visual_changed = cfg.mode(self.mode).visual != self.cfg.mode(self.mode).visual;
+        let bands_changed = cfg.bands(self.mode).max(1) != self.bands.len;
+        self.cfg = cfg;
+
+        if bands_changed {
+            self.bands = BandBuffer::new(&self.device, self.cfg.bands(self.mode).max(1));
+            self.peaks_buf = self.device.create_buffer(&wgpu::BufferDescriptor {
+                label: Some("omaviz-peaks"),
+                size: (self.cfg.bands(self.mode).max(1) * std::mem::size_of::<f32>()) as u64,
                 usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
                 mapped_at_creation: false,
             });
-            self.bind_group = make_bind_group(
-                &self.device,
-                &self.bind_layout,
-                &self.uniform_buf,
-                &self.band_buf,
-            );
+            self.peaks = vec![0f32; self.cfg.bands(self.mode).max(1)];
+            self.last_bands = vec![0f32; self.cfg.bands(self.mode).max(1)];
+            // The bind group references the old buffers; rebuild it.
+            if self.pipeline.is_some() {
+                let bg = self.make_bind_group();
+                if let Some(p) = self.pipeline.as_mut() {
+                    p.bind_group = bg;
+                }
+            }
         }
 
-        self.uniforms.params = [time, frame.energy, frame.beat, frame.bands.len() as f32];
+        if visual_changed {
+            let want = self.cfg.mode(self.mode).visual.clone();
+            self.set_visual(&want)?;
+        }
+        Ok(())
+    }
+
+    pub fn resize(&mut self, width: u32, height: u32) {
+        if width == 0 || height == 0 {
+            return;
+        }
+        self.surface_config.width = width;
+        self.surface_config.height = height;
+        self.surface.configure(&self.device, &self.surface_config);
+    }
+
+    pub fn render(&mut self, frame: &Frame) -> Result<()> {
+        let Some(p) = self.pipeline.as_ref() else {
+            return Ok(());
+        };
+
+        // Band data: pad or truncate to the buffer length so a daemon/client
+        // mismatch can never read out of bounds.
+        let mut data = vec![0f32; self.bands.len];
+        let n = frame.bands.len().min(self.bands.len);
+        data[..n].copy_from_slice(&frame.bands[..n]);
         self.queue
-            .write_buffer(&self.uniform_buf, 0, bytemuck::bytes_of(&self.uniforms));
-        if !frame.bands.is_empty() {
-            self.queue
-                .write_buffer(&self.band_buf, 0, bytemuck::cast_slice(&frame.bands));
+            .write_buffer(&self.bands.buffer, 0, bytemuck::cast_slice(&data));
+
+        let pal = self.cfg.resolved_palette();
+
+        // Per-visual knob values, in declaration order.
+        let mut knobs = [0f32; MAX_PARAMS];
+        for (i, param) in p.visual.params.iter().take(MAX_PARAMS).enumerate() {
+            knobs[i] = self.cfg.visual_param(&p.visual.name, param);
         }
 
-        let surface_tex = match self.surface.get_current_texture() {
+        // Advance the winamp-style peak line: each band holds its previous peak
+        // and falls slowly, jumping up instantly when the new level is higher.
+        // Written to the `peaks` storage buffer so shaders can sample it per-x.
+        let fall = if p.visual.name == "fire" {
+            self.cfg
+                .visual_param("fire", &p.visual.params[4])
+                .clamp(0.01, 0.5)
+        } else {
+            0.5
+        };
+        let len = self.peaks.len();
+        for i in 0..len {
+            let cur = frame.bands.get(i).copied().unwrap_or(0.0) * self.cfg.sensitivity(self.mode);
+            let prev = self.last_bands.get(i).copied().unwrap_or(0.0);
+            let peak = self.peaks[i];
+            let target = cur.max(prev);
+            self.peaks[i] = if target > peak {
+                target
+            } else {
+                (peak - fall).max(target).max(0.0)
+            };
+            self.last_bands[i] = cur;
+        }
+        // Upload the peak line (same length as the bands buffer).
+        self.queue
+            .write_buffer(&self.peaks_buf, 0, bytemuck::cast_slice(&self.peaks));
+
+        let u = Uniforms {
+            params: [
+                self.start.elapsed().as_secs_f32(),
+                frame.energy,
+                frame.beat,
+                self.bands.len as f32,
+            ],
+            view: [
+                self.surface_config.width as f32,
+                self.surface_config.height as f32,
+                self.cfg.sensitivity(self.mode),
+                if pal.is_light { 1.0 } else { 0.0 },
+            ],
+            low: [pal.low[0], pal.low[1], pal.low[2], 1.0],
+            high: [pal.high[0], pal.high[1], pal.high[2], 1.0],
+            bg: pal.bg,
+            knobs: [knobs[0], knobs[1], knobs[2], knobs[3]],
+            knobs2: [knobs[4], knobs[5], knobs[6], knobs[7]],
+        };
+        self.queue
+            .write_buffer(&self.uniform_buffer, 0, bytemuck::bytes_of(&u));
+
+        let surface_texture = match self.surface.get_current_texture() {
             Ok(t) => t,
-            Err(wgpu::SurfaceError::Lost | wgpu::SurfaceError::Outdated) => {
-                self.surface.configure(&self.device, &self.surface_cfg);
+            Err(wgpu::SurfaceError::Outdated | wgpu::SurfaceError::Lost) => {
+                self.surface.configure(&self.device, &self.surface_config);
                 return Ok(());
             }
             Err(e) => return Err(e.into()),
         };
-        let view = surface_tex
+
+        let view = surface_texture
             .texture
             .create_view(&wgpu::TextureViewDescriptor::default());
-        let mut enc = self
+
+        let mut encoder = self
             .device
-            .create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("omaviz-encoder"),
+            });
         {
-            let mut pass = enc.begin_render_pass(&wgpu::RenderPassDescriptor {
+            let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("omaviz-pass"),
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {
                     view: &view,
-                    depth_slice: None,
                     resolve_target: None,
+                    depth_slice: None,
                     ops: wgpu::Operations {
-                        load: wgpu::LoadOp::Clear(wgpu::Color {
-                            r: self.uniforms.bg[0] as f64,
-                            g: self.uniforms.bg[1] as f64,
-                            b: self.uniforms.bg[2] as f64,
-                            a: self.uniforms.bg[3] as f64,
+                        load: wgpu::LoadOp::Clear(if std::env::var("OMAVIZ_DEBUG_FILL").is_ok() {
+                            wgpu::Color { r: 0.9, g: 0.2, b: 0.5, a: 1.0 }
+                        } else {
+                            wgpu::Color {
+                                r: pal.bg[0] as f64,
+                                g: pal.bg[1] as f64,
+                                b: pal.bg[2] as f64,
+                                a: pal.bg[3] as f64,
+                            }
                         }),
                         store: wgpu::StoreOp::Store,
                     },
@@ -293,78 +446,25 @@ impl Renderer {
                 timestamp_writes: None,
                 occlusion_query_set: None,
             });
-            pass.set_pipeline(&self.pipeline);
-            pass.set_bind_group(0, &self.bind_group, &[]);
+            pass.set_pipeline(&p.pipeline);
+            pass.set_bind_group(0, &p.bind_group, &[]);
             pass.draw(0..3, 0..1);
         }
-        self.queue.submit(Some(enc.finish()));
-        surface_tex.present();
+
+        self.queue.submit(Some(encoder.finish()));
+        surface_texture.present();
         Ok(())
     }
 }
 
-fn make_bind_group(
-    device: &wgpu::Device,
-    layout: &wgpu::BindGroupLayout,
-    uniform: &wgpu::Buffer,
-    bands: &wgpu::Buffer,
-) -> wgpu::BindGroup {
-    device.create_bind_group(&wgpu::BindGroupDescriptor {
-        label: Some("omaviz-bg"),
-        layout,
-        entries: &[
-            wgpu::BindGroupEntry {
-                binding: 0,
-                resource: uniform.as_entire_binding(),
-            },
-            wgpu::BindGroupEntry {
-                binding: 1,
-                resource: bands.as_entire_binding(),
-            },
-        ],
-    })
+impl BandBuffer {
+    fn new(device: &wgpu::Device, len: usize) -> BandBuffer {
+        let buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("omaviz-bands"),
+            size: (len * std::mem::size_of::<f32>()) as u64,
+            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+        BandBuffer { buffer, len }
+    }
 }
-
-fn build_pipeline(
-    device: &wgpu::Device,
-    layout: &wgpu::BindGroupLayout,
-    format: wgpu::TextureFormat,
-    visual: &str,
-) -> Result<wgpu::RenderPipeline> {
-    let src = load_shader_source(visual)?;
-    let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
-        label: Some(visual),
-        source: wgpu::ShaderSource::Wgsl(src.into()),
-    });
-    let pl = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-        label: None,
-        bind_group_layouts: &[layout],
-        push_constant_ranges: &[],
-    });
-    Ok(
-        device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-            label: Some("omaviz-pipeline"),
-            layout: Some(&pl),
-            vertex: wgpu::VertexState {
-                module: &shader,
-                entry_point: Some("vs_main"),
-                buffers: &[],
-                compilation_options: Default::default(),
-            },
-            fragment: Some(wgpu::FragmentState {
-                module: &shader,
-                entry_point: Some("fs_main"),
-                targets: &[Some(format.into())],
-                compilation_options: Default::default(),
-            }),
-            primitive: wgpu::PrimitiveState::default(),
-            depth_stencil: None,
-            multisample: wgpu::MultisampleState::default(),
-            multiview: None,
-            cache: None,
-        }),
-    )
-}
-
-/// Latest-frame slot shared between the IPC reader thread and the render loop.
-pub type SharedFrame = Arc<Mutex<Frame>>;

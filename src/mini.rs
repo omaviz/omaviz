@@ -1,37 +1,52 @@
 //! Mini mode: waybar custom module. Emits one JSON line per update on stdout.
-//! Limited visual selection by design — Unicode block bars / VU meter.
+//!
+//! Watches config.toml so settings changes appear in the bar without a waybar
+//! restart, and the display-mode file so the bar menu can turn it off.
+//!
+//! Important: when the mode is `off` we still emit a *visible* dim baseline
+//! rather than an empty string. waybar hides a custom module whose text is
+//! empty, which would remove the module (and its right-click menu) from the
+//! bar entirely — leaving no way to turn it back on. A dim glyph keeps the
+//! menu reachable while freezing the visualization.
 
-use crate::config::Config;
+use crate::config::{Config, Mode};
 use crate::ipc::Frame;
+use crate::mode;
 use anyhow::Result;
 use std::io::Write;
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 const BLOCKS: [char; 9] = [' ', '▁', '▂', '▃', '▄', '▅', '▆', '▇', '█'];
 
+/// Shown when silent / off: a dim baseline so the module is still visible in
+/// the bar. The `.silent` / `.off` CSS classes fade it.
+const IDLE_GLYPH: char = '▁';
+
 /// Downsample the band array to `width` glyph columns (peak per column).
 fn render_bars(bands: &[f32], width: usize, sensitivity: f32) -> String {
     if bands.is_empty() || width == 0 {
-        return " ".repeat(width);
+        return String::new();
     }
-    let mut out = String::with_capacity(width * 3);
+    let mut s = String::with_capacity(width * 3);
     for i in 0..width {
         let lo = i * bands.len() / width;
         let hi = (((i + 1) * bands.len()) / width)
             .max(lo + 1)
             .min(bands.len());
-        let peak = bands[lo..hi].iter().copied().fold(0.0f32, f32::max) * sensitivity;
-        let idx = ((peak.clamp(0.0, 1.0) * 8.0).round() as usize).min(8);
-        out.push(BLOCKS[idx]);
+        let peak = bands[lo..hi].iter().copied().fold(0f32, f32::max) * sensitivity;
+        let idx = ((peak.clamp(0.0, 1.0)) * (BLOCKS.len() - 1) as f32).round() as usize;
+        s.push(BLOCKS[idx.min(BLOCKS.len() - 1)]);
     }
-    out
+    s
 }
 
+/// A single VU-style meter: one filled run proportional to overall energy.
 fn render_vu(energy: f32, width: usize, sensitivity: f32) -> String {
     let filled = ((energy * sensitivity).clamp(0.0, 1.0) * width as f32).round() as usize;
     let mut s = String::with_capacity(width * 3);
     for i in 0..width {
-        s.push(if i < filled { '█' } else { '░' });
+        s.push(if i < filled { '█' } else { '▁' });
     }
     s
 }
@@ -40,49 +55,76 @@ fn escape(s: &str) -> String {
     s.replace('\\', "\\\\").replace('"', "\\\"")
 }
 
-pub fn run(cfg: &Config, width: usize, visual: &str) -> Result<()> {
-    let fps = if cfg.mini.fps == 0 { 30 } else { cfg.mini.fps };
-    let period = Duration::from_secs_f64(1.0 / fps as f64);
-    let stdout = std::io::stdout();
-    let mut out = stdout.lock();
-
+pub fn run(mut cfg: Config, width: usize) -> Result<()> {
     // A reader thread keeps the newest frame in a shared slot, so the bar
     // renders at its own cadence and never lags behind the daemon.
-    let shared = std::sync::Arc::new(std::sync::Mutex::new(Frame::default()));
-    crate::client::spawn_frame_reader(shared.clone());
+    let shared = Arc::new(Mutex::new(Frame::default()));
+    crate::ipc::spawn_reader(shared.clone());
 
-    let mut next = Instant::now();
+    let mut watcher = crate::config::Watcher::new();
+    let out = std::io::stdout();
+    let mut out = out.lock();
     let mut last_text = String::new();
+    let mut last_class = String::new();
+
+    let fps = cfg.mini.fps.clamp(1, 60);
+    let period = Duration::from_secs_f32(1.0 / fps as f32);
+    let mut next = Instant::now();
 
     loop {
+        // Hot reload: sensitivity, visual and mini fps take effect live.
+        if let Some(new_cfg) = watcher.poll() {
+            cfg = new_cfg;
+        }
+
+        let show = mode::get().shows_mini();
         let frame = shared.lock().unwrap().clone();
 
-        let text = if frame.silent || frame.bands.is_empty() {
-            " ".repeat(width)
+        // No daemon yet counts as idle, not as "active but blank".
+        let idle = frame.silent || frame.bands.is_empty();
+
+        let (text, class) = if !show {
+            // OFF: freeze the visualization but keep the module in the bar so
+            // its right-click menu stays reachable. A dim baseline, not empty.
+            (IDLE_GLYPH.to_string().repeat(width), "off")
+        } else if idle {
+            // A dim baseline, never nothing, so "installed but quiet" is not
+            // mistaken for "broken".
+            (IDLE_GLYPH.to_string().repeat(width), "silent")
         } else {
-            match visual {
-                "vu" => render_vu(frame.energy, width, cfg.sensitivity),
-                _ => render_bars(&frame.bands, width, cfg.sensitivity),
-            }
+            let visual = cfg.mini.visual.as_str();
+            let t = match visual {
+                "vu" => render_vu(frame.energy, width, cfg.sensitivity(Mode::Mini)),
+                _ => render_bars(&frame.bands, width, cfg.sensitivity(Mode::Mini)),
+            };
+            (t, "active")
         };
 
-        // Only emit when the rendered glyphs actually changed — waybar
-        // re-lays-out on every line, so this matters for idle cost.
-        if text != last_text {
-            let tooltip = format!(
-                "omaviz — energy {:.2}{}",
-                frame.energy,
-                if frame.silent { " (silent)" } else { "" }
-            );
+        // Only emit when something actually changed — waybar re-lays-out on
+        // every line, so this matters for idle cost.
+        if text != last_text || class != last_class {
+            let tooltip = if !show {
+                "omaviz — visualization off (right-click to re-enable)".to_string()
+            } else if frame.bands.is_empty() {
+                "omaviz — waiting for daemon".to_string()
+            } else {
+                format!(
+                    "omaviz — {} · energy {:.2}{}",
+                    cfg.mini.visual,
+                    frame.energy,
+                    if frame.silent { " (silent)" } else { "" }
+                )
+            };
             writeln!(
                 out,
                 "{{\"text\":\"{}\",\"tooltip\":\"{}\",\"class\":\"{}\"}}",
                 escape(&text),
                 escape(&tooltip),
-                if frame.silent { "silent" } else { "active" }
+                class
             )?;
             out.flush()?;
             last_text = text;
+            last_class = class.to_string();
         }
 
         next += period;

@@ -9,6 +9,7 @@ bytemuck = { version = "1.25.2", features = ["derive"] }
 clap = { version = "4.6.6", features = ["derive"] }
 eframe = { version = "0.33", default-features = false, features = ["glow", "wayland", "x11"] }
 egui = "0.33"
+libc = "0.2.189"
 pipewire = "0.10"
 pollster = "1.0.1"
 realfft = "3"

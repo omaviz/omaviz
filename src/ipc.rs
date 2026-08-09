@@ -125,3 +125,24 @@ impl Drop for Server {
 pub fn connect() -> Result<UnixStream> {
     Ok(UnixStream::connect(socket_path())?)
 }
+
+/// Spawn a thread that keeps the newest frame in a shared slot, reconnecting
+/// if the daemon restarts. Clients render from the slot at their own cadence,
+/// so a slow renderer never backs up the socket.
+pub fn spawn_reader(slot: std::sync::Arc<std::sync::Mutex<Frame>>) {
+    std::thread::spawn(move || {
+        loop {
+            let Ok(mut stream) = connect() else {
+                std::thread::sleep(std::time::Duration::from_millis(500));
+                continue;
+            };
+            let _ = stream.set_nonblocking(false);
+            while let Ok(f) = Frame::read_from(&mut stream) {
+                *slot.lock().unwrap() = f;
+            }
+            // Daemon went away: mark silent and retry.
+            *slot.lock().unwrap() = Frame::default();
+            std::thread::sleep(std::time::Duration::from_millis(500));
+        }
+    });
+}
