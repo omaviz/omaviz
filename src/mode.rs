@@ -346,7 +346,7 @@ pub fn add_waybar_module() {
 
     let menu_xml = menu_xml.display().to_string();
     let module = format!(
-        "  \"custom/omaviz\": {{\n    \"exec\": \"{bin} mini --width 14\",\n    \"return-type\": \"json\",\n    \"format\": \"{{}}\",\n    \"tooltip\": true,\n    \"escape\": false,\n    \"on-click\": \"{bin} toggle\",\n    \"on-click-right\": \"{bin} menu --out {menu_xml}\",\n    \"exec-on-event\": false,\n    \"on-scroll-up\": \"{bin} sensitivity +0.1\",\n    \"on-scroll-down\": \"{bin} sensitivity -0.1\",\n    \"menu\": \"on-click-right\",\n    \"menu-file\": \"{menu_xml}\"\n  }},\n"
+        "  \"custom/omaviz\": {{\n    \"exec\": \"{bin} mini --width 18\",\n    \"return-type\": \"json\",\n    \"format\": \"{{}}\",\n    \"tooltip\": true,\n    \"escape\": false,\n    \"on-click\": \"{bin} toggle\",\n    \"on-click-right\": \"{bin} menu --out {menu_xml}\",\n    \"exec-on-event\": false,\n    \"on-scroll-up\": \"{bin} sensitivity +0.1\",\n    \"on-scroll-down\": \"{bin} sensitivity -0.1\",\n    \"menu\": \"on-click-right\",\n    \"menu-file\": \"{menu_xml}\"\n  }},\n"
     );
 
     let Ok(s) = std::fs::read_to_string(&wb_cfg) else { return };

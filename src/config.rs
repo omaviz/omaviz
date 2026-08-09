@@ -125,6 +125,14 @@ impl Default for Config {
             full: ModeConfig {
                 visual: "wave".into(),
                 fps: 0,
+                extra: {
+                    let mut m = BTreeMap::new();
+                    // full_detail: how much room the bars use (1 = full, <1 = shorter).
+                    m.insert("full_detail".into(), 1.0);
+                    // full_quality: supersampling-ish factor for circular visuals.
+                    m.insert("full_quality".into(), 1.5);
+                    m
+                },
                 ..Default::default()
             },
             mini: ModeConfig {
@@ -136,6 +144,10 @@ impl Default for Config {
                 extra: {
                     let mut m = BTreeMap::new();
                     m.insert("density".into(), 1.0);
+                    // Gain + floor make the tiny menu-bar bars actually readable:
+                    // gain amplifies quiet audio, floor keeps a minimum bar height.
+                    m.insert("mini_gain".into(), 1.6);
+                    m.insert("mini_floor".into(), 0.12);
                     m
                 },
                 ..Default::default()

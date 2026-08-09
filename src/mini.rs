@@ -90,11 +90,19 @@ pub fn run(cfg: Config, width: usize) -> anyhow::Result<()> {
             let cfg_for = cfg.mode(crate::config::Mode::Mini);
             let sens = cfg_for.sensitivity.clamp(0.1, 4.0);
             let _smooth = cfg_for.smoothing.clamp(0.0, 1.0);
+            // Per-display fit: gain amplifies quiet audio (so playing is clearly
+            // different from flat), floor keeps a minimum bar height so the row
+            // never collapses to nothing.
+            let gain = cfg_for.extra.get("mini_gain").copied().unwrap_or(1.0).clamp(0.5, 4.0);
+            let floor = cfg_for.extra.get("mini_floor").copied().unwrap_or(0.0).clamp(0.0, 0.6);
             let lvl = (cfg.audio.bands.max(1) as f32).min(width as f32) as usize;
             let mut bars = String::new();
             for i in 0..lvl {
                 let idx = (i as f32 / lvl as f32 * frame.bands.len() as f32) as usize;
-                let mut v = frame.bands[idx.min(frame.bands.len() - 1)] * sens;
+                let mut v = frame.bands[idx.min(frame.bands.len() - 1)] * sens * gain;
+                if v < floor {
+                    v = floor;
+                }
                 if v > 1.0 {
                     v = 1.0;
                 }

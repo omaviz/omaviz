@@ -353,6 +353,19 @@ impl Renderer {
         for (i, param) in p.visual.params.iter().take(MAX_PARAMS).enumerate() {
             knobs[i] = self.cfg.visual_param(&p.visual.name, param);
         }
+        // Per-display *fit* knobs live in the mode's `extra` table (not the
+        // visual's params) and are surfaced to shaders via knobs2[0..3] so a
+        // visual can read them with k(4)/k(5)/k(6):
+        //   k(4) = full_detail   (desktop/full: how much vertical room bars use)
+        //   k(5) = full_quality  (circular visuals: supersample-ish factor)
+        //   k(6) = mini_simplify (menu-bar: simplify the visual for tiny space)
+        let extra = &self.cfg.mode(self.mode).extra;
+        let fit = [
+            extra.get("full_detail").copied().unwrap_or(1.0),
+            extra.get("full_quality").copied().unwrap_or(1.5),
+            extra.get("mini_simplify").copied().unwrap_or(0.0),
+            0.0,
+        ];
 
         // Advance the winamp-style peak line: each band holds its previous peak
         // and falls slowly, jumping up instantly when the new level is higher.
@@ -398,7 +411,10 @@ impl Renderer {
             high: [pal.high[0], pal.high[1], pal.high[2], 1.0],
             bg: pal.bg,
             knobs: [knobs[0], knobs[1], knobs[2], knobs[3]],
-            knobs2: [knobs[4], knobs[5], knobs[6], knobs[7]],
+            // knobs2[0..3] = the per-display fit knobs (k(4)/k(5)/k(6)); any
+            // visual-declared params beyond index 3 would also land here, but the
+            // fit values are what shaders read via k(4..6).
+            knobs2: fit,
         };
         self.queue
             .write_buffer(&self.uniform_buffer, 0, bytemuck::bytes_of(&u));

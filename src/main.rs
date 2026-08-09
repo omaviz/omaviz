@@ -57,7 +57,7 @@ enum Cmd {
     Full,
     /// Waybar custom module (JSON lines on stdout).
     Mini {
-        #[arg(long, default_value_t = 14)]
+        #[arg(long, default_value_t = 18)]
         width: usize,
     },
     /// Settings panel.
@@ -217,21 +217,25 @@ fn main() -> Result<()> {
         }
 
         Cmd::Menu { out } => {
+            let (xml, actions) = menu::generate(&mode::current().to_string());
             match out {
-                // Regenerate the GtkBuilder XML (used by install/start).
+                // Regenerate the GtkBuilder XML menu file (used by install/start
+                // and by the waybar module's `menu-file`).
                 Some(path) => {
                     if let Some(parent) = path.parent() {
                         std::fs::create_dir_all(parent)?;
                     }
-                    let (xml, actions) = menu::generate(&mode::current().to_string());
                     std::fs::write(&path, xml)?;
                     println!("{}", path.display());
                     println!("{actions}");
                     Ok(())
                 }
-                // No --out: open the egui context window (waybar right-click).
+                // Right-click with no --out: the waybar module pops the menu via
+                // its `menu-file` key, so there's nothing to do here other than
+                // ensure the XML exists. Emit the actions for debugging.
                 None => {
-                    context::run(cfg)?;
+                    eprintln!("omaviz: menu is rendered by waybar via menu-file");
+                    println!("{actions}");
                     Ok(())
                 }
             }
