@@ -264,6 +264,21 @@ impl Config {
             .or_default()
             .insert(name.to_string(), value);
     }
+
+    /// Set the active visualization for ALL display modes at once (mini,
+    /// desktop, full) — the visualization choice is shared; only per-display
+    /// *fit* tweaks differ between modes.
+    pub fn set_visual_all(&mut self, name: &str) {
+        self.mini.visual = name.to_string();
+        self.desktop.visual = name.to_string();
+        self.full.visual = name.to_string();
+    }
+
+    /// Reset a single visualization's per-knob overrides back to the shader's
+    /// declared defaults (in-memory; `save` persists).
+    pub fn reset_visual(&mut self, name: &str) {
+        self.visuals.remove(name);
+    }
 }
 
 #[derive(Debug, Clone, Copy)]

@@ -1,18 +1,22 @@
-//! Settings panel (egui).
+//! Settings panel (egui) — "Split Panel" layout.
 //!
-//! Layout follows the requested shape:
-//!   top ~50%  — live visualization preview (renders from the *working* config,
-//!                so changes appear instantly, before Save)
-//!   bottom    — left: visualization list (vertical radio, current ticked);
-//!                right: options for the selected visual + mode-only tweaks
-//!   footer    — Reset (per visual), Save, Cancel
+//! Left: vertical visualization list (the current one pre-ticked "active").
+//! Top-right: live preview (renders from the working config, so edits show
+//! instantly). Bottom-right: options for the selected visual, including a
+//! "Per-display fit" section that captures the mode nuance — bar visuals need
+//! help filling the tiny menu bar, circular visuals want full-screen room.
 //!
-//! Saving writes config.toml; every running client watches that file, so the
-//! desktop window and the waybar module update live.
+//! The visualization choice is SHARED across all modes (mini/desktop/full);
+//! only per-display *fit* tweaks differ. Reset (per visualization) lives inside
+//! the options panel. Footer is Save / Cancel only.
+//!
+//! Colouring follows the Omarchy theme: we tint egui's selection / accent /
+//! hyperlink colours with the theme accent so the panel matches the desktop,
+//! without embedding a webview (egui is a GPU canvas, not HTML/CSS).
 
-use crate::config::{Config, Mode, PaletteSource};
+use crate::config::{Config, PaletteSource};
 use crate::ipc::Frame;
-use crate::visual::{self, Visual};
+use crate::visual::{self, visual_kind, Visual, VisualKind};
 use anyhow::Result;
 use std::sync::{Arc, Mutex};
 
@@ -21,24 +25,22 @@ pub struct SettingsApp {
     saved: Config,
     frame: Arc<Mutex<Frame>>,
     visuals: Vec<Visual>,
-    /// Which mode's settings are being edited.
-    target: Mode,
-    status: String,
-    /// Visual currently focused in the list (drives the right-hand options).
+    /// Focused visualization in the list (drives the right-hand options + the
+    /// shared `visual` selection).
     focus: String,
+    status: String,
 }
 
 impl SettingsApp {
     fn new(cfg: Config, frame: Arc<Mutex<Frame>>) -> SettingsApp {
-        let focus = cfg.mode(Mode::Desktop).visual.clone();
+        let focus = cfg.mini.visual.clone();
         SettingsApp {
             saved: cfg.clone(),
             cfg,
             frame,
             visuals: visual::discover(),
-            target: Mode::Desktop,
-            status: String::new(),
             focus,
+            status: String::new(),
         }
     }
 
@@ -57,20 +59,36 @@ impl SettingsApp {
     }
 
     fn reset_visual(&mut self) {
-        // Reset this visual's knobs to their declared defaults (in-memory only;
-        // Save persists). Also clears any stored per-visual overrides.
-        self.cfg.visuals.remove(&self.focus);
+        // Reset this visual's per-knob overrides to the shader defaults.
+        self.cfg.reset_visual(&self.focus);
         self.status = format!("Reset '{}' (unsaved)", self.focus);
     }
 
     fn selected_visual(&self) -> Option<&Visual> {
         self.visuals.iter().find(|v| v.name == self.focus)
     }
+
+    /// Apply the accent colour from the theme to egui's interactive elements.
+    fn theme_style(&self, ctx: &egui::Context) {
+        let pal = self.cfg.resolved_palette();
+        let a = pal.low; // accent (theme accent in auto mode)
+        let accent = egui::Color32::from_rgb(
+            (a[0] * 255.0) as u8,
+            (a[1] * 255.0) as u8,
+            (a[2] * 255.0) as u8,
+        );
+        let mut style = (*ctx.style()).clone();
+        style.visuals.selection.bg_fill = accent;
+        style.visuals.selection.stroke.color = egui::Color32::WHITE;
+        style.visuals.widgets.active.bg_fill = accent;
+        style.visuals.widgets.active.fg_stroke.color = egui::Color32::WHITE;
+        style.visuals.hyperlink_color = accent;
+        ctx.set_style(style);
+    }
 }
 
 /// Paint the live spectrum preview using the same palette the renderer uses.
-/// Renders from the *working* cfg so slider/param edits show immediately.
-fn draw_preview(ui: &mut egui::Ui, frame: &Frame, cfg: &Config, target: Mode) {
+fn draw_preview(ui: &mut egui::Ui, frame: &Frame, cfg: &Config) {
     let rect = ui.available_rect_before_wrap();
     let painter = ui.painter_at(rect);
     let pal = cfg.resolved_palette();
@@ -98,7 +116,7 @@ fn draw_preview(ui: &mut egui::Ui, frame: &Frame, cfg: &Config, target: Mode) {
     let gap = 2.0;
     let w = (rect.width() - gap * (n as f32 - 1.0)) / n as f32;
     for (i, b) in frame.bands.iter().enumerate() {
-        let h = (b * cfg.sensitivity(target)).clamp(0.0, 1.0) * rect.height();
+        let h = (b * cfg.audio.sensitivity.clamp(0.1, 4.0)).clamp(0.0, 1.0) * rect.height();
         let x = rect.left() + i as f32 * (w + gap);
         let bar = egui::Rect::from_min_max(
             egui::pos2(x, rect.bottom() - h),
@@ -120,85 +138,68 @@ impl eframe::App for SettingsApp {
     }
 
     fn update(&mut self, ctx: &egui::Context, _f: &mut eframe::Frame) {
-        // Follow the Omarchy theme for the panel chrome too.
         let pal = self.cfg.resolved_palette();
         ctx.set_visuals(if pal.is_light {
             egui::Visuals::light()
         } else {
             egui::Visuals::dark()
         });
+        self.theme_style(ctx);
 
         let frame = self.frame.lock().unwrap().clone();
 
         // ---------------- footer (declared first so it reserves space)
         egui::TopBottomPanel::bottom("footer")
-            .min_height(48.0)
+            .min_height(46.0)
             .show(ctx, |ui| {
-                ui.add_space(6.0);
+                ui.add_space(4.0);
                 ui.horizontal(|ui| {
-                    if ui.button("  Reset visual  ").clicked() {
-                        self.reset_visual();
-                    }
-                    ui.separator();
-                    let dirty = self.dirty();
-                    ui.add_enabled_ui(dirty, |ui| {
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        if ui.button("Cancel").clicked() {
+                            self.cfg = self.saved.clone();
+                            self.status = "Cancelled".into();
+                        }
                         if ui.button("  Save  ").clicked() {
                             self.save();
                         }
                     });
-                    if ui.button("Cancel").clicked() {
-                        self.cfg = self.saved.clone();
-                        self.status = "Cancelled".into();
-                    }
-
-                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        if dirty {
-                            ui.colored_label(egui::Color32::from_rgb(230, 160, 30), "unsaved");
-                        } else if !self.status.is_empty() {
-                            ui.weak(&self.status);
-                        }
-                    });
                 });
-                ui.add_space(6.0);
+                ui.add_space(4.0);
             });
 
-        // ---------------- top 50%: live preview
-        let preview_h = ctx.content_rect().height() * 0.5;
+        // ---------------- top 42%: live preview
+        let preview_h = ctx.content_rect().height() * 0.42;
         egui::TopBottomPanel::top("preview")
             .exact_height(preview_h)
             .show(ctx, |ui| {
                 ui.horizontal(|ui| {
                     ui.heading("Preview");
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        // Mode tabs: which config section you're editing.
-                        ui.horizontal(|ui| {
-                            for (m, label) in [
-                                (Mode::Mini, "Menu bar"),
-                                (Mode::Desktop, "Desktop"),
-                                (Mode::Full, "Full"),
-                            ] {
-                                if ui.selectable_label(self.target == m, label).clicked() {
-                                    self.target = m;
-                                }
-                            }
-                        });
+                        let v = self.selected_visual();
+                        let label = v.map(|x| x.display_label()).unwrap_or("—");
+                        ui.weak(format!("live · {}", label));
                     });
                 });
                 ui.add_space(4.0);
-                draw_preview(ui, &frame, &self.cfg, self.target);
+                draw_preview(ui, &frame, &self.cfg);
             });
 
-        // ---------------- bottom half: list | options
+        // ---------------- bottom: list | options
         egui::CentralPanel::default().show(ctx, |ui| {
             ui.add_space(8.0);
             ui.separator();
             ui.add_space(4.0);
 
-            let list_w = ui.available_width() * 0.34;
+            let list_w = ui.available_width() * 0.36;
             ui.horizontal_top(|ui| {
-                // Left: vertical visualization list (radio).
+                // Left: vertical visualization list (radio), current ticked.
                 ui.allocate_ui(egui::vec2(list_w, ui.available_height()), |ui| {
                     ui.label(egui::RichText::new("Visualization").strong());
+                    ui.label(
+                        egui::RichText::new("Applies to menu bar, desktop & full screen")
+                            .small()
+                            .weak(),
+                    );
                     ui.add_space(4.0);
                     egui::ScrollArea::vertical()
                         .id_salt("viz-list")
@@ -206,52 +207,46 @@ impl eframe::App for SettingsApp {
                             if self.visuals.is_empty() {
                                 ui.weak("no .wgsl files found");
                             }
-                            let current = self.cfg.mode(self.target).visual.clone();
                             for v in &self.visuals {
                                 let selected = v.name == self.focus;
-                                let resp = ui.selectable_label(selected, v.display_label());
+                                let resp =
+                                    ui.selectable_label(selected, v.display_label());
                                 if resp.clicked() {
                                     self.focus = v.name.clone();
+                                    // Shared selection across all modes.
+                                    self.cfg.set_visual_all(&v.name);
                                 }
-                                if v.name == current {
+                                if v.name == self.cfg.mini.visual {
                                     ui.label(
-                                        egui::RichText::new("   ▸ used by this mode")
-                                            .small()
-                                            .weak(),
+                                        egui::RichText::new("   ▸ active").small().weak(),
                                     );
                                 }
                             }
                         });
-                    // Apply the focused visual to the edited mode.
-                    if ui.button("Use selected for this mode").clicked() {
-                        self.cfg.mode_mut(self.target).visual = self.focus.clone();
-                    }
                 });
 
                 ui.separator();
 
-                // Right: options for the focused visual + mode tweaks.
+                // Right: options for the focused visual.
                 ui.vertical(|ui| {
-                    let mode_label = match self.target {
-                        Mode::Mini => "Menu bar",
-                        Mode::Desktop => "Desktop",
-                        Mode::Full => "Full",
-                    };
-                    ui.label(egui::RichText::new(format!("Options — {mode_label}")).strong());
-                    ui.add_space(4.0);
-                    egui::ScrollArea::vertical()
-                        .id_salt("viz-options")
-                        .show(ui, |ui| {
-                            let sel = self.selected_visual().cloned();
-                            match sel {
-                                None => {
-                                    ui.weak("Select a visualization.");
-                                }
-                                Some(v) => {
+                    let sel = self.selected_visual().cloned();
+                    match sel {
+                        None => {
+                            ui.weak("Select a visualization.");
+                        }
+                        Some(v) => {
+                            ui.label(
+                                egui::RichText::new(format!("Options — {}", v.display_label()))
+                                    .strong(),
+                            );
+                            ui.add_space(2.0);
+                            egui::ScrollArea::vertical()
+                                .id_salt("viz-options")
+                                .show(ui, |ui| {
+                                    // Per-visualization knobs (shared).
                                     if v.params.is_empty() {
-                                        ui.weak("This visualization has no options.");
+                                        ui.weak("This visualization has no knobs.");
                                     }
-                                    ui.label(egui::RichText::new("Visualization").small().strong());
                                     for p in &v.params {
                                         let mut val = self.cfg.visual_param(&v.name, p);
                                         let changed = if p.boolean {
@@ -275,80 +270,128 @@ impl eframe::App for SettingsApp {
                                         ui.add_space(2.0);
                                     }
 
-                                    if !v.extra_params.is_empty() {
-                                        ui.add_space(6.0);
-                                        ui.label(
-                                            egui::RichText::new("This mode only").small().strong(),
-                                        );
-                                        for p in &v.extra_params {
-                                            let mut val = self
-                                                .cfg
-                                                .mode(self.target)
-                                                .extra
-                                                .get(&p.name)
-                                                .copied()
-                                                .unwrap_or(p.default)
-                                                .clamp(p.min, p.max);
-                                            let changed = if p.boolean {
-                                                let mut b = val > 0.5;
-                                                let r = ui.checkbox(&mut b, p.display_label());
-                                                val = if b { 1.0 } else { 0.0 };
-                                                r.changed()
-                                            } else {
-                                                ui.add(
-                                                    egui::Slider::new(&mut val, p.min..=p.max)
-                                                        .text(p.display_label()),
+                                    // Reset this visualization (per-viz) lives here.
+                                    ui.add_space(6.0);
+                                    if ui.button("↺ Reset visualization").clicked() {
+                                        self.reset_visual();
+                                    }
+                                    ui.weak(
+                                        egui::RichText::new(
+                                            "Restores this visual's knobs to defaults.",
+                                        )
+                                        .small(),
+                                    );
+
+                                    // Per-display fit — the mode nuance.
+                                    ui.add_space(10.0);
+                                    ui.separator();
+                                    ui.label(
+                                        egui::RichText::new("Per-display fit").strong(),
+                                    );
+                                    let kind = visual_kind(&v.name);
+                                    match kind {
+                                        VisualKind::Bars => {
+                                            ui.weak(
+                                                egui::RichText::new(
+                                                    "Bar visual: the menu bar is only a few px tall, \
+                                                     so it needs to fill that space to read any motion. \
+                                                     Full screen has room for detail.",
                                                 )
-                                                .changed()
-                                            };
-                                            if changed {
-                                                self.cfg
-                                                    .mode_mut(self.target)
-                                                    .extra
-                                                    .insert(p.name.clone(), val);
-                                            }
-                                            if !p.help.is_empty() {
-                                                ui.weak(egui::RichText::new(&p.help).small());
-                                            }
-                                            ui.add_space(2.0);
+                                                .small(),
+                                            );
+                                            fit_slider(
+                                                ui,
+                                                &mut self.cfg.mini,
+                                                "mini_gain",
+                                                "Menu-bar gain",
+                                                0.5,
+                                                3.0,
+                                                1.0,
+                                            );
+                                            fit_slider(
+                                                ui,
+                                                &mut self.cfg.mini,
+                                                "mini_floor",
+                                                "Menu-bar floor (0 = fill up, 1 = pinned low)",
+                                                0.0,
+                                                1.0,
+                                                0.0,
+                                            );
+                                            fit_slider(
+                                                ui,
+                                                &mut self.cfg.full,
+                                                "full_detail",
+                                                "Full-screen detail",
+                                                0.0,
+                                                1.0,
+                                                1.0,
+                                            );
+                                        }
+                                        VisualKind::Circular => {
+                                            ui.weak(
+                                                egui::RichText::new(
+                                                    "Circular/disk visual: shines on the full screen; \
+                                                     on the tiny menu bar it's hard to read, so keep it \
+                                                     simple there.",
+                                                )
+                                                .small(),
+                                            );
+                                            fit_slider(
+                                                ui,
+                                                &mut self.cfg.full,
+                                                "full_quality",
+                                                "Full-screen quality",
+                                                0.5,
+                                                2.0,
+                                                1.5,
+                                            );
+                                            fit_slider(
+                                                ui,
+                                                &mut self.cfg.mini,
+                                                "mini_simplify",
+                                                "Menu-bar simplify",
+                                                0.0,
+                                                1.0,
+                                                1.0,
+                                            );
+                                        }
+                                        VisualKind::Other => {
+                                            ui.weak(
+                                                egui::RichText::new(
+                                                    "No special per-display tweaks for this visual.",
+                                                )
+                                                .small(),
+                                            );
                                         }
                                     }
 
-                                    ui.add_space(8.0);
+                                    // Audio + colours (shared, not per-mode).
+                                    ui.add_space(10.0);
                                     ui.separator();
-                                    ui.label(egui::RichText::new("Audio (this mode)").strong());
-                                    // Capture the shared default before borrowing
-                                    // self.cfg mutably for the mode section.
-                                    let audio_sens = self.cfg.audio.sensitivity;
-                                    let m = self.cfg.mode_mut(self.target);
-                                    // Inherit/override toggles for shared audio.
-                                    let inherit_sens = m.sensitivity < 0.0;
-                                    let mut inherit_sens_mut = inherit_sens;
-                                    if ui
-                                        .checkbox(&mut inherit_sens_mut, "Sensitivity (inherit)")
-                                        .changed()
-                                    {
-                                        m.sensitivity = if inherit_sens_mut {
-                                            crate::config::INHERIT
-                                        } else {
-                                            audio_sens
-                                        };
-                                    }
-                                    if !inherit_sens_mut {
-                                        ui.add(
-                                            egui::Slider::new(&mut m.sensitivity, 0.1..=4.0)
-                                                .text("sensitivity"),
-                                        );
-                                    }
+                                    ui.label(egui::RichText::new("Audio").strong());
                                     ui.add(
-                                        egui::Slider::new(&mut m.fps, 0..=120)
-                                            .text("fps cap (0 = vsync)"),
+                                        egui::Slider::new(
+                                            &mut self.cfg.audio.sensitivity,
+                                            0.1..=4.0,
+                                        )
+                                        .text("sensitivity"),
+                                    );
+                                    ui.add(
+                                        egui::Slider::new(
+                                            &mut self.cfg.audio.smoothing,
+                                            0.0..=1.0,
+                                        )
+                                        .text("smoothing"),
+                                    );
+                                    ui.add(
+                                        egui::Slider::new(&mut self.cfg.audio.bands, 8..=64)
+                                            .text("bands"),
                                     );
 
                                     ui.add_space(8.0);
-                                    ui.separator();
                                     ui.label(egui::RichText::new("Colours").strong());
-                                    let mut auto = self.cfg.palette.source == PaletteSource::Auto;
+                                    let mut auto =
+                                        self.cfg.palette.source == PaletteSource::Auto;
                                     if ui
                                         .checkbox(&mut auto, "Follow Omarchy theme")
                                         .on_hover_text(
@@ -385,16 +428,50 @@ impl eframe::App for SettingsApp {
                                         }
                                         ui.weak("background (alpha = transparency)");
                                     }
-                                }
-                            }
-                        });
+                                });
+                        }
+                    }
                 });
             });
         });
 
+        // status line under preview is handled via footer tooltip space; show
+        // unsaved / status briefly.
+        if self.dirty() {
+            ctx.send_viewport_cmd(egui::ViewportCommand::Title(
+                "omaviz settings • unsaved".into(),
+            ));
+        } else if !self.status.is_empty() {
+            ctx.send_viewport_cmd(egui::ViewportCommand::Title(
+                format!("omaviz settings • {}", self.status),
+            ));
+        } else {
+            ctx.send_viewport_cmd(egui::ViewportCommand::Title("omaviz settings".into()));
+        }
+
         // Live preview needs continuous repaint.
         ctx.request_repaint_after(std::time::Duration::from_millis(16));
     }
+}
+
+/// A per-display fit knob stored in a ModeConfig's `extra` table.
+fn fit_slider(
+    ui: &mut egui::Ui,
+    m: &mut crate::config::ModeConfig,
+    key: &str,
+    label: &str,
+    min: f32,
+    max: f32,
+    default: f32,
+) {
+    let mut val = *m.extra.get(key).unwrap_or(&default);
+    if ui
+        .add(egui::Slider::new(&mut val, min..=max).text(label))
+        .changed()
+    {
+        m.extra.insert(key.to_string(), val);
+    }
+    ui.add_space(2.0);
 }
 
 pub fn run(cfg: Config) -> Result<()> {
@@ -409,10 +486,9 @@ pub fn run(cfg: Config) -> Result<()> {
 
     let opts = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
-            .with_inner_size([760.0, 720.0])
-            .with_min_inner_size([620.0, 560.0])
+            .with_inner_size([820.0, 660.0])
+            .with_min_inner_size([640.0, 520.0])
             .with_title("omaviz settings")
-            // Wayland app_id — required for compositor windowrules to match.
             .with_app_id("omaviz"),
         ..Default::default()
     };

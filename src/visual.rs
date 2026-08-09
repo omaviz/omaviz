@@ -141,6 +141,34 @@ pub fn find(name: &str) -> Option<Visual> {
     discover().into_iter().find(|v| v.name == name)
 }
 
+/// Rough classification used by the settings panel to surface the right
+/// per-display *fit* knobs. Bar-style visuals need help on the tiny menu bar
+/// (fill the small height); circular/disk visuals want room, so they shine on
+/// full screen. This is heuristic — based on the visual name — so dropping in a
+/// new shader just works without code changes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum VisualKind {
+    Bars,
+    Circular,
+    Other,
+}
+
+pub fn visual_kind(name: &str) -> VisualKind {
+    let n = name.to_ascii_lowercase();
+    if n.contains("bar") || n.contains("fire") || n.contains("wave") || n.contains("pulse") {
+        VisualKind::Bars
+    } else if n.contains("disk")
+        || n.contains("ring")
+        || n.contains("circ")
+        || n.contains("spectro")
+        || n.contains("sphere")
+    {
+        VisualKind::Circular
+    } else {
+        VisualKind::Other
+    }
+}
+
 /// Full shader source: shared prelude + the visual's own fragment stage.
 pub fn shader_source(v: &Visual) -> Result<String> {
     let dir = visuals_dir();
