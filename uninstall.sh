@@ -68,6 +68,16 @@ pkill -f "omaviz full"     2>/dev/null || true
 pkill -f "omaviz settings" 2>/dev/null || true
 pkill -f "omaviz mini"     2>/dev/null || true
 
+step "removing runtime files (locks, socket, mode)"
+RT="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"
+# Whole runtime dir (socket, mode file, etc.).
+rm -rf "$RT/omaviz" 2>/dev/null || true
+# Stray lock files that may sit at the runtime root.
+rm -f "$RT"/omaviz-*.lock 2>/dev/null || true
+rm -f "$RT/omaviz.sock" 2>/dev/null || true
+rm -f "$RT/omaviz.mode" 2>/dev/null || true
+say "removed runtime state under $RT"
+
 step "removing systemd unit"
 rm -f "$UNIT_DIR/omaviz.service"
 systemctl --user daemon-reload 2>/dev/null || true
