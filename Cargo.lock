@@ -2003,6 +2003,7 @@ dependencies = [
  "clap",
  "eframe",
  "egui",
+ "libc",
  "pipewire",
  "pollster",
  "realfft",

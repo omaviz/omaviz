@@ -322,14 +322,14 @@ impl eframe::App for SettingsApp {
                                     let audio_sens = self.cfg.audio.sensitivity;
                                     let m = self.cfg.mode_mut(self.target);
                                     // Inherit/override toggles for shared audio.
-                                    let inherit_sens = m.sensitivity.is_nan();
+                                    let inherit_sens = m.sensitivity < 0.0;
                                     let mut inherit_sens_mut = inherit_sens;
                                     if ui
                                         .checkbox(&mut inherit_sens_mut, "Sensitivity (inherit)")
                                         .changed()
                                     {
                                         m.sensitivity = if inherit_sens_mut {
-                                            f32::NAN
+                                            crate::config::INHERIT
                                         } else {
                                             audio_sens
                                         };

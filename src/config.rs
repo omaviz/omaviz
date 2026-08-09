@@ -48,7 +48,10 @@ pub struct ModeConfig {
     pub visual: String,
     pub fps: u32,
     /// Mode-specific overrides of the shared `[audio]` defaults. `None` means
-    /// "inherit". `NaN` is used as the "unset" sentinel because `f32` has one.
+    /// "inherit". `-1.0` is used as the "unset" sentinel (a real sensitivity is
+    /// always >= 0, so -1 can never collide; NaN is avoided because the TOML
+    /// encoder serialises it as `0.0`, which would be read back as a real,
+    /// muting value).
     #[serde(default)]
     pub sensitivity: f32,
     #[serde(default)]
@@ -60,8 +63,9 @@ pub struct ModeConfig {
     pub extra: BTreeMap<String, f32>,
 }
 
-/// Sentinel for "inherit the shared default".
-pub const INHERIT: f32 = f32::NAN;
+/// Sentinel for "inherit the shared default". `-1.0` (impossible for a real
+/// sensitivity/smoothing, which are >= 0).
+pub const INHERIT: f32 = -1.0;
 
 impl Default for ModeConfig {
     fn default() -> Self {
@@ -196,7 +200,7 @@ impl Config {
     /// Effective sensitivity for a mode: its override, else the shared default.
     pub fn sensitivity(&self, mode: Mode) -> f32 {
         let m = self.mode(mode);
-        if m.sensitivity.is_nan() {
+        if m.sensitivity < 0.0 {
             self.audio.sensitivity
         } else {
             m.sensitivity
@@ -206,7 +210,7 @@ impl Config {
     /// Effective smoothing for a mode.
     pub fn smoothing(&self, mode: Mode) -> f32 {
         let m = self.mode(mode);
-        if m.smoothing.is_nan() {
+        if m.smoothing < 0.0 {
             self.audio.smoothing
         } else {
             m.smoothing

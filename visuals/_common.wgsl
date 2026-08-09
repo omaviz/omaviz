@@ -39,6 +39,12 @@ fn palette(t: f32) -> vec3<f32> {
     return mix(U.low.rgb, U.high.rgb, clamp(t, 0.0, 1.0));
 }
 
+// Number of spectrum bands (the WGSL `array<f32>` has no .len(), so the host
+// passes it in U.params.w). Kept as a helper so visuals can call n_bands().
+fn n_bands() -> u32 {
+    return max(u32(U.params.w), 1u);
+}
+
 // Band value at normalised x, with linear interpolation between bins.
 fn band_at(x: f32) -> f32 {
     let n = U.params.w;
