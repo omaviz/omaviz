@@ -97,7 +97,11 @@ impl Server {
 
     pub fn accept_pending(&mut self) {
         while let Ok((stream, _)) = self.listener.accept() {
-            let _ = stream.set_nonblocking(true);
+            // Blocking write with a short timeout: a whole frame is always
+            // written atomically (write_all on a blocking socket never returns
+            // "Ok with partial bytes"). A stuck/dead client simply times out and
+            // is dropped by broadcast(); we never leave a stream half-written.
+            let _ = stream.set_write_timeout(Some(std::time::Duration::from_millis(100)));
             self.clients.push(stream);
         }
     }
@@ -110,7 +114,8 @@ impl Server {
         let buf = &self.buf;
         self.clients.retain_mut(|c| match c.write_all(buf) {
             Ok(()) => true,
-            Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => true,
+            // Any write error (timeout, broken pipe, …) means the client can't
+            // keep up — drop it. Never treat transient errors as success.
             Err(_) => false,
         });
     }

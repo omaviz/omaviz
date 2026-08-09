@@ -66,6 +66,11 @@ pub fn run(mut cfg: Config, width: usize) -> Result<()> {
     let mut out = out.lock();
     let mut last_text = String::new();
     let mut last_class = String::new();
+    let mut last_tooltip = String::new();
+    // Whether we've ever received a real frame. Until then the module is
+    // genuinely "waiting for daemon"; once we have data, silent/active states
+    // apply even if the latest frame is empty.
+    let mut ever_received = false;
 
     let fps = cfg.mini.fps.clamp(1, 60);
     let period = Duration::from_secs_f32(1.0 / fps as f32);
@@ -79,6 +84,9 @@ pub fn run(mut cfg: Config, width: usize) -> Result<()> {
 
         let show = mode::get().shows_mini();
         let frame = shared.lock().unwrap().clone();
+        if !frame.bands.is_empty() {
+            ever_received = true;
+        }
 
         // No daemon yet counts as idle, not as "active but blank".
         let idle = frame.silent || frame.bands.is_empty();
@@ -101,20 +109,23 @@ pub fn run(mut cfg: Config, width: usize) -> Result<()> {
         };
 
         // Only emit when something actually changed — waybar re-lays-out on
-        // every line, so this matters for idle cost.
-        if text != last_text || class != last_class {
-            let tooltip = if !show {
-                "omaviz — visualization off (right-click to re-enable)".to_string()
-            } else if frame.bands.is_empty() {
-                "omaviz — waiting for daemon".to_string()
-            } else {
-                format!(
-                    "omaviz — {} · energy {:.2}{}",
-                    cfg.mini.visual,
-                    frame.energy,
-                    if frame.silent { " (silent)" } else { "" }
-                )
-            };
+        // every line, so this matters for idle cost. The tooltip key must be
+        // part of the change test: "waiting for daemon" (never received a frame)
+        // transitions to "silent"/"active" even when the visible glyph string
+        // and class are unchanged, so we also track the received-state flip.
+        let tooltip = if !show {
+            "omaviz — visualization off (right-click to re-enable)".to_string()
+        } else if !ever_received {
+            "omaviz — waiting for daemon".to_string()
+        } else {
+            format!(
+                "omaviz — {} · energy {:.2}{}",
+                cfg.mini.visual,
+                frame.energy,
+                if frame.silent { " (silent)" } else { "" }
+            )
+        };
+        if text != last_text || class != last_class || tooltip != last_tooltip {
             writeln!(
                 out,
                 "{{\"text\":\"{}\",\"tooltip\":\"{}\",\"class\":\"{}\"}}",
@@ -125,6 +136,7 @@ pub fn run(mut cfg: Config, width: usize) -> Result<()> {
             out.flush()?;
             last_text = text;
             last_class = class.to_string();
+            last_tooltip = tooltip;
         }
 
         next += period;
