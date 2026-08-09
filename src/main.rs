@@ -1,6 +1,7 @@
 mod capture;
 mod client;
 mod config;
+mod context;
 mod dsp;
 mod instance;
 mod ipc;
@@ -228,16 +229,9 @@ fn main() -> Result<()> {
                     println!("{actions}");
                     Ok(())
                 }
-                // No --out: pop the interactive menu (waybar right-click) and
-                // dispatch the chosen action.
+                // No --out: open the egui context window (waybar right-click).
                 None => {
-                    if let Some(cmd) = menu::pop() {
-                        // Run the chosen omaviz subcommand.
-                        let _ = std::process::Command::new("sh")
-                            .arg("-c")
-                            .arg(&cmd)
-                            .spawn();
-                    }
+                    context::run(cfg)?;
                     Ok(())
                 }
             }

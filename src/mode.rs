@@ -36,14 +36,16 @@ impl Mode {
         matches!(self, Mode::Desktop)
     }
 
-    /// Whether the waybar module should render live bars (mini active).
-    pub fn shows_mini(self) -> bool {
-        matches!(self, Mode::Mini)
+    /// Whether the desktop window is currently the active display (so the mini
+    /// module should render *dimmed* rather than live bars).
+    pub fn desktop_active(self) -> bool {
+        matches!(self, Mode::Desktop)
     }
 
-    /// Whether the waybar module should render icon-only (desktop open).
-    pub fn shows_icon(self) -> bool {
-        matches!(self, Mode::Desktop)
+    /// Whether the module should render dimmed (no live visualization): either
+    /// the desktop window is showing it, or we're paused (Off).
+    pub fn dimmed(self) -> bool {
+        matches!(self, Mode::Desktop | Mode::Off)
     }
 }
 
@@ -136,6 +138,11 @@ fn write_mode(m: Mode) {
 }
 
 /// Apply a mode: write it, and start/stop the desktop window accordingly.
+///
+/// NOTE: this does NOT reload waybar. The mini client polls the mode file
+/// every frame, so bars update live (dimmed when the desktop window is open,
+/// live when closed) without a waybar config reload — avoiding the visual
+/// "jump" a reload causes.
 pub fn apply(m: Mode) {
     // Selecting any mode clears the paused + exited flags.
     set_paused(false);
@@ -149,20 +156,16 @@ pub fn apply(m: Mode) {
             // Pause audio capture but keep daemon + mini module (dimmed).
             set_paused(true);
             stop_desktop();
-            // Refresh the waybar module so it shows the dimmed/off state.
-            refresh_waybar();
         }
         Mode::Mini => {
             if was_desktop {
                 stop_desktop();
             }
-            refresh_waybar();
         }
         Mode::Desktop => {
             if !was_desktop {
                 spawn_desktop();
             }
-            refresh_waybar();
         }
     }
 }
@@ -200,7 +203,7 @@ pub fn window_closed() {
     // Only fall back if we're currently in Desktop; otherwise leave as-is.
     if current().shows_desktop() && !is_paused() {
         write_mode(Mode::Mini);
-        refresh_waybar();
+        // No waybar reload needed: the mini client polls this file each frame.
     }
 }
 

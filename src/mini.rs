@@ -32,13 +32,7 @@ pub fn run(cfg: Config, width: usize) -> anyhow::Result<()> {
     let mut ever_received = false;
 
     loop {
-        let show = mode::current().shows_mini();
-        let icon = mode::current().shows_icon();
-        let frame = mode::decorate(&shared.lock().unwrap().clone());
-
-        if !frame.bands.is_empty() {
-            ever_received = true;
-        }
+        let m = mode::current();
         let exited = mode::is_exited();
 
         // Exited (Quit): emit nothing so the module disappears from the bar.
@@ -54,33 +48,44 @@ pub fn run(cfg: Config, width: usize) -> anyhow::Result<()> {
             continue;
         }
 
-        // Desktop window open: icon only.
-        if icon {
-            let text = "󰄃"; // pulsing pulse icon (nf-mdi-pulse)
-            let class = "icon";
-            let tooltip = "omaviz — click to close window";
-            if text != last_text || class != last_class || tooltip != last_tooltip {
-                let line = format!(
-                    "{{\"text\":\"{}\",\"tooltip\":\"{}\",\"class\":\"{}\"}}",
-                    text, tooltip, class
-                );
+        // Desktop window open OR paused (Off): render dimmed bars. No live
+        // visualization here — the desktop window is showing it (or we're paused).
+        // This keeps the module always visible and avoids any waybar reload.
+        if m.dimmed() {
+            let tooltip = if m.desktop_active() {
+                "omaviz — desktop window open (click to close)"
+            } else {
+                "omaviz — paused (right-click to resume)"
+            };
+            let line = format!(
+                "{{\"text\":\"{}\",\"tooltip\":\"{}\",\"class\":\"off\"}}",
+                "▁".repeat(width),
+                tooltip
+            );
+            if line != last_text {
                 let mut w = out.lock().unwrap();
                 let _ = writeln!(w, "{line}");
                 let _ = w.flush();
-                last_text = text.to_string();
-                last_class = class.to_string();
+                last_text = line.clone();
+                last_class = "off".to_string();
                 last_tooltip = tooltip.to_string();
             }
-            std::thread::sleep(std::time::Duration::from_millis(200));
+            std::thread::sleep(std::time::Duration::from_millis(250));
             continue;
         }
 
-        // Mini active (or paused): render bars.
+        // Mini active: render live bars.
+        let frame = mode::decorate(&shared.lock().unwrap().clone());
+        if !frame.bands.is_empty() {
+            ever_received = true;
+        }
         let idle = !ever_received || frame.bands.is_empty() || frame.silent;
-        let (text, class, tooltip): (String, &str, String) = if !show {
-            ("▁".repeat(width), "off", "omaviz — right-click to resume".to_string())
-        } else if idle {
-            ("▁".repeat(width), "silent", "omaviz — silent (no audio)".to_string())
+        let (text, class, tooltip): (String, &str, String) = if idle {
+            (
+                "▁".repeat(width),
+                "silent",
+                "omaviz — silent (no audio)".to_string(),
+            )
         } else {
             let cfg_for = cfg.mode(crate::config::Mode::Mini);
             let sens = cfg_for.sensitivity.clamp(0.1, 4.0);
