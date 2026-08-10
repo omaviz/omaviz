@@ -217,27 +217,23 @@ fn main() -> Result<()> {
         }
 
         Cmd::Menu { out } => {
-            let (xml, actions) = menu::generate(&mode::current().to_string());
             match out {
                 // Regenerate the GtkBuilder XML menu file (used by install/start
-                // and by the waybar module's `menu-file`).
+                // and exposed as a debug artifact).
                 Some(path) => {
                     if let Some(parent) = path.parent() {
                         std::fs::create_dir_all(parent)?;
                     }
+                    let (xml, actions) = menu::generate(&mode::current().to_string());
                     std::fs::write(&path, xml)?;
                     println!("{}", path.display());
                     println!("{actions}");
                     Ok(())
                 }
-                // Right-click with no --out: the waybar module pops the menu via
-                // its `menu-file` key, so there's nothing to do here other than
-                // ensure the XML exists. Emit the actions for debugging.
-                None => {
-                    eprintln!("omaviz: menu is rendered by waybar via menu-file");
-                    println!("{actions}");
-                    Ok(())
-                }
+                // Right-click with no --out: pop the interactive menu (walker
+                // --dmenu with icons + preselection) and dispatch the chosen
+                // action. This is the user-facing right-click path.
+                None => menu::pop(&mode::current().to_string()),
             }
         }
 

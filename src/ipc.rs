@@ -70,6 +70,61 @@ impl Frame {
     }
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn frame_encode_decode_roundtrip() {
+        let f = Frame {
+            bands: vec![0.1, 0.5, 0.9, 0.0, 0.42],
+            energy: 0.37,
+            beat: 0.88,
+            silent: false,
+        };
+        let mut buf = Vec::new();
+        f.encode(&mut buf);
+        let mut cursor = std::io::Cursor::new(buf);
+        let back = Frame::read_from(&mut cursor).unwrap();
+        assert_eq!(back.bands, f.bands);
+        assert_eq!(back.energy, f.energy);
+        assert_eq!(back.beat, f.beat);
+        assert!(!back.silent);
+    }
+
+    #[test]
+    fn silent_flag_roundtrips() {
+        let f = Frame {
+            bands: vec![0.0; 4],
+            energy: 0.0,
+            beat: 0.0,
+            silent: true,
+        };
+        let mut buf = Vec::new();
+        f.encode(&mut buf);
+        let back = Frame::read_from(&mut std::io::Cursor::new(buf)).unwrap();
+        assert!(back.silent);
+    }
+
+    #[test]
+    fn bad_magic_is_rejected() {
+        let mut buf = vec![0u8; 16];
+        // Corrupt the magic.
+        buf[0] = 0xFF;
+        let r = Frame::read_from(&mut std::io::Cursor::new(buf));
+        assert!(r.is_err());
+    }
+
+    #[test]
+    fn empty_bands_roundtrips() {
+        let f = Frame::default();
+        let mut buf = Vec::new();
+        f.encode(&mut buf);
+        let back = Frame::read_from(&mut std::io::Cursor::new(buf)).unwrap();
+        assert!(back.bands.is_empty());
+    }
+}
+
 /// Non-blocking broadcast server. Drops slow/dead clients silently.
 pub struct Server {
     listener: UnixListener,

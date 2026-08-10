@@ -361,3 +361,91 @@ impl Default for Watcher {
         Self::new()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn default_config_has_all_three_modes() {
+        let c = Config::default();
+        assert_eq!(c.mode(Mode::Mini).visual, "bars");
+        assert_eq!(c.mode(Mode::Desktop).visual, "bars");
+        assert_eq!(c.mode(Mode::Full).visual, "wave");
+        assert!(c.audio.bands >= 16, "default band count should be reasonable");
+    }
+
+    #[test]
+    fn mode_mut_and_mode_return_same_config() {
+        let mut c = Config::default();
+        c.mode_mut(Mode::Mini).sensitivity = 2.0;
+        assert_eq!(c.mode(Mode::Mini).sensitivity, 2.0);
+        assert_ne!(c.mode(Mode::Desktop).sensitivity, 2.0);
+    }
+
+    #[test]
+    fn sensitivity_inherits_audio_default_when_negative() {
+        let mut c = Config::default();
+        c.mode_mut(Mode::Mini).sensitivity = -1.0;
+        c.audio.sensitivity = 1.5;
+        assert_eq!(c.sensitivity(Mode::Mini), 1.5);
+        c.mode_mut(Mode::Full).sensitivity = 0.5;
+        assert_eq!(c.sensitivity(Mode::Full), 0.5);
+    }
+
+    #[test]
+    fn bands_inherits_audio_when_zero() {
+        let mut c = Config::default();
+        c.mode_mut(Mode::Desktop).bands = 0;
+        c.audio.bands = 24;
+        assert_eq!(c.bands(Mode::Desktop), 24);
+        c.mode_mut(Mode::Desktop).bands = 8;
+        assert_eq!(c.bands(Mode::Desktop), 8);
+    }
+
+    #[test]
+    fn set_visual_all_updates_every_mode() {
+        let mut c = Config::default();
+        c.set_visual_all("fire");
+        assert_eq!(c.mode(Mode::Mini).visual, "fire");
+        assert_eq!(c.mode(Mode::Desktop).visual, "fire");
+        assert_eq!(c.mode(Mode::Full).visual, "fire");
+    }
+
+    #[test]
+    fn visual_param_uses_override_else_default_and_clamps() {
+        let mut c = Config::default();
+        let p = crate::visual::Param {
+            name: "gain".into(),
+            label: "Gain".into(),
+            default: 1.0,
+            min: 0.0,
+            max: 2.0,
+            boolean: false,
+            help: String::new(),
+        };
+        assert_eq!(c.visual_param("bars", &p), 1.0);
+        c.set_visual_param("bars", "gain", 1.5);
+        assert_eq!(c.visual_param("bars", &p), 1.5);
+        c.set_visual_param("bars", "gain", 9.0);
+        assert_eq!(c.visual_param("bars", &p), 2.0);
+    }
+
+    #[test]
+    fn reset_visual_clears_overrides() {
+        let mut c = Config::default();
+        c.set_visual_param("bars", "gain", 1.8);
+        assert!(c.visuals.contains_key("bars"));
+        c.reset_visual("bars");
+        assert!(!c.visuals.contains_key("bars"));
+    }
+
+    #[test]
+    fn per_mode_extra_defaults_exist_for_mini_fit() {
+        let c = Config::default();
+        assert!(c.mode(Mode::Mini).extra.contains_key("mini_gain"));
+        assert!(c.mode(Mode::Mini).extra.contains_key("mini_floor"));
+        assert!(c.mode(Mode::Full).extra.contains_key("full_detail"));
+        assert!(c.mode(Mode::Full).extra.contains_key("full_quality"));
+    }
+}

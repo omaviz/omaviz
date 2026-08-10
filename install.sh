@@ -179,10 +179,7 @@ if start != -1:
                 obj_start -= 1
             s = s[:obj_start] + s[end:]
 
-# --- add a fresh module (absolute path; right-click pops the GtkBuilder XML menu) ---
-# NOTE: each line below ends with a REAL newline ('\n'), never '\\n' — writing a
-# literal backslash-n into the JSON is what corrupted the waybar config before.
-# (jsonc tolerates a trailing comma; we keep it simple and valid either way.)
+# --- add a fresh module (absolute path; right-click pops an interactive menu) ---
 module = (
     '  "custom/omaviz": {\n'
     '    "exec": "%s mini --width 18",\n'
@@ -191,14 +188,12 @@ module = (
     '    "tooltip": true,\n'
     '    "escape": false,\n'
     '    "on-click": "%s toggle",\n'
-    '    "on-click-right": "%s menu --out %s",\n'
-    '    "menu": "on-click-right",\n'
-    '    "menu-file": "%s",\n'
+    '    "on-click-right": "%s menu",\n'
     '    "exec-on-event": false,\n'
     '    "on-scroll-up": "%s sensitivity +0.1",\n'
     '    "on-scroll-down": "%s sensitivity -0.1"\n'
     '  },\n'
-) % (bin_exec, bin_exec, bin_exec, menu_xml, menu_xml, bin_exec, bin_exec)
+) % (bin_exec, bin_exec, bin_exec, bin_exec, bin_exec)
 
 ref_added = False
 for key in ("modules-right", "modules-center", "modules-left"):

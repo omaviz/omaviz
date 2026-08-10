@@ -333,20 +333,16 @@ pub fn add_waybar_module() {
             std::path::PathBuf::from(std::env::var("HOME").unwrap_or_default()).join(".config")
         });
     let wb_cfg = cfg_home.join("waybar/config.jsonc");
-    let wb_dir = cfg_home.join("waybar");
     if !wb_cfg.exists() {
         return;
     }
     let bin = omaviz_bin();
-    // Regenerate the menu XML (waybar uses menu-file, not inline menu-actions).
-    let menu_xml = wb_dir.join("omaviz-menu.xml");
-    let _ = std::process::Command::new(&bin)
-        .args(["menu", "--out", menu_xml.to_str().unwrap()])
-        .status();
-
-    let menu_xml = menu_xml.display().to_string();
+    // Right-click pops the interactive popup (`omaviz menu` -> walker --dmenu).
+    // We deliberately do NOT use waybar's `menu-file` (GtkBuilder XML): in
+    // waybar 0.15 that path triggers a GTK assertion crash. The popup is the
+    // reliable approach.
     let module = format!(
-        "  \"custom/omaviz\": {{\n    \"exec\": \"{bin} mini --width 18\",\n    \"return-type\": \"json\",\n    \"format\": \"{{}}\",\n    \"tooltip\": true,\n    \"escape\": false,\n    \"on-click\": \"{bin} toggle\",\n    \"on-click-right\": \"{bin} menu --out {menu_xml}\",\n    \"exec-on-event\": false,\n    \"on-scroll-up\": \"{bin} sensitivity +0.1\",\n    \"on-scroll-down\": \"{bin} sensitivity -0.1\",\n    \"menu\": \"on-click-right\",\n    \"menu-file\": \"{menu_xml}\"\n  }},\n"
+        "  \"custom/omaviz\": {{\n    \"exec\": \"{bin} mini --width 18\",\n    \"return-type\": \"json\",\n    \"format\": \"{{}}\",\n    \"tooltip\": true,\n    \"escape\": false,\n    \"on-click\": \"{bin} toggle\",\n    \"on-click-right\": \"{bin} menu\",\n    \"exec-on-event\": false,\n    \"on-scroll-up\": \"{bin} sensitivity +0.1\",\n    \"on-scroll-down\": \"{bin} sensitivity -0.1\"\n  }},\n"
     );
 
     let Ok(s) = std::fs::read_to_string(&wb_cfg) else { return };

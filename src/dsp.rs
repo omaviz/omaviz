@@ -126,3 +126,53 @@ impl Analyzer {
         self.energy < 0.02
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn new_allocates_requested_band_count() {
+        let a = Analyzer::new(48_000.0, 24);
+        assert_eq!(a.bands.len(), 24);
+        assert_eq!(a.bands, vec![0.0; 24]);
+        assert_eq!(a.sample_rate(), 48_000.0);
+    }
+
+    #[test]
+    fn silence_produces_zero_energy() {
+        let mut a = Analyzer::new(48_000.0, 16);
+        a.push(&vec![0.0; FFT_SIZE]);
+        a.analyze();
+        assert_eq!(a.energy, 0.0);
+        assert!(a.is_silent(), "all-zero input must be silent");
+    }
+
+    #[test]
+    fn loud_tone_produces_nonzero_energy_and_is_not_silent() {
+        let mut a = Analyzer::new(48_000.0, 16);
+        // 1 kHz sine at full amplitude.
+        let sr = 48_000.0;
+        let samples: Vec<f32> = (0..FFT_SIZE)
+            .map(|i| (2.0 * std::f32::consts::PI * 1000.0 * i as f32 / sr).sin() * 0.5)
+            .collect();
+        a.push(&samples);
+        a.analyze();
+        assert!(a.energy > 0.0, "a tone should produce energy");
+        assert!(!a.is_silent(), "a loud tone is not silent");
+    }
+
+    #[test]
+    fn push_handles_short_buffers_with_ring() {
+        let mut a = Analyzer::new(48_000.0, 8);
+        // Two short pushes that together cover less than FFT_SIZE.
+        let chunk: Vec<f32> = (0..512).map(|i| (i as f32 * 0.01).sin()).collect();
+        a.push(&chunk);
+        a.push(&chunk);
+        a.analyze();
+        // Should not panic and bands should remain finite.
+        for b in &a.bands {
+            assert!(b.is_finite());
+        }
+    }
+}

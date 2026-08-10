@@ -133,7 +133,7 @@ pub fn discover() -> Vec<Visual> {
         });
     }
 
-    out.sort_by(|a, b| a.name.cmp(&b.name));
+    out.sort_by(|a, b| a.display_label().cmp(b.display_label()));
     out
 }
 
@@ -190,4 +190,67 @@ pub fn resolve_or_first(name: &str) -> Option<Visual> {
         eprintln!("omaviz: visual '{name}' not found, using '{}'", all[0].name);
     }
     all.into_iter().next()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn discover_returns_installed_visuals() {
+        let vs = discover();
+        assert!(!vs.is_empty(), "expected at least one shader in visuals/");
+        // Required default visuals must be present.
+        let names: Vec<&str> = vs.iter().map(|v| v.name.as_str()).collect();
+        assert!(names.iter().any(|n| *n == "bars"), "bars missing");
+        assert!(names.iter().any(|n| *n == "wave"), "wave missing");
+    }
+
+    #[test]
+    fn discover_is_sorted_by_display_label() {
+        let vs = discover();
+        let labels: Vec<&str> = vs.iter().map(|v| v.display_label()).collect();
+        let sorted = {
+            let mut s = labels.clone();
+            s.sort();
+            s
+        };
+        assert_eq!(labels, sorted, "discover() must be sorted by display label");
+    }
+
+    #[test]
+    fn find_returns_exact_match() {
+        let v = find("bars");
+        assert!(v.is_some());
+        assert_eq!(v.unwrap().name, "bars");
+        assert!(find("does-not-exist").is_none());
+    }
+
+    #[test]
+    fn resolve_or_first_falls_back() {
+        assert!(resolve_or_first("nope").is_some());
+        assert_eq!(resolve_or_first("bars").unwrap().name, "bars");
+    }
+
+    #[test]
+    fn visual_kind_classifies_names() {
+        assert_eq!(visual_kind("bars"), VisualKind::Bars);
+        assert_eq!(visual_kind("fire"), VisualKind::Bars);
+        assert_eq!(visual_kind("disk-spectro"), VisualKind::Circular);
+        assert_eq!(visual_kind("ring"), VisualKind::Circular);
+        assert_eq!(visual_kind("totally-unknown"), VisualKind::Other);
+    }
+
+    #[test]
+    fn display_label_falls_back_to_name() {
+        let v = Visual {
+            name: "myviz".into(),
+            label: String::new(),
+            description: String::new(),
+            params: vec![],
+            extra_params: vec![],
+            path: std::path::PathBuf::from("x"),
+        };
+        assert_eq!(v.display_label(), "myviz");
+    }
 }

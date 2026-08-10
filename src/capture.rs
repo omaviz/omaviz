@@ -34,6 +34,10 @@ pub fn run(tx: Sender<AudioChunk>) -> Result<()> {
     };
     // Capture what the default sink is playing, whatever app produced it.
     props.insert(*pw::keys::STREAM_CAPTURE_SINK, "true");
+    // NOTE: we rely on session-manager autoconnect (STREAM_CAPTURE_SINK).
+    // Explicitly pinning `target.object` to the "<sink>.monitor" name linked
+    // to a suspended/idle monitor node and produced silence; autoconnect
+    // reliably delivers the sink's playback audio.
 
     let data = UserData {
         format: Default::default(),
