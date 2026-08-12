@@ -1,8 +1,8 @@
 //! CLI integration tests: drive the built binary as a subprocess (no display
 //! server needed — these subcommands are pure stdout).
-//!
 //! Run: cargo test --test cli
 
+use std::io::BufRead;
 use std::process::Command;
 use std::time::Duration;
 
@@ -34,7 +34,6 @@ fn mini_emits_valid_waybar_json() {
     // Collect up to ~1s of output.
     let start = std::time::Instant::now();
     let mut buf = String::new();
-    use std::io::{BufRead, Read};
     let mut reader = std::io::BufReader::new(child.stdout.take().unwrap());
     let mut line = String::new();
     while start.elapsed() < Duration::from_secs(1) {

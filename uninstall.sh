@@ -62,11 +62,8 @@ if systemctl --user list-unit-files 2>/dev/null | grep -q '^omaviz.service'; the
   systemctl --user disable --now omaviz.service >/dev/null 2>&1 || true
   say "stopped and disabled omaviz.service"
 fi
-pkill -f "omaviz daemon"   2>/dev/null && say "killed stray daemon"   || true
-pkill -f "omaviz desktop"  2>/dev/null || true
-pkill -f "omaviz full"     2>/dev/null || true
-pkill -f "omaviz settings" 2>/dev/null || true
-pkill -f "omaviz mini"     2>/dev/null || true
+# Use exact command line matching to avoid killing unintended processes.
+pkill -f "^omaviz (daemon|desktop|full|settings|mini)$" 2>/dev/null && say "killed stray omaviz processes" || true
 
 step "removing runtime files (locks, socket, mode)"
 RT="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"

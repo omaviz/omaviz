@@ -1,10 +1,10 @@
 mod capture;
 mod client;
 mod config;
-mod context;
 mod dsp;
 mod instance;
 mod ipc;
+mod logging;
 mod menu;
 mod mini;
 mod mode;
@@ -16,6 +16,7 @@ mod visual;
 use anyhow::Result;
 use clap::{Parser, Subcommand};
 use config::{Config, Mode};
+use logging::{init_daemon};
 use mode::Mode as AppMode;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc;
@@ -108,8 +109,10 @@ fn main() -> Result<()> {
     let cli = Cli::parse();
     DEBUG.store(cli.debug, Ordering::Relaxed);
     if cli.debug {
-        // SAFETY: setting our own process-global debug flag before spawning
-        // children. Single-threaded at this point in main().
+        // Set debug flag for child processes. Safe at this point as we're
+        // single-threaded in main() before any threads are spawned.
+        // std::env::set_var is unsafe in Rust 2024+ because it's not thread-safe,
+        // but we're in single-threaded main() before spawning any threads.
         unsafe { std::env::set_var("OMAVIZ_DEBUG", "1") };
     }
     let cfg = Config::load_or_init()?;
@@ -121,14 +124,14 @@ fn main() -> Result<()> {
             // (or removes the Off pause), so the client does not self-close.
             let cur = mode::current();
             if cur != AppMode::Desktop {
-                mode::apply(AppMode::Desktop);
+                mode::apply(AppMode::Desktop)?;
             }
             client::run(Mode::Desktop, cfg)
         }
         Cmd::Full => {
             let cur = mode::current();
             if cur != AppMode::Desktop {
-                mode::apply(AppMode::Desktop);
+                mode::apply(AppMode::Desktop)?;
             }
             client::run(Mode::Full, cfg)
         }
@@ -154,7 +157,7 @@ fn main() -> Result<()> {
                     let Some(m) = AppMode::parse(&v) else {
                         anyhow::bail!("unknown mode '{v}' (off|mini|desktop)");
                     };
-                    mode::apply(m);
+                    mode::apply(m)?;
                     println!("{}", m);
                 }
             }
@@ -162,19 +165,19 @@ fn main() -> Result<()> {
         }
 
         Cmd::Toggle => {
-            mode::toggle();
+            mode::toggle()?;
             println!("{}", mode::current());
             Ok(())
         }
 
         Cmd::Off => {
-            mode::off();
+            mode::off()?;
             println!("off");
             Ok(())
         }
 
         Cmd::Quit => {
-            mode::quit();
+            mode::quit()?;
             println!("quit");
             Ok(())
         }
@@ -188,11 +191,9 @@ fn main() -> Result<()> {
             // Ask any running desktop/full window client to close (so it emits
             // `window-closed` and falls back to Mini). Target only the window
             // clients, not the daemon or other omaviz processes.
+            // Use the instance lock files to find the PIDs more precisely.
             let _ = std::process::Command::new("pkill")
-                .args(["-f", "omaviz desktop"])
-                .status();
-            let _ = std::process::Command::new("pkill")
-                .args(["-f", "omaviz full"])
+                .args(["-f", "^omaviz (desktop|full)$"])
                 .status();
             Ok(())
         }
@@ -207,7 +208,7 @@ fn main() -> Result<()> {
                 mode::set_exited(false);
                 mode::set_paused(false);
                 if mode::current() != AppMode::Mini {
-                    mode::apply(AppMode::Mini);
+                    mode::apply(AppMode::Mini)?;
                 }
             }
             // Refresh so the module reflects state.
@@ -233,7 +234,7 @@ fn main() -> Result<()> {
                 // Right-click with no --out: pop the interactive menu (walker
                 // --dmenu with icons + preselection) and dispatch the chosen
                 // action. This is the user-facing right-click path.
-                None => menu::pop(&mode::current().to_string()),
+                None => menu::pop(&cfg.mode(crate::config::Mode::Mini).visual),
             }
         }
 
@@ -280,9 +281,9 @@ fn ensure_daemon() -> Result<()> {
         .map(|s| s.success())
         .unwrap_or(false);
     if !active {
-        let _ = std::process::Command::new("systemctl")
+        std::process::Command::new("systemctl")
             .args(["--user", "start", "omaviz.service"])
-            .status();
+            .status()?;
     }
     Ok(())
 }
@@ -298,6 +299,9 @@ fn ensure_waybar_module() -> Result<()> {
 }
 
 fn run_daemon(mut cfg: Config, debug: bool, seconds: Option<u64>) -> Result<()> {
+    // Initialize daemon-specific logging
+    init_daemon(debug);
+
     let Some(_guard) = instance::acquire(crate::instance::WindowKind::Daemon)? else {
         anyhow::bail!("omaviz daemon is already running");
     };
@@ -305,12 +309,12 @@ fn run_daemon(mut cfg: Config, debug: bool, seconds: Option<u64>) -> Result<()> 
     let (tx, rx) = mpsc::channel::<capture::AudioChunk>();
     std::thread::spawn(move || {
         if let Err(e) = capture::run(tx) {
-            eprintln!("omaviz: capture error: {e:#}");
+            tracing::error!("omaviz: capture error: {e:#}");
         }
     });
 
     let mut server = ipc::Server::bind()?;
-    eprintln!(
+    tracing::info!(
         "omaviz: daemon listening on {}",
         ipc::socket_path().display()
     );
@@ -339,19 +343,39 @@ fn run_daemon(mut cfg: Config, debug: bool, seconds: Option<u64>) -> Result<()> 
         if crate::debug() {
             let cc = server.client_count();
             if cc != last_cc {
-                eprintln!("omaviz: daemon clients = {cc}");
+                tracing::debug!("omaviz: daemon clients = {cc}");
                 last_cc = cc;
             }
         }
-        while let Ok(chunk) = rx.try_recv() {
-            // Follow the device's real rate: rebuild if the sink changes to a
-            // differently-clocked device (44.1k vs 48k), otherwise band edges
-            // would be wrong.
-            if chunk.rate > 0 && (chunk.rate as f32 - an.sample_rate()).abs() > 1.0 {
-                an = dsp::Analyzer::new(chunk.rate as f32, cfg.audio.bands.max(1));
+
+        // Use blocking recv with timeout instead of busy-wait try_recv
+        // This eliminates the CPU spin when no audio is coming in
+        match rx.recv_timeout(period) {
+            Ok(chunk) => {
+                // Follow the device's real rate: rebuild if the sink changes to a
+                // differently-clocked device (44.1k vs 48k), otherwise band edges
+                // would be wrong.
+                if chunk.rate > 0 && (chunk.rate as f32 - an.sample_rate()).abs() > 1.0 {
+                    an = dsp::Analyzer::new(chunk.rate as f32, cfg.audio.bands.max(1));
+                }
+                got_audio = true;
+                an.push(&chunk.samples);
+
+                // Drain any additional chunks that arrived while we were processing
+                while let Ok(chunk) = rx.try_recv() {
+                    if chunk.rate > 0 && (chunk.rate as f32 - an.sample_rate()).abs() > 1.0 {
+                        an = dsp::Analyzer::new(chunk.rate as f32, cfg.audio.bands.max(1));
+                    }
+                    an.push(&chunk.samples);
+                }
             }
-            got_audio = true;
-            an.push(&chunk.samples);
+            Err(mpsc::RecvTimeoutError::Timeout) => {
+                // Timeout is expected - no audio data this period
+            }
+            Err(mpsc::RecvTimeoutError::Disconnected) => {
+                tracing::warn!("Audio capture channel disconnected, exiting daemon");
+                break;
+            }
         }
 
         // Idle gating: with no clients attached and no sound, skip the FFT
@@ -364,6 +388,7 @@ fn run_daemon(mut cfg: Config, debug: bool, seconds: Option<u64>) -> Result<()> 
         }
 
         if idle_ticks > 60 {
+            // Sleep longer when idle (200ms instead of 16ms)
             std::thread::sleep(Duration::from_millis(200));
             next = Instant::now();
             if let Some(s) = seconds {
@@ -386,7 +411,7 @@ fn run_daemon(mut cfg: Config, debug: bool, seconds: Option<u64>) -> Result<()> 
 
         if debug {
             if !got_audio {
-                print!("\rwaiting for audio on default sink monitor...");
+                tracing::debug!("waiting for audio on default sink monitor...");
             } else {
                 let glyphs = [' ', '.', ':', '-', '=', '+', '*', '#', '%', '@'];
                 let bar: String = an
@@ -394,16 +419,15 @@ fn run_daemon(mut cfg: Config, debug: bool, seconds: Option<u64>) -> Result<()> 
                     .iter()
                     .map(|v| glyphs[((v * 9.0).round() as usize).min(9)])
                     .collect();
-                print!(
-                    "\r[{bar}] e={:.3} beat={:.2} clients={} {}",
+                tracing::debug!(
+                    "[{}] e={:.3} beat={:.2} clients={} {}",
+                    bar,
                     an.energy,
                     an.beat,
                     server.client_count(),
-                    if an.is_silent() { "silent " } else { "       " }
+                    if an.is_silent() { "silent" } else { "" }
                 );
             }
-            use std::io::Write;
-            let _ = std::io::stdout().flush();
         }
 
         if let Some(s) = seconds {

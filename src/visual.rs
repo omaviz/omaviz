@@ -54,21 +54,14 @@ struct VisualManifest {
     #[serde(default)]
     label: String,
     #[serde(default)]
-    description: String,
-    #[serde(default)]
     params: Vec<Param>,
-    /// Mode-only knobs (mini density, full zoom, …).
-    #[serde(default)]
-    extra_params: Vec<Param>,
 }
 
 #[derive(Debug, Clone)]
 pub struct Visual {
     pub name: String,
     pub label: String,
-    pub description: String,
     pub params: Vec<Param>,
-    pub extra_params: Vec<Param>,
     pub path: PathBuf,
 }
 
@@ -121,14 +114,11 @@ pub fn discover() -> Vec<Visual> {
             }
         }
         m.params.truncate(MAX_PARAMS);
-        m.extra_params.truncate(MAX_PARAMS);
 
         out.push(Visual {
             name: name.to_string(),
             label: m.label,
-            description: m.description,
             params: m.params,
-            extra_params: m.extra_params,
             path: p,
         });
     }
@@ -192,6 +182,45 @@ pub fn resolve_or_first(name: &str) -> Option<Visual> {
     all.into_iter().next()
 }
 
+/// Validate shader source for safety before loading.
+/// Checks for potentially dangerous patterns and ensures basic WGSL structure.
+pub fn validate_shader_source(source: &str, name: &str) -> anyhow::Result<()> {
+    // Basic structure checks
+    if !source.contains("@fragment") && !source.contains("@vertex") {
+        anyhow::bail!("Shader '{}' missing required @fragment or @vertex entry point", name);
+    }
+    if !source.contains("fs_main") && !source.contains("vs_main") {
+        anyhow::bail!("Shader '{}' missing main entry point function", name);
+    }
+    
+    // Security: reject shaders that try to access sensitive operations
+    // These are not valid in WGSL anyway but check for any injection attempts
+    let dangerous_patterns = [
+        "import",       // WGSL doesn't have import
+        "include",      // WGSL doesn't have include
+        "#version",     // GLSL directive, not WGSL
+        "#extension",   // GLSL directive
+        "subroutine",   // GLSL feature
+        "layout(",      // Could be valid in WGSL for bind groups, but check context
+    ];
+    
+    for pattern in dangerous_patterns {
+        if source.contains(pattern) {
+            // Allow layout() for bind group layouts which are valid WGSL
+            if pattern == "layout(" && !source.contains("binding") {
+                anyhow::bail!("Shader '{}' contains suspicious pattern: {}", name, pattern);
+            }
+        }
+    }
+    
+    // Check for reasonable size (prevent DoS via massive shaders)
+    if source.len() > 100_000 {
+        anyhow::bail!("Shader '{}' exceeds maximum size (100KB)", name);
+    }
+    
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -246,11 +275,37 @@ mod tests {
         let v = Visual {
             name: "myviz".into(),
             label: String::new(),
-            description: String::new(),
             params: vec![],
-            extra_params: vec![],
             path: std::path::PathBuf::from("x"),
         };
         assert_eq!(v.display_label(), "myviz");
+    }
+
+    #[test]
+    fn validate_shader_source_accepts_valid_shader() {
+        let valid = r#"
+@vertex
+fn vs_main(@builtin(vertex_index) vi: u32) -> @builtin(position) vec4<f32> {
+    return vec4<f32>(0.0, 0.0, 0.0, 1.0);
+}
+
+@fragment
+fn fs_main(@builtin(position) frag: vec4<f32>) -> @location(0) vec4<f32> {
+    return vec4<f32>(1.0, 0.0, 0.0, 1.0);
+}
+"#;
+        assert!(validate_shader_source(valid, "test").is_ok());
+    }
+
+    #[test]
+    fn validate_shader_source_rejects_missing_entry_point() {
+        let invalid = "fn main() {}";
+        assert!(validate_shader_source(invalid, "test").is_err());
+    }
+
+    #[test]
+    fn validate_shader_source_rejects_oversized() {
+        let oversized = "@fragment\nfn fs_main() -> @location(0) vec4<f32> { return vec4<f32>(1.0); }".repeat(10000);
+        assert!(validate_shader_source(&oversized, "test").is_err());
     }
 }

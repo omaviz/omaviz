@@ -15,6 +15,7 @@ use crate::visual::{self, MAX_PARAMS, Visual};
 use anyhow::{Context, Result};
 use bytemuck::{Pod, Zeroable};
 use std::sync::Arc;
+use tracing;
 
 #[repr(C)]
 #[derive(Copy, Clone, Debug, Pod, Zeroable)]
@@ -212,6 +213,9 @@ impl Renderer {
         };
 
         let src = visual::shader_source(&v)?;
+
+        // Validate shader source before compiling for security
+        visual::validate_shader_source(&src, &v.name)?;
 
         // Compile first: on a shader error keep the old pipeline running rather
         // than leaving the window blank.
@@ -422,10 +426,20 @@ impl Renderer {
         let surface_texture = match self.surface.get_current_texture() {
             Ok(t) => t,
             Err(wgpu::SurfaceError::Outdated | wgpu::SurfaceError::Lost) => {
+                tracing::warn!("Surface outdated/lost, reconfiguring...");
                 self.surface.configure(&self.device, &self.surface_config);
                 return Ok(());
             }
-            Err(e) => return Err(e.into()),
+            Err(wgpu::SurfaceError::OutOfMemory) => {
+                tracing::error!("GPU out of memory, attempting recovery");
+                // Try to recover by waiting a bit
+                std::thread::sleep(std::time::Duration::from_millis(100));
+                return Ok(());
+            }
+            Err(e) => {
+                tracing::error!("Surface error: {}", e);
+                return Err(e.into());
+            }
         };
 
         let view = surface_texture

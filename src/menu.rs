@@ -7,21 +7,26 @@ use crate::visual;
 /// have `~/.local/bin` on PATH, so every command the menu runs must be absolute
 /// (the module's `exec` already uses an absolute path for the same reason).
 fn omaviz_bin() -> String {
-    // Allow tests / the daemon to pin the binary path. Otherwise use the
-    // running binary's own path (works for installed + dev builds), and only
-    // fall back to the known install path as a last resort. waybar's
-    // environment does NOT have `~/.local/bin` on PATH, so every command the
-    // menu runs must be absolute (the module's `exec` already uses an absolute
-    // path for the same reason).
-    if let Ok(p) = std::env::var("OMAVIZ_BIN") {
-        if !p.is_empty() {
-            return p;
+    // Prefer the installed binary on PATH (works via `which`).
+    if let Ok(out) = std::process::Command::new("which").arg("omaviz").output() {
+        if out.status.success() {
+            let s = String::from_utf8_lossy(&out.stdout).trim().to_string();
+            if !s.is_empty() {
+                return s;
+            }
         }
     }
+    // Fall back to the running binary's own path (works for installed + dev builds).
     std::env::current_exe()
         .ok()
         .and_then(|p| p.to_str().map(|s| s.to_string()))
-        .unwrap_or_else(|| "/home/kishan/.local/bin/omaviz".to_string())
+        // Last resort: try common install location via HOME.
+        .or_else(|| {
+            let home = std::env::var("HOME").ok()?;
+            Some(format!("{home}/.local/bin/omaviz"))
+        })
+        // Ultimate fallback: bare command (will fail if not on PATH).
+        .unwrap_or_else(|| "omaviz".to_string())
 }
 
 /// Build the menu. `current` is the active mode string (unused for mode rows
@@ -89,34 +94,26 @@ pub fn pop(current: &str) -> anyhow::Result<()> {
     use std::process::{Command, Stdio};
     let bin = omaviz_bin();
     let visuals = visual::discover();
-    let current_viz = visuals
-        .iter()
-        .find(|v| v.name == current)
-        .map(|v| v.name.clone())
-        .unwrap_or_default();
+    
+    // Find the index of the current visualization for walker's --current flag
+    // walker's --current expects a 0-based index, not a value
+    let current_idx = visuals.iter().position(|v| v.name == current).unwrap_or(0);
 
     let items: Vec<String> = visuals
         .iter()
-        .map(|v| {
-            let icon = match crate::visual::visual_kind(&v.name) {
-                crate::visual::VisualKind::Bars => "▮",
-                crate::visual::VisualKind::Circular => "◉",
-                crate::visual::VisualKind::Other => "•",
-            };
-            format!("{icon} {name}", icon = icon, name = v.name)
-        })
+        .map(|v| v.name.clone())
         .collect();
 
-    let input = items.join("\n");
+    let input = items.join("\n") + "\n";
 
     // walker's dmenu flags (NOT --prompt/--index, which it rejects):
     //   --placeholder  prompt text
-    //   --current      preselect the matching entry (by value)
+    //   --current      preselect the matching entry (by 0-based INDEX)
     //   --exit         close after selection
-    let mut args: Vec<String> = vec!["--dmenu".into(), "--placeholder".into(), "omaviz".into(), "--exit".into()];
-    if !current_viz.is_empty() {
+    let mut args: Vec<String> = vec!["--dmenu".into(), "--placeholder".into(), "menu".into(), "--exit".into()];
+    if !visuals.is_empty() {
         args.push("--current".into());
-        args.push(current_viz.clone());
+        args.push(current_idx.to_string());
     }
 
     let mut child = Command::new("walker")
@@ -125,9 +122,14 @@ pub fn pop(current: &str) -> anyhow::Result<()> {
         .stdout(Stdio::piped())
         .spawn()?;
 
+    // Write menu items to walker's stdin and explicitly close it
     if let Some(mut stdin) = child.stdin.take() {
         let _ = stdin.write_all(input.as_bytes());
+        // Explicitly drop to close the pipe
+        drop(stdin);
     }
+
+    // Wait for walker to finish (user makes selection or cancels)
     let output = child.wait_with_output()?;
 
     let sel = String::from_utf8_lossy(&output.stdout);
@@ -136,7 +138,8 @@ pub fn pop(current: &str) -> anyhow::Result<()> {
         return Ok(());
     }
 
-    let viz_name = sel.split_whitespace().last().unwrap_or(sel);
+    // Extract visualization name (now just the name itself)
+    let viz_name = sel;
     let cmd = format!("{bin} select mini {viz_name}");
     let _ = Command::new("sh").args(["-c", &cmd]).status();
     Ok(())

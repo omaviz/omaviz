@@ -5,7 +5,7 @@
 //! overrides them. This keeps "change sensitivity once for everything" working
 //! while still allowing a mode to tweak (e.g. mini wants denser bars).
 
-use anyhow::Result;
+use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::path::PathBuf;
@@ -146,8 +146,8 @@ impl Default for Config {
                     m.insert("density".into(), 1.0);
                     // Gain + floor make the tiny menu-bar bars actually readable:
                     // gain amplifies quiet audio, floor keeps a minimum bar height.
-                    m.insert("mini_gain".into(), 1.6);
-                    m.insert("mini_floor".into(), 0.12);
+                    m.insert("mini_gain".into(), 2.2);
+                    m.insert("mini_floor".into(), 0.15);
                     m
                 },
                 ..Default::default()
@@ -181,7 +181,68 @@ impl Config {
             return Ok(cfg);
         }
         let text = std::fs::read_to_string(&path)?;
-        Ok(toml::from_str(&text)?)
+        let cfg: Config = toml::from_str(&text)
+            .with_context(|| format!("Failed to parse config file: {}", path.display()))?;
+        cfg.validate()
+            .with_context(|| format!("Config validation failed: {}", path.display()))?;
+        Ok(cfg)
+    }
+
+    /// Validate the configuration for reasonable values.
+    fn validate(&self) -> anyhow::Result<()> {
+        // Validate audio settings
+        if self.audio.sensitivity <= 0.0 || self.audio.sensitivity > 10.0 {
+            anyhow::bail!("audio.sensitivity must be > 0 and <= 10, got {}", self.audio.sensitivity);
+        }
+        if self.audio.smoothing < 0.0 || self.audio.smoothing > 1.0 {
+            anyhow::bail!("audio.smoothing must be in [0, 1], got {}", self.audio.smoothing);
+        }
+        if self.audio.bands < 1 || self.audio.bands > 128 {
+            anyhow::bail!("audio.bands must be in [1, 128], got {}", self.audio.bands);
+        }
+
+        // Validate mode configs
+        for (name, mode) in [
+            ("desktop", &self.desktop),
+            ("full", &self.full),
+            ("mini", &self.mini),
+        ] {
+            if mode.fps > 0 && mode.fps > 240 {
+                anyhow::bail!("{}.fps must be <= 240, got {}", name, mode.fps);
+            }
+            if let Some(sens) = (mode.sensitivity >= 0.0).then_some(mode.sensitivity) {
+                if sens <= 0.0 || sens > 10.0 {
+                    anyhow::bail!("{}.sensitivity must be > 0 and <= 10, got {}", name, sens);
+                }
+            }
+            if let Some(smooth) = (mode.smoothing >= 0.0).then_some(mode.smoothing) {
+                if smooth < 0.0 || smooth > 1.0 {
+                    anyhow::bail!("{}.smoothing must be in [0, 1], got {}", name, smooth);
+                }
+            }
+            if mode.bands > 0 && (mode.bands < 1 || mode.bands > 128) {
+                anyhow::bail!("{}.bands must be in [1, 128], got {}", name, mode.bands);
+            }
+        }
+
+        // Validate palette
+        if self.palette.opacity < 0.0 || self.palette.opacity > 1.0 {
+            anyhow::bail!("palette.opacity must be in [0, 1], got {}", self.palette.opacity);
+        }
+        for (name, color) in [("low", self.palette.low), ("high", self.palette.high)] {
+            for (i, c) in color.iter().enumerate() {
+                if *c < 0.0 || *c > 1.0 {
+                    anyhow::bail!("palette.{} channel {} must be in [0, 1], got {}", name, i, c);
+                }
+            }
+        }
+        for (i, c) in self.palette.bg.iter().enumerate() {
+            if *c < 0.0 || *c > 1.0 {
+                anyhow::bail!("palette.bg channel {} must be in [0, 1], got {}", i, c);
+            }
+        }
+
+        Ok(())
     }
 
     pub fn save(&self) -> Result<()> {
@@ -216,16 +277,6 @@ impl Config {
             self.audio.sensitivity
         } else {
             m.sensitivity
-        }
-    }
-
-    /// Effective smoothing for a mode.
-    pub fn smoothing(&self, mode: Mode) -> f32 {
-        let m = self.mode(mode);
-        if m.smoothing < 0.0 {
-            self.audio.smoothing
-        } else {
-            m.smoothing
         }
     }
 

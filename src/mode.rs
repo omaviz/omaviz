@@ -9,6 +9,7 @@
 //! `Exit` (Quit) is a hard teardown: close window, stop daemon, remove from waybar.
 
 use crate::ipc::Frame;
+use anyhow::Result;
 use std::io::Write;
 use std::process::Command;
 use std::sync::Mutex;
@@ -115,7 +116,9 @@ fn dirs() -> Result<std::path::PathBuf, ()> {
     let base = std::env::var("XDG_RUNTIME_DIR")
         .map(std::path::PathBuf::from)
         .or_else(|_| -> Result<std::path::PathBuf, ()> {
-            let uid = unsafe { libc::getuid() };
+            // Use libc::getuid() via a safe wrapper. This is a simple syscall
+            // that returns the calling process's real user ID.
+            let uid = get_uid();
             if uid == 0 {
                 Ok(std::path::PathBuf::from("/run"))
             } else {
@@ -126,6 +129,13 @@ fn dirs() -> Result<std::path::PathBuf, ()> {
     p.push("omaviz");
     std::fs::create_dir_all(&p).map_err(|_| ())?;
     Ok(p)
+}
+
+/// Safe wrapper around libc::getuid().
+fn get_uid() -> u32 {
+    // SAFETY: libc::getuid() is a simple syscall with no side effects.
+    // It returns the real user ID of the calling process.
+    unsafe { libc::getuid() }
 }
 
 fn write_mode(m: Mode) {
@@ -143,7 +153,7 @@ fn write_mode(m: Mode) {
 /// every frame, so bars update live (dimmed when the desktop window is open,
 /// live when closed) without a waybar config reload — avoiding the visual
 /// "jump" a reload causes.
-pub fn apply(m: Mode) {
+pub fn apply(m: Mode) -> anyhow::Result<()> {
     // Selecting any mode clears the paused + exited flags.
     set_paused(false);
     set_exited(false);
@@ -155,11 +165,11 @@ pub fn apply(m: Mode) {
         Mode::Off => {
             // Pause audio capture but keep daemon + mini module (dimmed).
             set_paused(true);
-            stop_desktop();
+            stop_desktop()?;
         }
         Mode::Mini => {
             if was_desktop {
-                stop_desktop();
+                stop_desktop()?;
             }
         }
         Mode::Desktop => {
@@ -168,34 +178,36 @@ pub fn apply(m: Mode) {
             }
         }
     }
+    Ok(())
 }
 
 /// Toggle between Mini and Desktop (the left-click behavior).
-pub fn toggle() {
+pub fn toggle() -> anyhow::Result<()> {
     if is_exited() {
-        return;
+        return Ok(());
     }
     match current() {
-        Mode::Desktop => apply(Mode::Mini),
-        _ => apply(Mode::Desktop),
+        Mode::Desktop => apply(Mode::Mini)?,
+        _ => apply(Mode::Desktop)?,
     }
+    Ok(())
 }
 
 /// Off button: pause + close desktop, keep mini module visible (dimmed).
-pub fn off() {
+pub fn off() -> anyhow::Result<()> {
     set_exited(false);
-    apply(Mode::Off);
+    apply(Mode::Off)
 }
 
 /// Quit (Exit menu item): close desktop, stop daemon, remove from waybar.
-pub fn quit() {
+pub fn quit() -> anyhow::Result<()> {
     set_exited(true);
-    stop_desktop();
+    stop_desktop()?;
     // Remove the waybar module and reload so it disappears from the bar.
     remove_from_waybar();
     refresh_waybar();
     // Stop the daemon (and thus the whole app).
-    stop_daemon();
+    stop_daemon()
 }
 
 /// Called by the desktop window when the user closes it: fall back to Mini.
@@ -214,15 +226,14 @@ fn spawn_desktop() {
         .spawn();
 }
 
-fn stop_desktop() {
+fn stop_desktop() -> anyhow::Result<()> {
     // Close any running desktop/full window process. Target ONLY the window
     // clients (not `omaviz quit`/daemon) so we don't kill our own process.
-    let _ = Command::new("pkill")
-        .args(["-f", "omaviz desktop"])
-        .status();
-    let _ = Command::new("pkill")
-        .args(["-f", "omaviz full"])
-        .status();
+    // Use exact command line matching to avoid killing unintended processes.
+    Command::new("pkill")
+        .args(["-f", "^omaviz (desktop|full)$"])
+        .status()?;
+    Ok(())
 }
 
 fn omaviz_bin() -> String {
@@ -238,18 +249,21 @@ fn omaviz_bin() -> String {
     "omaviz".to_string()
 }
 
-fn stop_daemon() {
+fn stop_daemon() -> anyhow::Result<()> {
     // Stop the user service if it is how omaviz is launched; otherwise kill the daemon.
-    if Command::new("systemctl")
+    let active = Command::new("systemctl")
         .args(["--user", "is-active", "--quiet", "omaviz.service"])
         .status()
         .map(|s| s.success())
-        .unwrap_or(false)
-    {
-        let _ = Command::new("systemctl").args(["--user", "stop", "omaviz.service"]).status();
+        .unwrap_or(false);
+    if active {
+        Command::new("systemctl")
+            .args(["--user", "stop", "omaviz.service"])
+            .status()?;
     } else {
-        let _ = Command::new("pkill").args(["-x", "omaviz"]).status();
+        Command::new("pkill").args(["-x", "omaviz"]).status()?;
     }
+    Ok(())
 }
 
 pub fn refresh_waybar() {

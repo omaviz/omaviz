@@ -232,10 +232,5 @@ pub fn run(mode: Mode, cfg: Config) -> Result<()> {
     event_loop.set_control_flow(ControlFlow::Poll);
     let mut app = App::new(mode, cfg, frame);
     event_loop.run_app(&mut app)?;
-    // Leak `app` on exit instead of dropping it. The GL/EGL backend's EGL
-    // instance segfaults when dropped after the Wayland connection is torn
-    // down (wgpu + Mesa + Wayland bug); leaking skips that teardown. The GPU
-    // resources are released by the OS when the process exits.
-    std::mem::forget(app);
     Ok(())
 }
