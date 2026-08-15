@@ -237,16 +237,18 @@ fn stop_desktop() -> anyhow::Result<()> {
 }
 
 fn omaviz_bin() -> String {
-    // Prefer the installed binary on PATH; fall back to the local build.
-    if let Ok(out) = Command::new("which").arg("omaviz").output() {
-        if out.status.success() {
-            let s = String::from_utf8_lossy(&out.stdout).trim().to_string();
-            if !s.is_empty() {
-                return s;
-            }
-        }
+    // Prefer the installed binary at the known absolute path (waybar's env
+    // lacks ~/.local/bin on PATH, so bare `omaviz` fails there).
+    let install = format!("{}/.local/bin/omaviz", std::env::var("HOME").unwrap_or_default());
+    if std::path::PathBuf::from(&install).exists() {
+        return install;
     }
-    "omaviz".to_string()
+    // Fall back to the running binary's own path (works for installed + dev builds).
+    std::env::current_exe()
+        .ok()
+        .and_then(|p| p.to_str().map(|s| s.to_string()))
+        // Last resort: bare command (will fail if not on PATH).
+        .unwrap_or_else(|| "omaviz".to_string())
 }
 
 fn stop_daemon() -> anyhow::Result<()> {

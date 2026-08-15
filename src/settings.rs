@@ -53,6 +53,8 @@ impl SettingsApp {
             Ok(()) => {
                 self.saved = self.cfg.clone();
                 self.status = "Saved — applied live".into();
+                // Signal the running mini module to reload config and re-render.
+                crate::mode::refresh_waybar();
             }
             Err(e) => self.status = format!("Save failed: {e}"),
         }

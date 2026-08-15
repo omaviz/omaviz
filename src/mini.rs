@@ -9,7 +9,7 @@
 //! The bars are rendered with unicode block glyphs spanning the full cell
 //! height; waybar's line-height is set to 1.0 so a single row fills the bar.
 
-use crate::config::Config;
+use crate::config::{Config, Watcher};
 use crate::ipc::Frame;
 use crate::mode;
 use std::io::Write;
@@ -17,7 +17,7 @@ use std::sync::{Arc, Mutex};
 
 const GLYPHS: &[char] = &['▁', '▂', '▃', '▄', '▅', '▆', '▇', '█'];
 
-pub fn run(cfg: Config, width: usize) -> anyhow::Result<()> {
+pub fn run(mut cfg: Config, width: usize) -> anyhow::Result<()> {
     let out: Arc<Mutex<Box<dyn Write + Send>>> = Arc::new(Mutex::new(Box::new(std::io::stdout())));
     let shared = Arc::new(Mutex::new(Frame::default()));
     crate::ipc::spawn_reader(shared.clone());
@@ -26,12 +26,15 @@ pub fn run(cfg: Config, width: usize) -> anyhow::Result<()> {
     let mut last_class = String::new();
     let mut last_tooltip = String::new();
 
-    // Whether we've ever received a real frame. Until then the module is
-    // genuinely "waiting for daemon"; once received we switch to the correct
-    // silent/active state and never fall back to "waiting".
     let mut ever_received = false;
+    let mut watcher = Watcher::new();
 
     loop {
+        // Hot reload: pick up settings saves without a restart.
+        if let Some(new_cfg) = watcher.poll() {
+            cfg = new_cfg;
+        }
+
         let m = mode::current();
         let exited = mode::is_exited();
 

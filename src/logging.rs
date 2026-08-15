@@ -5,24 +5,6 @@ use tracing_subscriber::{EnvFilter, fmt};
 
 static INIT: Once = Once::new();
 
-/// Initialize the logging system.
-/// Uses the `OMAVIZ_LOG` environment variable for filtering, or defaults to "info".
-/// Safe to call multiple times - only the first call takes effect.
-pub fn init() {
-    INIT.call_once(|| {
-        let filter = EnvFilter::try_from_default_env()
-            .unwrap_or_else(|_| EnvFilter::new("info,omaviz=debug"));
-
-        fmt()
-            .with_env_filter(filter)
-            .with_target(false)
-            .with_thread_ids(true)
-            .with_file(true)
-            .with_line_number(true)
-            .init();
-    });
-}
-
 /// Initialize logging for the daemon with ASCII meter support.
 /// Safe to call multiple times - only the first call takes effect.
 pub fn init_daemon(debug: bool) {

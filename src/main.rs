@@ -255,17 +255,11 @@ fn main() -> Result<()> {
         }
 
         Cmd::Select { target, visual } => {
-            let mut cfg = cfg;
-            let m = match target.as_str() {
-                "desktop" => Mode::Desktop,
-                "full" => Mode::Full,
-                "mini" => Mode::Mini,
-                other => anyhow::bail!("unknown target '{other}' (desktop|full|mini)"),
-            };
             if visual::find(&visual).is_none() {
                 anyhow::bail!("no visualization named '{visual}'");
             }
-            cfg.mode_mut(m).visual = visual.clone();
+            let mut cfg = cfg;
+            cfg.set_visual_all(&visual);
             cfg.save()?;
             println!("{target} -> {visual}");
             Ok(())

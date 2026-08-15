@@ -7,25 +7,17 @@ use crate::visual;
 /// have `~/.local/bin` on PATH, so every command the menu runs must be absolute
 /// (the module's `exec` already uses an absolute path for the same reason).
 fn omaviz_bin() -> String {
-    // Prefer the installed binary on PATH (works via `which`).
-    if let Ok(out) = std::process::Command::new("which").arg("omaviz").output() {
-        if out.status.success() {
-            let s = String::from_utf8_lossy(&out.stdout).trim().to_string();
-            if !s.is_empty() {
-                return s;
-            }
-        }
+    // Prefer the installed binary at the known absolute path (waybar's env
+    // lacks ~/.local/bin on PATH, so bare `omaviz` fails there).
+    let install = format!("{}/.local/bin/omaviz", std::env::var("HOME").unwrap_or_default());
+    if std::path::PathBuf::from(&install).exists() {
+        return install;
     }
     // Fall back to the running binary's own path (works for installed + dev builds).
     std::env::current_exe()
         .ok()
         .and_then(|p| p.to_str().map(|s| s.to_string()))
-        // Last resort: try common install location via HOME.
-        .or_else(|| {
-            let home = std::env::var("HOME").ok()?;
-            Some(format!("{home}/.local/bin/omaviz"))
-        })
-        // Ultimate fallback: bare command (will fail if not on PATH).
+        // Last resort: bare command (will fail if not on PATH).
         .unwrap_or_else(|| "omaviz".to_string())
 }
 
@@ -99,10 +91,15 @@ pub fn pop(current: &str) -> anyhow::Result<()> {
     // walker's --current expects a 0-based index, not a value
     let current_idx = visuals.iter().position(|v| v.name == current).unwrap_or(0);
 
-    let items: Vec<String> = visuals
+    // Build menu items: visuals first, then Settings, Turn off, Exit
+    let mut items: Vec<String> = visuals
         .iter()
-        .map(|v| v.name.clone())
+        .map(|v| format!("▮ {}", v.name))
         .collect();
+    items.push("────────────────".to_string());
+    items.push("⚙ Settings".to_string());
+    items.push("Turn off".to_string());
+    items.push("✕ Exit".to_string());
 
     let input = items.join("\n") + "\n";
 
@@ -138,10 +135,18 @@ pub fn pop(current: &str) -> anyhow::Result<()> {
         return Ok(());
     }
 
-    // Extract visualization name (now just the name itself)
-    let viz_name = sel;
-    let cmd = format!("{bin} select mini {viz_name}");
-    let _ = Command::new("sh").args(["-c", &cmd]).status();
+    // Dispatch the chosen action
+    if sel.starts_with("⚙") {
+        let _ = Command::new(&bin).arg("settings").status();
+    } else if sel == "Turn off" {
+        let _ = Command::new(&bin).arg("off").status();
+    } else if sel.starts_with("✕") {
+        let _ = Command::new(&bin).arg("quit").status();
+    } else {
+        // Extract visualization name (strip icon prefix)
+        let viz_name = sel.trim_start_matches("▮ ").trim();
+        let _ = Command::new(&bin).args(["select", "mini", viz_name]).status();
+    }
     Ok(())
 }
 
