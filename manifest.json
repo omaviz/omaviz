@@ -1,0 +1,21 @@
+{
+  "schemaVersion": 1,
+  "id": "org.omaviz.visualizer",
+  "name": "Omaviz",
+  "version": "2.0.0",
+  "author": "kishan",
+  "description": "Audio visualizer — winamp-style spectrum, mini bar + desktop detach",
+  "kinds": [
+    "bar-widget"
+  ],
+  "entryPoints": {
+    "barWidget": "BarWidget.qml"
+  },
+  "barWidget": {
+    "displayName": "Omaviz",
+    "description": "Audio visualizer with winamp-style spectrum",
+    "category": "Audio",
+    "allowMultiple": false,
+    "defaultSection": "right"
+  }
+}

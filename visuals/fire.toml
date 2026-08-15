@@ -1,41 +1,35 @@
+name = "fire"
 label = "Fire"
-description = "Fluid, borderless spectrum with winamp-style peak-hold bricks and an energy-reactive background glow."
-
-[[params]]
-name = "borderless"
-label = "Borderless (merged flame)"
-default = 1.0
-min = 0.0
-max = 1.0
-boolean = true
-
-[[params]]
-name = "smoothing"
-label = "Liquid edge"
-default = 0.5
-min = 0.0
-max = 1.0
-
-[[params]]
-name = "bg_fade"
-label = "Background glow with music"
-default = 0.6
-min = 0.0
-max = 1.0
+description = "Warm orange/red flame bars with liquid edge effect."
 
 [[params]]
 name = "intensity"
-label = "Flame brightness"
-default = 1.0
-min = 0.2
+label = "Intensity"
+default = 0.8
+min = 0.1
 max = 2.0
+type = "float"
+help = "Overall brightness multiplier."
 
 [[params]]
-name = "peak_fall"
-label = "Peak-hold fall speed"
-default = 0.08
-min = 0.01
-max = 0.5
+name = "color_temp"
+label = "Colour temperature"
+default = 0.5
+min = 0.0
+max = 1.0
+type = "float"
+help = "0=red, 1=yellow-orange."
 
-# knob index 5 is reserved: the host writes the previous frame's peak line here
-# so the winamp brick can hold and fall. Not user-editable.
+[[params]]
+name = "borderless"
+label = "Borderless"
+default = true
+type = "boolean"
+help = "Hide bar edges for a smoother look."
+
+[[params]]
+name = "liquid_edge"
+label = "Liquid edge"
+default = false
+type = "boolean"
+help = "Apply a wavy displacement to bar tops."
