@@ -1,12 +1,14 @@
 # Rust build artifacts
 bridge/target/
 daemon/target/
-**/target/
+engine/target/
 
 # local config / runtime
 *.omaviz-orig
 .DS_Store
 
-# v7 bundled engine (built by install.sh, not committed)
-plugin/bin/
+# v7 bundled engine IS committed (Architecture A: the plugin dir is a
+# self-contained, zero-build drop-in — matches Omarchy's plugin model).
+# Only the intermediate cargo target tree is ignored.
+# plugin/bin/
 engine/target/
