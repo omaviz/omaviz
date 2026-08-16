@@ -244,7 +244,9 @@ function visualConfigValues(configText, params) {
     var section = "visual." + (p.source || p.visual || "equalizer")
     var v = readTomlValue(configText, section, p.name)
     if (v !== null) {
-      values[p.name] = p.type === "boolean" ? (v === "true") : (parseFloat(v) || p.default)
+      if (p.type === "boolean") values[p.name] = (v === "true")
+      else if (p.boolean === true) values[p.name] = (v === "true")
+      else values[p.name] = parseFloat(v) || p.default
     } else {
       values[p.name] = p.default
     }
