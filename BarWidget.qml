@@ -101,6 +101,22 @@ BarWidget {
         root.spectrumSilent = Model.spectrumData.silent
       }
     }
+    // Self-heal across reboots: if the bridge exits (e.g. the omaviz daemon's
+    // socket isn't ready yet at login), retry a few times so the mini comes up
+    // on its own instead of staying dead until a manual restart.
+    onExited: function(code, status) {
+      if (root._bridgeRetries < 10) {
+        root._bridgeRetries++
+        bridgeRetryTimer.restart()
+      }
+    }
+  }
+
+  property int _bridgeRetries: 0
+  Timer {
+    id: bridgeRetryTimer
+    interval: 1500; repeat: false
+    onTriggered: { spectrumProc.running = true }
   }
 
   // ---- Config reader (daemon writes ~/.config/omaviz/config.toml) ----
