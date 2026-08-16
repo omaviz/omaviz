@@ -1,5 +1,5 @@
 name = "equalizer"
-label = "Equalizer"
+label = "Bars"
 description = "Classic stacked bar spectrum — the bar widget's default look."
 
 [[params]]

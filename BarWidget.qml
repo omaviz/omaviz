@@ -20,6 +20,8 @@ BarWidget {
   property var visuals: []
   property var spectrumBands: []
   property bool spectrumSilent: true
+  // Mini player pauses (freezes + dims) while the detached desktop window is open.
+  readonly property bool paused: root.config.desktopActive === true
   readonly property int barCount: Math.max(
     8, (root.config && root.config.bands !== undefined) ? root.config.bands : 32)
   // Explicit index model so each Repeater delegate gets its band index via
@@ -84,6 +86,7 @@ BarWidget {
     command: ["/home/kishan/.local/bin/omaviz-spectrum-bridge"]
     stdout: SplitParser {
       onRead: function(data) {
+        if (root.paused) return   // freeze the mini player while detached (#7)
         var lines = String(data).split("\n")
         for (var i = 0; i < lines.length; i++) {
           var line = lines[i].trim()
@@ -132,7 +135,8 @@ BarWidget {
     id: button
     anchors.fill: parent
     bar: root.bar
-    tooltipText: root.spectrumSilent ? "Omaviz — no audio" : "Omaviz — click to configure"
+    tooltipText: root.paused ? "Omaviz — detached (paused)"
+                  : (root.spectrumSilent ? "Omaviz — no audio" : "Omaviz — click to configure")
     text: ""
     hasVisualContent: true
 
@@ -161,10 +165,25 @@ BarWidget {
 
           radius: Math.min(width * 0.5, 3)
           color: {
+            if (root.paused) {
+              return Util.alpha(root.bar ? root.bar.foreground : Color.foreground, 0.08)
+            }
             if (root.spectrumSilent || root.spectrumBands.length === 0) {
               return Util.alpha(root.bar ? root.bar.foreground : Color.foreground, 0.12)
             }
             var v = Math.min(1, Math.max(0, value))
+            if (root.config.style === "fire") {
+              // winamp-style warm flame: red at base -> yellow at tip
+              var r = Math.round(255)
+              var g = Math.round(80 + v * 175)
+              var b = Math.round(20 + v * 60)
+              return "rgba(" + r + "," + g + "," + b + ",1)"
+            }
+            if (root.config.colorSync) {
+              if (v < 0.33) return "#2a9df4"
+              if (v < 0.66) return "#9b5de5"
+              return "#f15bb5"
+            }
             var base = root.bar ? root.bar.foreground : Color.foreground
             return Util.alpha(base, 0.25 + v * 0.75)
           }

@@ -74,7 +74,10 @@ function readConfigFromText(tomlText) {
   d.visualMini = readTomlValue(tomlText, "mini", "visual") ?? d.visualMini
   d.visualDesktop = readTomlValue(tomlText, "desktop", "visual") ?? d.visualDesktop
   d.visualFull = readTomlValue(tomlText, "full", "visual") ?? d.visualFull
+  d.style = readTomlValue(tomlText, "mini", "style") ?? d.style
+  d.styleDesktop = readTomlValue(tomlText, "desktop", "style") ?? d.style
   d.desktopActive = readTomlValue(tomlText, "desktop", "active") === "true"
+  d.colorSync = readTomlValue(tomlText, "mini", "color_sync") === "true"
   return d
 }
 
@@ -86,7 +89,10 @@ function defaultConfig() {
     visualMini: "equalizer",
     visualDesktop: "equalizer",
     visualFull: "wave",
-    desktopActive: false
+    style: "classic",
+    styleDesktop: "classic",
+    desktopActive: false,
+    colorSync: false
   }
 }
 
@@ -97,60 +103,42 @@ function writeConfigKey(tomlText, section, key, value) {
     tomlText = "[audio]\nsensitivity = 1.0\nsmoothing = 0.5\nbands = 32\n\n[mini]\nvisual = \"equalizer\"\n\n[desktop]\nvisual = \"equalizer\"\n\n[full]\nvisual = \"wave\"\n"
   }
   var lines = tomlText.split("\n")
-  var inSection = false
-  var found = false
-  var out = []
-
+  var header = "[" + section + "]"
+  var targetIdx = -1
   for (var i = 0; i < lines.length; i++) {
-    var line = lines[i]
-    var trimmed = line.trim()
-
-    if (trimmed.startsWith("#") || trimmed === "") {
-      out.push(line)
-      continue
-    }
-
-    if (trimmed.startsWith("[") && trimmed.endsWith("]")) {
-      inSection = (trimmed.slice(1, -1).trim() === section)
-      out.push(line)
-      continue
-    }
-
-    if (inSection && trimmed.indexOf("=") >= 0) {
-      var parts = trimmed.split("=")
-      var k = parts[0].trim()
-      if (k === key) {
-        var v = String(value)
-        if (typeof value === "string" && (key === "visual" || key === "active")) {
-          v = '"' + v + '"'
-        }
-        out.push(parts[0] + " = " + v)
-        found = true
-        continue
-      }
-    }
-    out.push(line)
+    if (lines[i].trim() === header) { targetIdx = i; break }
   }
 
-  if (!found) {
-    var sectionExists = false
-    for (var i = 0; i < lines.length; i++) {
-      if (lines[i].trim().startsWith("[" + section + "]")) {
-        sectionExists = true
-        break
-      }
-    }
-    if (!sectionExists) {
-      out.push("[" + section + "]")
-    }
-    var v = String(value)
-    if (typeof value === "string" && (key === "visual" || key === "active")) {
-      v = '"' + v + '"'
-    }
-    out.push(key + " = " + v)
+  // Build the value string (quote string values for visual/active keys).
+  var v = String(value)
+  if (typeof value === "string" && (key === "visual" || key === "active")) {
+    v = '"' + v + '"'
+  }
+  var entry = key + " = " + v
+
+  if (targetIdx === -1) {
+    // Section missing: append it (with a blank line before if needed).
+    if (lines.length && lines[lines.length - 1].trim() !== "") lines.push("")
+    lines.push(header)
+    lines.push(entry)
+    return lines.join("\n")
   }
 
-  return out.join("\n")
+  // Section exists. Look for the key within it (until next [section]).
+  var keyIdx = -1
+  for (var j = targetIdx + 1; j < lines.length; j++) {
+    var t = lines[j].trim()
+    if (t.startsWith("[") && t.endsWith("]")) break
+    if (t.indexOf("=") >= 0 && t.split("=")[0].trim() === key) { keyIdx = j; break }
+  }
+
+  if (keyIdx !== -1) {
+    lines[keyIdx] = entry
+  } else {
+    // Insert right after the header line.
+    lines.splice(targetIdx + 1, 0, entry)
+  }
+  return lines.join("\n")
 }
 
 // ---- Visualizations ----
@@ -174,11 +162,22 @@ function parseVisualToml(tomlText, name) {
     var line = lines[i].trim()
     if (line.startsWith("#") || line === "") continue
 
-    if (line.startsWith("label =")) {
-      if (!currentParam) label = line.split("=")[1].trim().replace(/^["']|["']$/g, "")
-    } else if (line.startsWith("description =")) {
-      if (!currentParam) description = line.split("=")[1].trim().replace(/^["']|["']$/g, "")
-    } else if (line.indexOf("params") >= 0 && line.startsWith("[")) {
+    if (line.startsWith("label =") || line.startsWith("description =")) {
+      if (currentParamIndex >= 0) {
+        // Belongs to the current [[params]] table.
+        var pk0 = line.split("=")[0].trim()
+        var pv0 = line.split("=").slice(1).join("=").trim().replace(/^["']|["']$/g, "")
+        if (pk0 === "label") currentParam.label = pv0
+        else if (pk0 === "description") currentParam.description = pv0
+      } else {
+        // Top-level visual label/description.
+        if (line.startsWith("label =")) label = line.split("=")[1].trim().replace(/^["']|["']$/g, "")
+        else if (line.startsWith("description =")) description = line.split("=")[1].trim().replace(/^["']|["']$/g, "")
+      }
+      continue
+    }
+
+    if (line.indexOf("params") >= 0 && line.startsWith("[")) {
       // A [[params]] table starts a new param object. Flush any previous one.
       if (currentParamIndex >= 0) flush()
       currentParam = { name: null, label: null, default: 0, min: 0, max: 1, type: "float", help: "" }
@@ -193,6 +192,7 @@ function parseVisualToml(tomlText, name) {
       else if (pk === "min") currentParam.min = parseFloat(pv) || 0
       else if (pk === "max") currentParam.max = parseFloat(pv) || 1
       else if (pk === "type") currentParam.type = pv
+      else if (pk === "boolean") currentParam.boolean = (pv === "true")
       else if (pk === "help") currentParam.help = pv
     }
     // A non-params section header (e.g. [other]) ends param parsing.
@@ -227,15 +227,22 @@ function discoverVisualsFromText(tomlFiles) {
 // Get param declarations for a visual's .toml text
 function visualParamsFromText(tomlText, name) {
   var v = parseVisualToml(tomlText, name)
+  // Tag each param with the visual it belongs to, so the panel writes
+  // knob edits back to the correct [visual.<name>] section.
+  for (var i = 0; i < v.params.length; i++) v.params[i].source = name
   return v.params
 }
 
-// Read current config values for a visual's params
-function visualConfigValues(tomlText, visualName, params) {
+// Read current config values for a visual's params.
+// User-edited values live in config.toml under [visual.<source>], where
+// <source> is the visual each param belongs to (tagged by visualParamsFromText).
+// The shared config text is passed in so we read the user's saved values.
+function visualConfigValues(configText, params) {
   var values = {}
   for (var i = 0; i < params.length; i++) {
     var p = params[i]
-    var v = readTomlValue(tomlText, visualName, p.name)
+    var section = "visual." + (p.source || p.visual || "equalizer")
+    var v = readTomlValue(configText, section, p.name)
     if (v !== null) {
       values[p.name] = p.type === "boolean" ? (v === "true") : (parseFloat(v) || p.default)
     } else {

@@ -12,11 +12,12 @@ import "Model.js" as Model
 // popoutSwitchClosing, and injects bar / anchorItem / hostWidget / settings.
 //
 // Layout (top-down):
-//   top    — live visualization preview (same bars as the bar widget)
-//   dropdown — visualization selector (lists ALL visualizations in visuals/)
-//   knobs    — per-visualization sliders/checkboxes (declared in .toml)
-//   audio    — sensitivity / smoothing
-//   footer   — Reset visualization · Detach
+//   preview  — live visualization (Bars / Wave / Fire), updates with dropdown
+//   dropdown — visualization selector (Bars / Wave / Fire)
+//   knobs     — per-visualization sliders/checkboxes (declared in .toml)
+//   audio     — sensitivity / smoothing
+//   options    — color sync toggle
+//   footer    — Reset · Detach
 
 Panel {
   id: root
@@ -30,11 +31,7 @@ Panel {
 
   readonly property var barIdentity: hostWidget || root
 
-  // Absolute path to this plugin dir (where Desktop.qml lives), used by
-  // detach() to launch a standalone Quickshell window.
   readonly property string pluginDir: String(Qt.resolvedUrl(".")).replace(/^file:\/\//, "")
-  // Shell QML import root (contains the qs.Commons / qs.Ui modules). Passed to
-  // the detached window via QML2_IMPORT_PATH so it can resolve shell modules.
   readonly property string shellImportPath: "/usr/share/omarchy/shell"
 
   // ---- live state mirrored from shared singleton ----
@@ -45,28 +42,20 @@ Panel {
   readonly property int barCount: Math.max(
     8, (root.config && root.config.bands !== undefined) ? root.config.bands : 32)
   readonly property var barModel: (function() {
-    var a = []
-    for (var i = 0; i < root.barCount; i++) a.push(i)
-    return a
+    var a = []; for (var i = 0; i < root.barCount; i++) a.push(i); return a
   })()
+  // Friendly display name for the active visual.
+  readonly property string activeVisual: (root.config.visualMini || "equalizer")
+    .replace("equalizer", "Bars").replace("wave", "Wave").replace("fire", "Fire")
+  // Style display name (Classic / Fire). Fire is a style of the Bars visual.
+  readonly property string activeStyle: (root.config.style || "classic") === "fire" ? "Fire" : "Classic"
 
-  function open() {
-    refreshState()
-    root.controller.show()
-  }
-  function close() {
-    root.controller.hide()
-  }
-  function toggle() {
-    if (root.opened) root.close()
-    else root.open()
-  }
+  function open() { refreshState(); root.controller.show() }
+  function close() { root.controller.hide() }
+  function toggle() { if (root.opened) root.close(); else root.open() }
   function closeForPopoutSwitch() { root.controller.hide() }
 
-  // current visualization name (shared across modes in v2)
-  readonly property string activeVisual: root.config.visualMini || "equalizer"
-
-  // ---- writable config view (the daemon + we both write here) ----
+  // ---- writable config view ----
   FileView {
     id: configWrite
     path: Model.configPath
@@ -77,8 +66,6 @@ Panel {
   }
 
   // ---- live spectrum refresh ----
-  // Model.spectrumData is a JS singleton with no QML signal, so poll it on a
-  // timer to drive the live preview/bar animation.
   Timer {
     id: specTimer
     interval: 50
@@ -90,15 +77,8 @@ Panel {
     }
   }
 
-  // In-memory cache of the active visual's param values. Populated on open
-  // and after each write — never read live from configWrite.text() inside a
-  // binding (that re-enters the writable FileView and stack-overflows).
   property var visualParamValues: {}
-  // Declarations (name/label/min/max/type) for the active visual's knobs,
-  // populated from the cached .toml so the knobs Repeater is reliable.
   property var visualParams: []
-  // Raw .toml text per visual name, populated by the enumeration Process
-  // (avoids an unreliable file-text cache read inside refreshState timing).
   property var visualTomlCache: {}
 
   onHostWidgetChanged: refreshState()
@@ -111,22 +91,25 @@ Panel {
     refreshVisuals()
   }
 
-  // Re-read the active visual's .toml param values into visualParamValues.
   function refreshVisualParamCache() {
     var cache = root.visualTomlCache || {}
-    var toml = cache[root.activeVisual] || ""
-    var params = Model.visualParamsFromText(toml, root.activeVisual)
+    var file = root.config.visualMini || "equalizer"
+    var toml = cache[file] || ""
+    var params = Model.visualParamsFromText(toml, file)
+    // When the Fire style is active and the current visual is Bars, also show
+    // the fire-specific knobs (they live under [visual.fire] in config).
+    if ((root.config.style || "classic") === "fire" && file === "equalizer") {
+      var fireToml = cache["fire"] || ""
+      var fireParams = Model.visualParamsFromText(fireToml, "fire")
+      params = params.concat(fireParams)
+    }
     root.visualParams = params
-    root.visualParamValues = Model.visualConfigValues(toml, root.activeVisual, params)
+    // Read saved values from the shared config (where the user's edits live).
+    root.visualParamValues = Model.visualConfigValues(configWrite.text(), params)
   }
 
-  // Enumerate visualizations from visuals/ (re-scan so new files appear).
-  function refreshVisuals() {
-    readVisuals.refresh()
-  }
+  function refreshVisuals() { readVisuals.refresh() }
 
-  // Map a bar index to its spectrum value (root scope so the Repeater
-  // delegate can resolve it during initialization).
   function barValue(index) {
     var bands = root.spectrumBands
     if (!bands || bands.length === 0) return 0
@@ -135,7 +118,6 @@ Panel {
     return Math.min(1, bands[bi] * sens)
   }
 
-  // ---- persistence ----
   function persistShell(values) {
     var entry = { id: root.moduleName }
     for (var k in root.settings) if (k !== "id") entry[k] = root.settings[k]
@@ -146,7 +128,6 @@ Panel {
       root.bar.shell.updateEntryInline(root.moduleName, entry)
   }
 
-  // write one key to config.toml on disk, then re-read into root.config
   function writeConfig(section, key, value) {
     var next = Model.writeConfigKey(configWrite.text(), section, key, value)
     configWrite.setText(next)
@@ -154,8 +135,12 @@ Panel {
     if (section.indexOf("visual.") === 0) refreshVisualParamCache()
   }
 
-  function selectVisual(name) {
-    if (!name || name === root.activeVisual) return
+  function selectVisual(displayName) {
+    // displayName is the friendly label (Bars / Wave)
+    var name = displayName
+    if (name === "Bars") name = "equalizer"
+    else if (name === "Wave") name = "wave"
+    if (name === root.config.visualMini) return
     writeConfig("mini", "visual", name)
     writeConfig("desktop", "visual", name)
     writeConfig("full", "visual", name)
@@ -163,41 +148,47 @@ Panel {
     refreshVisualParamCache()
   }
 
-  function setKnob(name, value) {
-    writeConfig("visual." + root.activeVisual, name, value)
+  function selectStyle(displayName) {
+    var s = (displayName === "Fire") ? "fire" : "classic"
+    if (s === root.config.style) return
+    writeConfig("mini", "style", s)
+    writeConfig("desktop", "style", s)
+    persistShell({ style: s })
+    refreshVisualParamCache()
   }
 
-  function setAudio(name, value) {
-    writeConfig("audio", name, value)
+  function setKnob(name, value) {
+    // Write to the [visual.<source>] section the param belongs to.
+    var src = "equalizer"
+    for (var i = 0; i < root.visualParams.length; i++) {
+      if (root.visualParams[i].name === name) { src = root.visualParams[i].source || "equalizer"; break }
+    }
+    writeConfig("visual." + src, name, value)
   }
+  function setAudio(name, value) { writeConfig("audio", name, value) }
+  function setColorSync(on) { writeConfig("mini", "color_sync", on ? "true" : "false") }
 
   function resetVisual() {
     var params = Model.visualParamsFromText(
-      Model.readFileText(Model.visualsDir + "/" + root.activeVisual + ".toml"),
-      root.activeVisual)
-    for (var i = 0; i < params.length; i++) {
-      writeConfig("visual." + root.activeVisual, params[i].name, params[i].default)
-    }
+      root.visualTomlCache[root.activeVisual] || "", root.activeVisual)
+    for (var i = 0; i < params.length; i++)
+      writeConfig("visual." + root.config.visualMini, params[i].name, params[i].default)
   }
 
   function detach() {
-    // Launch the detached desktop window (standalone Quickshell, 400x200).
-    // QML2_IMPORT_PATH lets the standalone config resolve qs.Commons/qs.Ui
-    // if it ever needs them; Desktop.qml is self-contained regardless.
     var desktopPath = root.pluginDir + "/Desktop.qml"
     detachProc.command = [
       "env", "QML2_IMPORT_PATH=" + root.shellImportPath,
       "quickshell", "-p", desktopPath
     ]
     detachProc.running = true
+    // Pause the mini player while the desktop window is open (#7).
     writeConfig("desktop", "active", "true")
     persistShell({ desktopActive: true })
     root.close()
   }
 
-  // ---- visuals enumeration (reads ALL *.toml in visuals/) ----
-  // Plaintext sentinel delimiters (NUL bytes don't survive this bash's
-  // printf, so we use unambiguous sentinels instead).
+  // ---- visuals enumeration ----
   Process {
     id: readVisuals
     running: false
@@ -220,7 +211,6 @@ Panel {
           }
         }
         root.visuals = Model.discoverVisualsFromText(contents)
-        // Map visual name -> raw toml text for reliable knob rendering.
         var tomlByName = {}
         for (var c = 0; c < contents.length; c++) {
           var p = contents[c].path || ""
@@ -233,7 +223,6 @@ Panel {
     }
   }
 
-  // Detach window launcher (kept alive briefly; quickshell owns the process)
   Process { id: detachProc; running: false }
 
   // ---- UI ----
@@ -244,7 +233,7 @@ Panel {
     bar: root.bar
     open: root.opened
     focusTarget: keyCatcher
-    contentWidth: panel.fittedContentWidth(Style.space(340))
+    contentWidth: panel.fittedContentWidth(Style.space(360))
     contentHeight: panel.fittedContentHeight(scroll.contentHeight)
 
     PanelKeyCatcher {
@@ -267,165 +256,192 @@ Panel {
         id: column
         width: scroll.width
         spacing: Style.space(12)
-        padding: Style.space(12)
+        // Even padding on all sides so nothing clips (fix #1).
+        leftPadding: Style.space(14)
+        rightPadding: Style.space(14)
+        topPadding: Style.space(14)
+        bottomPadding: Style.space(14)
 
-      // ---- live visualization preview ----
-      Item {
-        width: parent.width
-        height: Math.max(Style.space(70), parent.width * 0.28)
-
+        // ---- live visualization preview ----
+        Text {
+          text: "PREVIEW"
+          color: Color.foreground
+          opacity: 0.6
+          font.family: Style.font.family
+          font.pixelSize: Style.font.bodySmall
+          font.letterSpacing: 1
+        }
         Rectangle {
-          anchors.fill: parent
+          width: parent.width
+          height: Math.max(Style.space(80), parent.width * 0.3)
           radius: Style.cornerRadius
-          color: Util.alpha(Color.background, 0.4)
+          color: Util.alpha(Color.background, 0.35)
+          Loader {
+            id: previewViz
+            anchors.fill: parent
+            anchors.margins: Style.space(6)
+            source: "VisualCanvas.qml"
+          }
+          Binding { when: previewViz.item; target: previewViz.item; property: "bands"; value: root.spectrumBands }
+          Binding { when: previewViz.item; target: previewViz.item; property: "silent"; value: root.spectrumSilent }
+          Binding { when: previewViz.item; target: previewViz.item; property: "visual"; value: root.activeVisual }
+          Binding { when: previewViz.item; target: previewViz.item; property: "style"; value: root.activeStyle }
+          Binding { when: previewViz.item; target: previewViz.item; property: "colorSync"; value: root.config.colorSync }
+          Binding { when: previewViz.item; target: previewViz.item; property: "barCount"; value: (root.visualParamValues.bar_count !== undefined ? root.visualParamValues.bar_count : 0) }
+          Binding { when: previewViz.item; target: previewViz.item; property: "colourScheme"; value: (root.visualParamValues.colour_scheme !== undefined ? root.visualParamValues.colour_scheme : 0) }
         }
 
-        Row {
-          anchors.fill: parent
-          anchors.margins: Style.space(6)
-          spacing: 2
+        // ---- visualization dropdown ----
+        Text {
+          text: "VISUALIZATION"
+          color: Color.foreground
+          opacity: 0.6
+          font.family: Style.font.family
+          font.pixelSize: Style.font.bodySmall
+          font.letterSpacing: 1
+        }
+        Dropdown {
+          id: vizDropdown
+          width: parent.width
+          label: "Visualization"
+          value: root.activeVisual
+          options: root.visuals.map(function(v) {
+            var d = v.name
+            if (d === "equalizer") d = "Bars"
+            else if (d === "wave") d = "Wave"
+            return { value: d, label: d }
+          })
+          onChanged: function(v) { root.selectVisual(v) }
+        }
 
-          Repeater {
-            model: root.barModel
-            Rectangle {
-              readonly property real value: barValue(modelData)
-              width: (parent.width - 2 * (root.barCount - 1)) / root.barCount
-              height: parent.height * value
-              y: parent.height - height
-              radius: 2
-              color: root.spectrumSilent || root.spectrumBands.length === 0
-                ? Util.alpha(Color.foreground, 0.12)
-                : Util.alpha(Color.foreground, 0.3 + Math.min(1, value) * 0.7)
-              Behavior on height { NumberAnimation { duration: 70; easing.type: Easing.OutCubic } }
+        // ---- style (Classic / Fire) — Fire is a style of the Bars visual ----
+        Text {
+          text: "STYLE"
+          color: Color.foreground
+          opacity: 0.6
+          font.family: Style.font.family
+          font.pixelSize: Style.font.bodySmall
+          font.letterSpacing: 1
+        }
+        Dropdown {
+          id: styleDropdown
+          width: parent.width
+          label: "Style"
+          value: root.activeStyle
+          options: [
+            { value: "Classic", label: "Classic" },
+            { value: "Fire", label: "Fire" }
+          ]
+          onChanged: function(v) { root.selectStyle(v) }
+        }
+
+        // ---- per-visualization knobs ----
+        Text {
+          text: "OPTIONS"
+          color: Color.foreground
+          opacity: 0.6
+          font.family: Style.font.family
+          font.pixelSize: Style.font.bodySmall
+          font.letterSpacing: 1
+        }
+        Repeater {
+          model: root.visualParams
+          Row {
+            width: parent.width
+            height: Math.max(Style.space(28), knobCtrl.implicitHeight)
+            spacing: Style.space(10)
+            Text {
+              text: modelData.label
+              color: Color.foreground
+              font.family: Style.font.family
+              font.pixelSize: Style.font.body
+              width: parent.width * 0.40
+              elide: Text.ElideRight
+              verticalAlignment: Text.AlignVCenter
+              wrapMode: Text.NoWrap
+            }
+            Loader {
+              id: knobCtrl
+              width: parent.width * 0.60 - Style.space(10)
+              sourceComponent: (modelData.boolean === true) ? boolComp : sliderComp
+              property var param: modelData
             }
           }
         }
-      }
+        Component {
+          id: sliderComp
+          PanelSlider {
+            width: parent ? parent.width : 100
+            value: currentKnobValue(param)
+            minimum: param.min
+            maximum: param.max
+            step: Math.max(0.001, (param.max - param.min) / 100)
+            onMoved: function(v) { root.setKnob(param.name, v) }
+            function currentKnobValue(p) {
+              var v = root.visualParamValues[p.name]
+              return v !== undefined ? v : p.default
+            }
+          }
+        }
+        Component {
+          id: boolComp
+          ToggleSwitch {
+            width: parent ? parent.width : 100
+            checked: currentBoolValue(param)
+            onToggled: root.setKnob(param.name, !checked)
+            function currentBoolValue(p) {
+              var v = root.visualParamValues[p.name]
+              return v === undefined ? (p.default === true) : (v === true)
+            }
+          }
+        }
 
-      // ---- visualization dropdown (lists ALL visualizations) ----
-      Dropdown {
-        id: vizDropdown
-        width: parent.width
-        label: "Visualization"
-        value: root.activeVisual
-        options: root.visuals.map(function(v) { return { value: v.name, label: v.label } })
-        onChanged: function(v) { root.selectVisual(v) }
-      }
-
-      // ---- per-visualization knobs (dynamic) ----
-      Text {
-        text: "OPTIONS"
-        color: Color.foreground
-        opacity: 0.6
-        font.family: Style.font.family
-        font.pixelSize: Style.font.bodySmall
-        font.letterSpacing: 1
-      }
-
-      Repeater {
-        model: root.visualParams
-
+        // ---- audio ----
+        Text {
+          text: "AUDIO"
+          color: Color.foreground
+          opacity: 0.6
+          font.family: Style.font.family
+          font.pixelSize: Style.font.bodySmall
+          font.letterSpacing: 1
+        }
         Row {
-          width: parent.width
-          height: knobCtrl.implicitHeight
-          spacing: Style.space(8)
-          Text {
-            text: modelData.label
-            color: Color.foreground
-            font.family: Style.font.family
-            font.pixelSize: Style.font.body
-            width: parent.width * 0.4
-            elide: Text.ElideRight
-            verticalAlignment: Text.AlignVCenter
-          }
-          Loader {
-            id: knobCtrl
-            width: parent.width * 0.6
-            sourceComponent: modelData.type === "boolean" ? boolComp : sliderComp
-            property var param: modelData
-          }
+          width: parent.width; spacing: Style.space(10)
+          Text { text: "Sensitivity"; color: Color.foreground; font.family: Style.font.family; font.pixelSize: Style.font.body; width: parent.width * 0.42; verticalAlignment: Text.AlignVCenter }
+          PanelSlider { width: parent.width * 0.58 - Style.space(10); value: root.config.sensitivity; minimum: 0.1; maximum: 3.0; step: 0.05; onMoved: function(v) { root.setAudio("sensitivity", v) } }
         }
-      }
+        Row {
+          width: parent.width; spacing: Style.space(10)
+          Text { text: "Smoothing"; color: Color.foreground; font.family: Style.font.family; font.pixelSize: Style.font.body; width: parent.width * 0.42; verticalAlignment: Text.AlignVCenter }
+          PanelSlider { width: parent.width * 0.58 - Style.space(10); value: root.config.smoothing; minimum: 0.0; maximum: 1.0; step: 0.05; onMoved: function(v) { root.setAudio("smoothing", v) } }
+        }
 
-      Component {
-        id: sliderComp
-        PanelSlider {
-          width: parent ? parent.width : 100
-          value: currentKnobValue(param)
-          minimum: param.min
-          maximum: param.max
-          step: Math.max(0.001, (param.max - param.min) / 100)
-          onMoved: function(v) { root.setKnob(param.name, v) }
-          function currentKnobValue(p) {
-            var v = root.visualParamValues[p.name]
-            return v !== undefined ? v : p.default
+        // ---- options: color sync (#8) ----
+        Text {
+          text: "OPTIONS"
+          color: Color.foreground
+          opacity: 0.6
+          font.family: Style.font.family
+          font.pixelSize: Style.font.bodySmall
+          font.letterSpacing: 1
+        }
+        Row {
+          width: parent.width; spacing: Style.space(10)
+          Text { text: "Color sync (mini)"; color: Color.foreground; font.family: Style.font.family; font.pixelSize: Style.font.body; width: parent.width * 0.42; verticalAlignment: Text.AlignVCenter }
+          ToggleSwitch {
+            width: parent.width * 0.58 - Style.space(10)
+            checked: root.config.colorSync
+            onToggled: root.setColorSync(checked)
           }
         }
-      }
 
-      Component {
-        id: boolComp
-        ToggleSwitch {
-          width: parent ? parent.width : 100
-          checked: currentBoolValue(param)
-          onToggled: root.setKnob(param.name, !checked)
-          function currentBoolValue(p) {
-            var v = root.visualParamValues[p.name]
-            return v === undefined ? (p.default === true) : (v === true)
-          }
+        // ---- footer ----
+        Row {
+          width: parent.width; spacing: Style.space(8)
+          Button { id: resetBtn; text: "↺ Reset"; leftAlign: true; onClicked: root.resetVisual() }
+          Item { width: parent.width - resetBtn.width - detachBtn.width - Style.space(8); height: 1 }
+          Button { id: detachBtn; text: "Detach ↗"; onClicked: root.detach() }
         }
-      }
-
-      // ---- audio ----
-      Text {
-        text: "AUDIO"
-        color: Color.foreground
-        opacity: 0.6
-        font.family: Style.font.family
-        font.pixelSize: Style.font.bodySmall
-        font.letterSpacing: 1
-      }
-
-      Row {
-        width: parent.width
-        spacing: Style.space(8)
-        Text { text: "Sensitivity"; color: Color.foreground; font.family: Style.font.family; font.pixelSize: Style.font.body; width: parent.width * 0.4; verticalAlignment: Text.AlignVCenter }
-        PanelSlider {
-          width: parent.width * 0.6
-          value: root.config.sensitivity
-          minimum: 0.1; maximum: 3.0; step: 0.05
-          onMoved: function(v) { root.setAudio("sensitivity", v) }
-        }
-      }
-      Row {
-        width: parent.width
-        spacing: Style.space(8)
-        Text { text: "Smoothing"; color: Color.foreground; font.family: Style.font.family; font.pixelSize: Style.font.body; width: parent.width * 0.4; verticalAlignment: Text.AlignVCenter }
-        PanelSlider {
-          width: parent.width * 0.6
-          value: root.config.smoothing
-          minimum: 0.0; maximum: 1.0; step: 0.05
-          onMoved: function(v) { root.setAudio("smoothing", v) }
-        }
-      }
-
-      // ---- footer ----
-      Row {
-        width: parent.width
-        spacing: Style.space(8)
-        Button {
-          id: resetBtn
-          text: "↺ Reset"
-          leftAlign: true
-          onClicked: root.resetVisual()
-        }
-        Item { width: parent.width - resetBtn.width - detachBtn.width - Style.space(8); height: 1 }
-        Button {
-          id: detachBtn
-          text: "Detach ↗"
-          onClicked: root.detach()
-        }
-      }
       }
     }
   }
