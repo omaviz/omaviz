@@ -199,11 +199,16 @@ Panel {
       "env", "QML2_IMPORT_PATH=" + root.shellImportPath,
       "quickshell", "-p", desktopPath
     ]
-    detachProc.running = true
     // Pause the mini player while the desktop window is open (#7).
     writeConfig("desktop", "active", "true")
     persistShell({ desktopActive: true })
     root.close()
+    // Force a fresh start: toggle running false->true so Quickshell always
+    // re-spawns the child (a bare `running = true` is a no-op if it already
+    // thinks it is running). The StdioCollector above ensures running flips
+    // to false when the previous window closed.
+    detachProc.running = false
+    Qt.callLater(function() { detachProc.running = true })
   }
 
   // ---- visuals enumeration ----
@@ -241,7 +246,24 @@ Panel {
     }
   }
 
-  Process { id: detachProc; running: false }
+  // Launches the standalone desktop window. A stdout parser is REQUIRED:
+  // without one the Process never sees EOF and its `running` flag stays true
+  // after the child quickshell exits, so a second detach() (running=true on an
+  // already-"true" process) is a no-op and no window spawns. The parser drains
+  // stdout so `running` correctly flips to false on exit, allowing re-launch.
+  Process {
+    id: detachProc
+    running: false
+    // StdioCollector drains stdout so the Process sees EOF when the child
+    // quickshell exits and `running` flips to false — otherwise a second
+    // detach() (running=true on an already-"true" process) is a no-op.
+    stdout: StdioCollector { onDataChanged: function() {} }
+    onExited: function(code, status) {
+      // Window closed (or launch failed). Resume the mini so it is never
+      // left stuck-paused. Desktop.qml also writes active=false on close.
+      if (root.config.desktopActive === true) writeConfig("desktop", "active", "false")
+    }
+  }
 
   // ---- UI ----
   KeyboardPanel {
