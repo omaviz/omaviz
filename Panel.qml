@@ -390,9 +390,19 @@ Panel {
             width: parent.width
             height: Math.max(Style.space(28), knobCtrl.implicitHeight)
             spacing: Style.space(10)
+            Text {
+              text: modelData.label
+              color: Color.foreground
+              font.family: Style.font.family
+              font.pixelSize: Style.font.body
+              width: parent.width * 0.40
+              elide: Text.ElideRight
+              verticalAlignment: Text.AlignVCenter
+              wrapMode: Text.NoWrap
+            }
             Loader {
               id: knobCtrl
-              width: parent.width
+              width: parent.width * 0.60 - Style.space(10)
               sourceComponent: (modelData.boolean === true) ? boolComp : sliderComp
               property var param: modelData
             }
@@ -437,11 +447,13 @@ Panel {
         }
         Row {
           width: parent.width; spacing: Style.space(10)
-          PanelSlider { width: parent.width; value: root.config.sensitivity; minimum: 0.1; maximum: 3.0; step: 0.05; onMoved: function(v) { root.setAudio("sensitivity", v) } }
+          Text { text: "Sensitivity"; color: Color.foreground; font.family: Style.font.family; font.pixelSize: Style.font.body; width: parent.width * 0.42; verticalAlignment: Text.AlignVCenter }
+          PanelSlider { width: parent.width * 0.58 - Style.space(10); value: root.config.sensitivity; minimum: 0.1; maximum: 3.0; step: 0.05; onMoved: function(v) { root.setAudio("sensitivity", v) } }
         }
         Row {
           width: parent.width; spacing: Style.space(10)
-          PanelSlider { width: parent.width; value: root.config.smoothing; minimum: 0.0; maximum: 1.0; step: 0.05; onMoved: function(v) { root.setAudio("smoothing", v) } }
+          Text { text: "Smoothing"; color: Color.foreground; font.family: Style.font.family; font.pixelSize: Style.font.body; width: parent.width * 0.42; verticalAlignment: Text.AlignVCenter }
+          PanelSlider { width: parent.width * 0.58 - Style.space(10); value: root.config.smoothing; minimum: 0.0; maximum: 1.0; step: 0.05; onMoved: function(v) { root.setAudio("smoothing", v) } }
         }
 
         // ---- options: color sync (#8) ----
@@ -455,8 +467,9 @@ Panel {
         }
         Row {
           width: parent.width; spacing: Style.space(10)
+          Text { text: "Color sync (mini)"; color: Color.foreground; font.family: Style.font.family; font.pixelSize: Style.font.body; width: parent.width * 0.42; verticalAlignment: Text.AlignVCenter }
           ToggleSwitch {
-            width: parent.width
+            width: parent.width * 0.58 - Style.space(10)
             checked: root.config.colorSync
             onToggled: root.setColorSync(checked)
           }
