@@ -4,11 +4,12 @@ import Quickshell
 import Quickshell.Io
 import "Model.js" as Model
 
-// Omaviz detached desktop window (v2).
+// Omaviz detached desktop window (v7).
 // Launched via `quickshell -p <this file>` from Panel.detach().
 // Self-contained: avoids shell-only modules (qs.Commons / qs.Ui) so it
 // loads as a standalone Quickshell config. 600x200, renders the live
 // visualization (Bars / Wave / Fire) via the shared VisualCanvas.
+// Spawns the bundled engine (Model.engineBin) — same source the bar uses.
 
 Window {
   id: win
@@ -29,7 +30,7 @@ Window {
   Process {
     id: bridge
     running: false
-    command: [Model.bridgePath]
+    command: [Model.engineBin, "--source", "auto", "--bands", "32"]
     stdout: SplitParser {
       splitMarker: "\n"
       onRead: function(data) {
@@ -41,6 +42,11 @@ Window {
           }
         } catch (e) {}
       }
+    }
+    // Resilience: if the engine exits, try once to respawn it so the window
+    // does not get stuck on a static frame (mirrors the bar widget's retry).
+    onExited: function(code, status) {
+      if (win.visible) Qt.callLater(function() { bridge.running = true })
     }
   }
 

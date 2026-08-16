@@ -23,8 +23,14 @@ try {
 } catch (e) { /* keep default */ }
 var configPath = home + "/.config/omaviz/config.toml"
 var visualsDir = home + "/.config/omaviz/visuals"
-// Spectrum bridge binary (set by the shell at runtime; default for standalone).
+// v6 bridge binary (REMOVED in v7 — kept only as a constant for back-compat).
 var bridgePath = home + "/.local/bin/omaviz-spectrum-bridge"
+// v7 bundled engine: lives INSIDE the plugin package (no systemd, no socket,
+// no ~/.local/bin). The bar widget and the detached desktop window both spawn
+// this. Path is derivable from HOME so the standalone Desktop.qml (which has no
+// moduleName) can reach it without Quickshell shell globals.
+var pluginDir = home + "/.config/omarchy/plugins/org.omaviz.visualizer"
+var engineBin = pluginDir + "/bin/omaviz-engine"
 
 // ---- TOML helpers ----
 
@@ -369,6 +375,7 @@ if (typeof module !== "undefined") {
     cacheFileText: cacheFileText,
     listVisualFiles: listVisualFiles,
     setVisualFiles: setVisualFiles,
-    readTomlFile: readTomlFile
+    readTomlFile: readTomlFile,
+    engineBin: engineBin
   }
 }

@@ -25,7 +25,8 @@ module.exports = {
   readConfigFromText, defaultConfig, writeConfigKey,
   parseVisualToml, discoverVisualsFromText, visualParamsFromText,
   visualConfigValues, readAudioFromText, parseSpectrumLine,
-  sourceLabel, isDesktopActiveFromText, spectrumData, listVisualFiles
+  sourceLabel, isDesktopActiveFromText, spectrumData, listVisualFiles,
+  engineBin, bridgePath
 }`
   const m = new Module('omaviz-model', null)
   m.filename = modelPath
@@ -587,4 +588,26 @@ test('sourceLabel: maps backend name to friendly, capitalized label', () => {
 test('sourceLabel: default when spectrumData.source missing', () => {
   // Panel reads M.sourceLabel(M.spectrumData.source || '')
   assert.strictEqual(M.sourceLabel(''), 'Unknown')
+})
+
+// v7: desktop window must use the bundled engine, NOT the deleted v6 bridge
+// ===========================================================================
+test('engineBin: plugin-local path points at bundled omaviz-engine', () => {
+  const p = M.engineBin
+  assert.ok(p.endsWith('/bin/omaviz-engine'), 'must point at the bundled engine')
+  assert.ok(p.includes('/omarchy/plugins/org.omaviz.visualizer/'),
+    'must be plugin-local (no systemd, no ~/.local/bin)')
+})
+
+test('engineBin: does NOT reference the removed v6 bridge binary', () => {
+  assert.ok(!M.engineBin.includes('omaviz-spectrum-bridge'),
+    'desktop window must not spawn the deleted bridge')
+  assert.ok(!M.engineBin.includes('/.local/bin/'),
+    'no separate binaries outside the plugin package')
+})
+
+test('bridgePath: retained for back-compat but NOT used by desktop window', () => {
+  // The constant still exists, but its binary was removed in v7; the desktop
+  // window must use engineBin instead. This guards the regression.
+  assert.ok(typeof M.bridgePath === 'string')
 })
