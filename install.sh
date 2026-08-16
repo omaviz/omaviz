@@ -59,10 +59,12 @@ cp "$SRC/plugin/visuals/"*.toml        "$PLUGIN_DIR/visuals/"
 # engine bin already in place (built above)
 say "plugin -> $PLUGIN_DIR"
 
-if command -v omarchy >/dev/null; then
-  omarchy plugin enable org.omaviz.visualizer 2>/dev/null || true
-  say "plugin enabled in bar"
-fi
+# NOTE: do NOT run `omarchy plugin enable` here. The plugin is already declared
+# in the user's shell.json (or the omarchy default set), so enabling is
+# redundant — and doing it while files are still being copied races with the
+# live shell's reload, producing "PluginRegistry.setEnabled: unknown plugin"
+# and a spurious shell self-restart. Copying the files is sufficient; the
+# restart below picks them up cleanly.
 
 # ---------------------------------------------------------------- reload
 step "reloading Omarchy shell"
