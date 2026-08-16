@@ -331,6 +331,14 @@ Panel {
         }
 
         // ---- visualization dropdown ----
+        Text {
+          text: "VISUALIZATION"
+          color: Color.foreground
+          opacity: 0.6
+          font.family: Style.font.family
+          font.pixelSize: Style.font.bodySmall
+          font.letterSpacing: 1
+        }
         Dropdown {
           id: vizDropdown
           width: parent.width
@@ -349,6 +357,14 @@ Panel {
         }
 
         // ---- style (Classic / Fire) — Fire is a style of the Bars visual ----
+        Text {
+          text: "STYLE"
+          color: Color.foreground
+          opacity: 0.6
+          font.family: Style.font.family
+          font.pixelSize: Style.font.bodySmall
+          font.letterSpacing: 1
+        }
         Dropdown {
           id: styleDropdown
           width: parent.width
@@ -362,6 +378,14 @@ Panel {
         }
 
         // ---- per-visualization knobs ----
+        Text {
+          text: "OPTIONS"
+          color: Color.foreground
+          opacity: 0.6
+          font.family: Style.font.family
+          font.pixelSize: Style.font.bodySmall
+          font.letterSpacing: 1
+        }
         Repeater {
           model: root.visualParams
           Row {
@@ -415,6 +439,14 @@ Panel {
         }
 
         // ---- audio ----
+        Text {
+          text: "AUDIO"
+          color: Color.foreground
+          opacity: 0.6
+          font.family: Style.font.family
+          font.pixelSize: Style.font.bodySmall
+          font.letterSpacing: 1
+        }
         Row {
           width: parent.width; spacing: Style.space(10)
           Text { text: "Sensitivity"; color: Color.foreground; font.family: Style.font.family; font.pixelSize: Style.font.body; width: parent.width * 0.42; verticalAlignment: Text.AlignVCenter }
@@ -427,6 +459,14 @@ Panel {
         }
 
         // ---- options: color sync (#8) ----
+        Text {
+          text: "OPTIONS"
+          color: Color.foreground
+          opacity: 0.6
+          font.family: Style.font.family
+          font.pixelSize: Style.font.bodySmall
+          font.letterSpacing: 1
+        }
         Row {
           width: parent.width; spacing: Style.space(10)
           Text { text: "Color sync (mini)"; color: Color.foreground; font.family: Style.font.family; font.pixelSize: Style.font.body; width: parent.width * 0.42; verticalAlignment: Text.AlignVCenter }
