@@ -273,10 +273,10 @@ Panel {
     bar: root.bar
     open: root.opened
     focusTarget: keyCatcher
-    // Clamp WIDTH to available space (no right spill). Height grows to fit all
-    // content flat — no scroll — so nothing is clipped vertically either.
+    // Clamp to the space actually available (omarchy pattern). A bare fixed
+    // width spilled past the panel viewport and clipped controls on the right.
     contentWidth: panel.fittedContentWidth(Style.space(380))
-    contentHeight: column.implicitHeight
+    contentHeight: panel.fittedContentHeight(column.implicitHeight, Style.space(560))
 
     PanelKeyCatcher {
       id: keyCatcher
@@ -285,7 +285,7 @@ Panel {
       onTabRequested: function(d) { root.switchPanel(d) }
     }
 
-    // Plain column filling the card — no scroll. Everything is shown flat.
+    // Plain column filling the card — no scroll. Everything renders flat.
     Column {
       id: column
       anchors.fill: parent
@@ -301,7 +301,7 @@ Panel {
 
       // ---- live visualization preview ----
       Text {
-          text: "PREVIEW"
+        text: "PREVIEW"
           color: Color.foreground
           opacity: 0.6
           font.family: Style.font.family
@@ -484,7 +484,6 @@ Panel {
         }
       }
     }
-  }
 
   function switchPanel(direction) {
     if (root.bar && typeof root.bar.switchPanelFrom === "function")
