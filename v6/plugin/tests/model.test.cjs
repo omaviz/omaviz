@@ -25,7 +25,7 @@ module.exports = {
   readConfigFromText, defaultConfig, writeConfigKey,
   parseVisualToml, discoverVisualsFromText, visualParamsFromText,
   visualConfigValues, readAudioFromText, parseSpectrumLine,
-  sourceLabel, isDesktopActiveFromText, spectrumData, listVisualFiles
+  isDesktopActiveFromText, spectrumData, listVisualFiles
 }`
   const m = new Module('omaviz-model', null)
   m.filename = modelPath
@@ -554,37 +554,4 @@ test('in-memory buffer: writeConfigKey then readTomlValue on same string reflect
   // toggle back off
   buf = M.writeConfigKey(buf, 'mini', 'color_sync', 'false')
   assert.strictEqual(M.readTomlValue(buf, 'mini', 'color_sync'), 'false')
-})
-
-// ===========================================================================
-// v7: spectrum frame carries `source`; panel shows it read-only  [#source-display]
-// ===========================================================================
-test('parseSpectrumLine: captures source into spectrumData.source', () => {
-  M.parseSpectrumLine(JSON.stringify({ bands: [0.1, 0.5], energy: 0.3, beat: 0, silent: false, source: 'pipewire' }))
-  assert.strictEqual(M.spectrumData.source, 'pipewire')
-  assert.deepStrictEqual(M.spectrumData.bands, [0.1, 0.5])
-  assert.strictEqual(M.spectrumData.silent, false)
-})
-
-test('parseSpectrumLine: preserves prior source when line omits it', () => {
-  M.parseSpectrumLine(JSON.stringify({ bands: [0.2], energy: 0.1, beat: 0, silent: true, source: 'pipewire' }))
-  assert.strictEqual(M.spectrumData.source, 'pipewire')
-  // a frame without `source` (legacy/old bridge) must not wipe an existing value
-  M.parseSpectrumLine(JSON.stringify({ bands: [0.0], energy: 0, beat: 0, silent: true }))
-  assert.strictEqual(M.spectrumData.source, 'pipewire', 'source must persist when absent in the line')
-})
-
-test('sourceLabel: maps backend name to friendly, capitalized label', () => {
-  assert.strictEqual(M.sourceLabel('pipewire'), 'PipeWire')
-  assert.strictEqual(M.sourceLabel('pulse'), 'PulseAudio')
-  assert.strictEqual(M.sourceLabel('jack'), 'JACK')
-  assert.strictEqual(M.sourceLabel('alsa'), 'ALSA')
-  assert.strictEqual(M.sourceLabel('file'), 'File')
-  assert.strictEqual(M.sourceLabel(''), 'Unknown')
-  assert.strictEqual(M.sourceLabel('bogus'), 'bogus')
-})
-
-test('sourceLabel: default when spectrumData.source missing', () => {
-  // Panel reads M.sourceLabel(M.spectrumData.source || '')
-  assert.strictEqual(M.sourceLabel(''), 'Unknown')
 })

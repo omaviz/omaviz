@@ -5,11 +5,11 @@ import qs.Commons
 import qs.Ui
 import "Model.js" as Model
 
-// Omaviz spectrum bar widget (v7).
+// Omaviz spectrum bar widget (v2).
 // Single bar-widget kind; the panel is loaded internally via Loader
 // (clock-plugin pattern). Left-click opens the settings panel.
-// The bar renders the live spectrum from the bundled omaviz-engine
-// (plugin-local bin/), spawned by this widget. No daemon, no socket.
+// The bar renders the live spectrum from the daemon via the
+// omaviz-spectrum-bridge helper process.
 
 BarWidget {
   id: root
@@ -84,14 +84,11 @@ BarWidget {
   onBarChanged: injectPanel()
   onSettingsChanged: injectPanel()
 
-  // ---- Spectrum reader: bundled omaviz-engine (plugin-local) -> JSON lines ----
-  readonly property string engineBin:
-    Quickshell.env("HOME") + "/.config/omarchy/plugins/"
-    + root.moduleName + "/bin/omaviz-engine"
+  // ---- Spectrum reader: bridge binary -> JSON lines on stdout ----
   Process {
     id: spectrumProc
     running: true
-    command: [root.engineBin]
+    command: ["/home/kishan/.local/bin/omaviz-spectrum-bridge"]
     stdout: SplitParser {
       onRead: function(data) {
         if (root.paused) return   // freeze the mini player while detached (#7)
@@ -104,8 +101,9 @@ BarWidget {
         root.spectrumSilent = Model.spectrumData.silent
       }
     }
-    // Self-heal across reboots / engine restarts: if the engine exits, retry a
-    // few times so the mini comes up on its own instead of staying dead.
+    // Self-heal across reboots: if the bridge exits (e.g. the omaviz daemon's
+    // socket isn't ready yet at login), retry a few times so the mini comes up
+    // on its own instead of staying dead until a manual restart.
     onExited: function(code, status) {
       if (root._bridgeRetries < 10) {
         root._bridgeRetries++

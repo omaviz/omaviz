@@ -6,3 +6,7 @@ daemon/target/
 # local config / runtime
 *.omaviz-orig
 .DS_Store
+
+# v7 bundled engine (built by install.sh, not committed)
+plugin/bin/
+engine/target/

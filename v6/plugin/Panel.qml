@@ -455,19 +455,6 @@ Panel {
           Text { text: "Smoothing"; color: Color.foreground; font.family: Style.font.family; font.pixelSize: Style.font.body; width: parent.width * 0.42; verticalAlignment: Text.AlignVCenter }
           PanelSlider { width: parent.width * 0.58 - Style.space(10); value: root.config.smoothing; minimum: 0.0; maximum: 1.0; step: 0.05; onMoved: function(v) { root.setAudio("smoothing", v) } }
         }
-        // ---- read-only source (v7): reported by the engine, not chosen here ----
-        Row {
-          width: parent.width; spacing: Style.space(10)
-          Text { text: "Source"; color: Color.foreground; opacity: 0.7; font.family: Style.font.family; font.pixelSize: Style.font.body; width: parent.width * 0.42; verticalAlignment: Text.AlignVCenter }
-          Text {
-            text: Model.sourceLabel((Model.spectrumData.source || ""))
-            color: Color.foreground; opacity: 0.7
-            font.family: Style.font.family; font.pixelSize: Style.font.body
-            width: parent.width * 0.58 - Style.space(10)
-            verticalAlignment: Text.AlignVCenter
-            elide: Text.ElideRight
-          }
-        }
 
         // ---- options: color sync (#8) ----
         Text {

@@ -274,11 +274,10 @@ var spectrumData = {
   bands: [],
   energy: 0,
   beat: 0,
-  silent: true,
-  source: ""
+  silent: true
 }
 
-// Parse a JSON line from spectrum-bridge / omaviz-engine stdout
+// Parse a JSON line from spectrum-bridge stdout
 function parseSpectrumLine(jsonLine) {
   try {
     var data = JSON.parse(jsonLine)
@@ -287,29 +286,10 @@ function parseSpectrumLine(jsonLine) {
       spectrumData.energy = data.energy !== undefined ? data.energy : 0
       spectrumData.beat = data.beat !== undefined ? data.beat : 0
       spectrumData.silent = data.silent === true
-      // v7: engine reports its resolved backend name. Preserve any prior value
-      // when the line omits `source` (e.g. an older/legacy frame).
-      if (typeof data.source === "string" && data.source.length > 0) {
-        spectrumData.source = data.source
-      }
     }
   } catch (e) {
     // malformed line — skip
   }
-}
-
-// Friendly, capitalized label for an audio backend name. Used by the panel's
-// read-only SOURCE line. Unknown names pass through unchanged.
-function sourceLabel(name) {
-  var map = {
-    pipewire: "PipeWire",
-    pulse: "PulseAudio",
-    jack: "JACK",
-    alsa: "ALSA",
-    file: "File"
-  }
-  if (!name) return "Unknown"
-  return map[name] !== undefined ? map[name] : name
 }
 
 // ---- File IO helpers used by the panel ----
