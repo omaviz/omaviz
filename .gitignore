@@ -1,7 +1,8 @@
-# Rust build artifacts
+# Rust build artifacts (all cargo target trees)
 bridge/target/
 daemon/target/
 engine/target/
+v6/**/target/
 
 # local config / runtime
 *.omaviz-orig
@@ -9,6 +10,5 @@ engine/target/
 
 # v7 bundled engine IS committed (Architecture A: the plugin dir is a
 # self-contained, zero-build drop-in — matches Omarchy's plugin model).
-# Only the intermediate cargo target tree is ignored.
+# Only the intermediate cargo target trees are ignored.
 # plugin/bin/
-engine/target/
