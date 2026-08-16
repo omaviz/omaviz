@@ -313,3 +313,27 @@ omaviz/                  (this repo, tag v7.1)
 - `plugin/bin/omaviz-engine` is a **committed** artifact (Architecture A), not a
   build-time output. Rebuild it with `build.sh` after changing `engine/` source;
   `install.sh` uses the committed copy unless `--build` is given.
+
+---
+
+## 13. Feature roadmap
+
+Progress reflects shipped capability in the live plugin (tag `v7.1`).
+
+| # | Feature | Status | Progress |
+|---|---------|--------|---------:|
+| 1 | Single-package plugin (QML + bundled native engine, no systemd/socket) | Shipped | 100% |
+| 2 | Zero-build drop-in install (committed binary, `omarchy plugin enable`) | Shipped | 100% |
+| 3 | PipeWire audio capture → 32-band spectrum (default sink monitor) | Shipped | 100% |
+| 4 | Mini bar visualizer (Bars / Wave / Fire Canvas-2D) | Shipped | 100% |
+| 5 | Settings panel (visualization, style, audio, color sync, reset) | Shipped | 100% |
+| 6 | Read-only audio source indicator (PipeWire) | Shipped | 100% |
+| 7 | Desktop detach window (standalone spectrum window) | Shipped | 100% |
+| 8 | Detach/Attach toggle with mini pause + stale-flag resilience | Shipped | 100% |
+| 9 | TDD: engine (Rust) + plugin (node) test suites green | Shipped | 100% |
+| 10 | Additional backends (PulseAudio / JACK / ALSA) | Planned | 0% |
+| 11 | File/loopback source for offline testing | Planned | 0% |
+| 12 | GPU / ShaderEffect Winamp visuals (Bars→Wave→Fire) | Planned | 0% |
+| 13 | Backend-switching UI (manual source selection) | Planned | 0% |
+| 14 | Multi-monitor / position presets for detach window | Backlog | 0% |
+| 15 | Preset/theme sharing for visuals | Backlog | 0% |
