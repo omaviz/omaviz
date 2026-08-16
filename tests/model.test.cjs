@@ -446,6 +446,67 @@ test('pause cycle: detach writes active=true, close writes active=false', () => 
 })
 
 // ===========================================================================
+// VISUALIZATION dropdown must exclude Fire (it is a STYLE, not a viz)  [#1]
+// (The filtering happens in Panel.qml; this encodes the data contract.)
+// ===========================================================================
+test('VIZ dropdown contract: Fire excluded, only Bars/Wave shown', () => {
+  const files = [
+    { path: '/x/equalizer.toml', text: EQUALIZER_TOML },
+    { path: '/x/wave.toml', text: WAVE_TOML },
+    { path: '/x/fire.toml', text: FIRE_TOML }
+  ]
+  const visuals = M.discoverVisualsFromText(files)
+  const vizOptions = visuals
+    .filter(v => v.name !== 'fire')
+    .map(v => (v.name === 'equalizer' ? 'Bars' : v.name === 'wave' ? 'Wave' : v.name))
+  assert.deepStrictEqual(vizOptions, ['Bars', 'Wave'])
+  assert.ok(!vizOptions.includes('Fire'), 'Fire must not appear in the VIZ dropdown')
+})
+
+// ===========================================================================
+// Knob edit reflects on a SINGLE write without rebuilding the param list [#2]
+// ===========================================================================
+test('knob write reflects immediately via visualConfigValues (no array rebuild)', () => {
+  let cfg = '[mini]\nvisual = "equalizer"\n\n[visual.equalizer]\nbar_count = 32\n'
+  const params = M.visualParamsFromText(EQUALIZER_TOML, 'equalizer')
+  let vals = M.visualConfigValues(cfg, params)
+  assert.strictEqual(vals.bar_count, 32)
+  cfg = M.writeConfigKey(cfg, 'visual.equalizer', 'bar_count', 48)
+  vals = M.visualConfigValues(cfg, params)
+  assert.strictEqual(vals.bar_count, 48, 'single write must reflect without rebuilding params')
+})
+
+// ===========================================================================
+// Color sync write/read round-trip  [#3]
+// ===========================================================================
+test('color_sync: toggle writes mini.color_sync and is read back', () => {
+  let cfg = '[mini]\nvisual = "equalizer"\ncolor_sync = false\n'
+  cfg = M.writeConfigKey(cfg, 'mini', 'color_sync', 'true')
+  assert.strictEqual(M.readConfigFromText(cfg).colorSync, true)
+  cfg = M.writeConfigKey(cfg, 'mini', 'color_sync', 'false')
+  assert.strictEqual(M.readConfigFromText(cfg).colorSync, false)
+})
+
+// ===========================================================================
+// Pause flag: stale "true" resettable; close resets to false  [#4]
+// ===========================================================================
+test('pause: a stray desktop.active=true (killed detach) is reset on close', () => {
+  let cfg = '[desktop]\nvisual = "equalizer"\nactive = "true"\n'
+  assert.strictEqual(M.readConfigFromText(cfg).desktopActive, true, 'mini would be stuck paused')
+  cfg = M.writeConfigKey(cfg, 'desktop', 'active', 'false')
+  assert.strictEqual(M.readConfigFromText(cfg).desktopActive, false)
+  assert.strictEqual((cfg.match(/active\s*=/g) || []).length, 1, 'no duplicate active key')
+})
+
+test('pause: detach writes active=true, exactly one header/key', () => {
+  let cfg = '[desktop]\nvisual = "equalizer"\nactive = "false"\n'
+  cfg = M.writeConfigKey(cfg, 'desktop', 'active', 'true')
+  assert.strictEqual(M.readConfigFromText(cfg).desktopActive, true)
+  assert.strictEqual((cfg.match(/\[desktop\]/g) || []).length, 1)
+  assert.strictEqual((cfg.match(/active\s*=/g) || []).length, 1)
+})
+
+// ===========================================================================
 // Integration: style selection round-trip (Fire is a style, not a viz) [#5]
 // ===========================================================================
 test('style round-trip: selectStyle writes both mini and desktop style, knobs combine', () => {

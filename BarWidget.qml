@@ -48,6 +48,11 @@ BarWidget {
     return Math.min(1, bands[bandIndex] * sens)
   }
 
+  // Allow the settings panel (loaded in the same QML process) to push a new
+  // config immediately after a write, so pause / color-sync propagate without
+  // depending on cross-FileView disk-watch timing.
+  function applyConfig(text) { root.config = Model.readConfigFromText(text) }
+
   // ---- Panel lifecycle contract (required by Bar.findPanelWidget) ----
   readonly property bool opened: panelLoader.item
     ? panelLoader.item.opened === true : false

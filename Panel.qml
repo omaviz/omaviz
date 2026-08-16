@@ -132,7 +132,16 @@ Panel {
     var next = Model.writeConfigKey(configWrite.text(), section, key, value)
     configWrite.setText(next)
     root.config = Model.readConfigFromText(next)
-    if (section.indexOf("visual.") === 0) refreshVisualParamCache()
+    // Push the new config straight to the bar widget (same QML process) so
+    // pause / color-sync changes take effect immediately, without relying on
+    // cross-FileView disk-watch propagation.
+    if (root.hostWidget && "applyConfig" in root.hostWidget) root.hostWidget.applyConfig(next)
+    if (section.indexOf("visual.") === 0) {
+      // Update only the values map (NOT visualParams) so the Repeater keeps
+      // its delegates — rebuilding visualParams mid-drag caused the
+      // "have to click twice" jank.
+      root.visualParamValues = Model.visualConfigValues(configWrite.text(), root.visualParams)
+    }
   }
 
   function selectVisual(displayName) {
@@ -233,7 +242,7 @@ Panel {
     bar: root.bar
     open: root.opened
     focusTarget: keyCatcher
-    contentWidth: panel.fittedContentWidth(Style.space(360))
+    contentWidth: 360
     contentHeight: panel.fittedContentHeight(scroll.contentHeight)
 
     PanelKeyCatcher {
@@ -305,12 +314,15 @@ Panel {
           width: parent.width
           label: "Visualization"
           value: root.activeVisual
-          options: root.visuals.map(function(v) {
-            var d = v.name
-            if (d === "equalizer") d = "Bars"
-            else if (d === "wave") d = "Wave"
-            return { value: d, label: d }
-          })
+          // Fire is a STYLE of Bars, not a visualization — exclude it here.
+          options: root.visuals
+            .filter(function(v) { return v.name !== "fire" })
+            .map(function(v) {
+              var d = v.name
+              if (d === "equalizer") d = "Bars"
+              else if (d === "wave") d = "Wave"
+              return { value: d, label: d }
+            })
           onChanged: function(v) { root.selectVisual(v) }
         }
 
