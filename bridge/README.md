@@ -1,45 +1,48 @@
 # omaviz-spectrum-bridge
 
-> **STATUS: SOURCE NOT IN THIS REPO — but the binary IS committed here as a
-> safety copy.** The `omaviz-spectrum-bridge` binary was built outside this repo
-> and its Rust source was never committed. To avoid losing the only artifact, a
-> copy is kept at `bridge/bin/omaviz-spectrum-bridge` (sha256 below). A
-> reconstructed-from-contract source is the longer-term goal (see §Reconstruction).
+> **STATUS: SOURCE RECOVERED.** The Rust source is in this directory
+> (`src/main.rs`, `Cargo.toml`) — reconstructed from the original Hermes session
+> that first wrote it (session `architect/20260815_121541_b511e6`, message 13751).
+> It was later lost when that session's working tree was cleared, and recovered
+> here from the transcript. The built binary is committed at `bridge/bin/` as a
+> safety copy.
 
-```
-sha256: 2c67a773d5f6eeb16615aeba36c4d17c8cf079285d31c7f68fd0ecdc39667aed
-size:   523768 bytes
-built:  2026-08-15 (from mtime of the deployed /home/kishan/.local/bin copy)
-```
-
-## What the binary does (observed)
-1. Connects to the `omaviz` daemon's Unix socket at `/run/user/1000/omaviz.sock`.
-   - If the socket is absent, the binary exits immediately with
-     `Error: No such file or directory (os error 2)` (ENOENT). This is why the
-     mini bar goes dead when the `omaviz` daemon is down.
-2. Reads OMAV spectrum frames from the socket.
+## What it does
+1. Connects to the `omaviz` daemon's Unix socket at `$XDG_RUNTIME_DIR/omaviz.sock`
+   (default `/run/user/1000/omaviz.sock`).
+   - If the socket is absent, it sleeps and retries to reconnect (so it survives
+     daemon restarts / reboots).
+2. Reads **OMAV binary frames** (format defined in `daemon/src/ipc.rs`):
+   ```
+   magic  u32 = 0x4F4D4156 ("OMAV")  little-endian
+   n_bands u16
+   flags  u16   (bit0 = silent)
+   energy f32
+   beat   f32
+   bands  [f32; n_bands]
+   ```
 3. Prints one **JSON object per line** on stdout:
    ```json
-   {"bands":[0.63,0.70,...],"energy":0.30,"beat":0.0}
+   {"bands":[…32 values…],"energy":0.41,"beat":0.0,"silent":false}
    ```
-   - `bands`: array of 32 float magnitudes (0.0–1.0+).
-   - `energy`: scalar float.
-   - `beat`: scalar float.
    - Consumed by `plugin/BarWidget.qml` → `Model.parseSpectrumLine`
      (`spectrumData.bands/energy/beat`).
 
-## How it is launched
-- Spawned by `plugin/BarWidget.qml` `spectrumProc` (Quickshell `Process`,
-  `running: true`) at absolute path `/home/kishan/.local/bin/omaviz-spectrum-bridge`.
-- A bounded `onExited` retry (max 10, 1.5s apart) self-heals after reboots when
-  the socket is not ready at login.
+## Build
+```bash
+cd bridge
+cargo build --release
+# binary: target/release/omaviz-spectrum-bridge
+```
 
-## Reconstruction (TODO)
-The source is missing, but the contract above is enough to rebuild a minimal
-bridge in Rust:
-- Connect the daemon socket (path from `$XDG_RUNTIME_DIR/omaviz.sock`,
-  default `/run/user/1000/omaviz.sock`).
-- Read OMAV frames (wire format lives in `daemon/src/ipc.rs` / `daemon/src/dsp.rs`).
-- Print `{"bands":[...],"energy":f,"beat":f}` per line.
-Do **not** ship a reconstructed binary as a drop-in without verifying it produces
-identical frame output against the committed `bridge/bin/omaviz-spectrum-bridge`.
+## Verification
+The reconstructed binary was diff-tested against the previously-deployed binary
+over the live socket: **identical frame output** (all 178 overlapping lines
+byte-identical). With a 440 Hz test tone it emits non-silent frames with the
+expected spectral peak — confirming the full daemon → socket → bridge → bar path
+works with the source-backed build.
+
+## Deploy
+Installed to `~/.local/bin/omaviz-spectrum-bridge` by the repo's install script
+(see root `install.sh`). The bar's `spectrumProc` spawns it at that absolute
+path; a bounded `onExited` retry (max 10, 1.5s apart) self-heals after reboots.

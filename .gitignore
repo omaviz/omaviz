@@ -1,0 +1,8 @@
+# Rust build artifacts
+bridge/target/
+daemon/target/
+**/target/
+
+# local config / runtime
+*.omaviz-orig
+.DS_Store
