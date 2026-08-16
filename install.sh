@@ -69,7 +69,8 @@ fi
 
 # systemd user unit
 mkdir -p "$UNIT_DIR"
-cp "$SRC/daemon/integration/omaviz.service" "$UNIT"
+# The committed unit hardcodes /usr/bin/omaviz; point ExecStart at our PREFIX bin.
+sed "s#^ExecStart=.*#ExecStart=$BIN/omaviz daemon#" "$SRC/daemon/integration/omaviz.service" > "$UNIT"
 systemctl --user daemon-reload
 systemctl --user enable --now omaviz.service
 say "daemon service enabled + started"
@@ -87,6 +88,12 @@ cp "$SRC/plugin/VisualCanvas.qml"      "$PLUGIN_DIR/"
 mkdir -p "$PLUGIN_DIR/visuals"
 cp "$SRC/plugin/visuals/"*.toml        "$PLUGIN_DIR/visuals/"
 say "plugin -> $PLUGIN_DIR"
+
+# Enable the plugin in the bar so the bar widget (and its bridge) actually loads.
+if command -v omarchy >/dev/null; then
+  omarchy plugin enable org.omaviz.visualizer 2>/dev/null || true
+  say "plugin enabled in bar"
+fi
 
 # ---------------------------------------------------------------- reload
 step "reloading Omarchy shell"

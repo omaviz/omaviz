@@ -109,9 +109,11 @@ function writeConfigKey(tomlText, section, key, value) {
     if (lines[i].trim() === header) { targetIdx = i; break }
   }
 
-  // Build the value string (quote string values for visual/active keys).
+  // Build the value string. Quote string values so the result is valid TOML
+  // for the strict omaviz daemon (which rejects unquoted strings like
+  // `style = classic`). Numbers/booleans stay unquoted.
   var v = String(value)
-  if (typeof value === "string" && (key === "visual" || key === "active")) {
+  if (typeof value === "string") {
     v = '"' + v + '"'
   }
   var entry = key + " = " + v
