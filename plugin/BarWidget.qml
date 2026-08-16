@@ -156,8 +156,14 @@ BarWidget {
   // Detach / Attach toggle.
   function detach() {
     if (root.config.desktopActive === true) {
-      // Currently detached -> Attach: terminate the window.
+      // Attach: terminate the window if it is running. ALSO reset the flag
+      // unconditionally — if the window already died without clearing it
+      // (external kill, crash), onExited never fires and the flag would stay
+      // stuck as "true", leaving the button frozen on "Attach" with no
+      // window to close. Resetting here guarantees we can detach again.
       detachProc.running = false
+      root.detachedRunning = false
+      root.writeDesktopActive(false)
     } else {
       // Detach: launch the standalone desktop window.
       detachProc.command = ["quickshell", "-p", root.pluginDir + "/Desktop.qml"]
@@ -174,7 +180,15 @@ BarWidget {
     path: Model.configPath
     watchChanges: true
     printErrors: false
-    onLoaded: root.config = Model.readConfigFromText(text())
+    onLoaded: {
+      root.config = Model.readConfigFromText(text())
+      // Self-heal: if the desktop flag is stuck true but no window is running
+      // (e.g. the detach window was killed externally), reset it so the
+      // button returns to "Detach" instead of being frozen on "Attach".
+      if (root.config.desktopActive === true && !detachProc.running) {
+        root.writeDesktopActive(false)
+      }
+    }
     onFileChanged: root.config = Model.readConfigFromText(text())
     onLoadFailed: root.config = Model.defaultConfig()
   }

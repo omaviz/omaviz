@@ -36,7 +36,11 @@ if [ "$DO_BUILD" = 1 ]; then
     echo "cargo not found; expecting a prebuilt engine at plugin/bin/omaviz-engine" >&2
   else
     ( cd "$SRC/engine" && cargo build --release )
-    cp "$SRC/engine/target/release/omaviz-engine" "$BIN_DIR/"
+    # Atomic copy: cp to a temp name then mv into place. A plain `cp` over the
+    # running binary fails with "Text file busy"; `mv` just replaces the inode,
+    # so an in-use engine keeps running on the old inode until the shell restarts.
+    cp "$SRC/engine/target/release/omaviz-engine" "$BIN_DIR/omaviz-engine.new"
+    mv -f "$BIN_DIR/omaviz-engine.new" "$BIN_DIR/omaviz-engine"
   fi
 fi
 if [ ! -x "$BIN_DIR/omaviz-engine" ]; then
