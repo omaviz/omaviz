@@ -11,9 +11,9 @@ import "Model.js" as Model
 // popout contract: the bar forwards opened / open() / close() / toggle() /
 // popoutSwitchClosing, and injects bar / anchorItem / hostWidget / settings.
 //
-// Layout (top-down, no right-side list per v2 spec):
-//   top 30%  — live visualization preview (same bars as the bar widget)
-//   dropdown — visualization selector
+// Layout (top-down):
+//   top    — live visualization preview (same bars as the bar widget)
+//   dropdown — visualization selector (lists ALL visualizations in visuals/)
 //   knobs    — per-visualization sliders/checkboxes (declared in .toml)
 //   audio    — sensitivity / smoothing
 //   footer   — Reset visualization · Detach
@@ -29,6 +29,13 @@ Panel {
   property bool popoutSwitchClosing: false
 
   readonly property var barIdentity: hostWidget || root
+
+  // Absolute path to this plugin dir (where Desktop.qml lives), used by
+  // detach() to launch a standalone Quickshell window.
+  readonly property string pluginDir: String(Qt.resolvedUrl(".")).replace(/^file:\/\//, "")
+  // Shell QML import root (contains the qs.Commons / qs.Ui modules). Passed to
+  // the detached window via QML2_IMPORT_PATH so it can resolve shell modules.
+  readonly property string shellImportPath: "/usr/share/omarchy/shell"
 
   // ---- live state mirrored from shared singleton ----
   property var config: Model.defaultConfig()
@@ -69,14 +76,30 @@ Panel {
     onFileChanged: root.config = Model.readConfigFromText(text())
   }
 
-  // ---- live spectrum: read shared singleton snapshot on open ----
-  // (Model.spectrumData is a JS object with no QML signal; the bar mutates it
-  // every frame. We snapshot it in refreshState() when the panel opens.)
+  // ---- live spectrum refresh ----
+  // Model.spectrumData is a JS singleton with no QML signal, so poll it on a
+  // timer to drive the live preview/bar animation.
+  Timer {
+    id: specTimer
+    interval: 50
+    repeat: true
+    running: true
+    onTriggered: {
+      root.spectrumBands = Model.spectrumData.bands
+      root.spectrumSilent = Model.spectrumData.silent
+    }
+  }
 
-  // In-memory cache of the active visual's param values. Populated once on
-  // open and after each write — never read live from configWrite.text() inside
-  // a binding, which would re-enter the writable FileView and stack-overflow.
+  // In-memory cache of the active visual's param values. Populated on open
+  // and after each write — never read live from configWrite.text() inside a
+  // binding (that re-enters the writable FileView and stack-overflows).
   property var visualParamValues: {}
+  // Declarations (name/label/min/max/type) for the active visual's knobs,
+  // populated from the cached .toml so the knobs Repeater is reliable.
+  property var visualParams: []
+  // Raw .toml text per visual name, populated by the enumeration Process
+  // (avoids an unreliable file-text cache read inside refreshState timing).
+  property var visualTomlCache: {}
 
   onHostWidgetChanged: refreshState()
   Component.onCompleted: refreshState()
@@ -85,18 +108,25 @@ Panel {
     root.spectrumBands = Model.spectrumData.bands
     root.spectrumSilent = Model.spectrumData.silent
     refreshVisualParamCache()
-    readVisuals.refresh()
+    refreshVisuals()
   }
 
   // Re-read the active visual's .toml param values into visualParamValues.
   function refreshVisualParamCache() {
-    var toml = Model.readFileText(Model.visualsDir + "/" + root.activeVisual + ".toml")
+    var cache = root.visualTomlCache || {}
+    var toml = cache[root.activeVisual] || ""
     var params = Model.visualParamsFromText(toml, root.activeVisual)
+    root.visualParams = params
     root.visualParamValues = Model.visualConfigValues(toml, root.activeVisual, params)
   }
 
-  // Map a bar index to its spectrum value (root scope so the preview
-  // Repeater delegate can resolve it during initialization).
+  // Enumerate visualizations from visuals/ (re-scan so new files appear).
+  function refreshVisuals() {
+    readVisuals.refresh()
+  }
+
+  // Map a bar index to its spectrum value (root scope so the Repeater
+  // delegate can resolve it during initialization).
   function barValue(index) {
     var bands = root.spectrumBands
     if (!bands || bands.length === 0) return 0
@@ -121,8 +151,6 @@ Panel {
     var next = Model.writeConfigKey(configWrite.text(), section, key, value)
     configWrite.setText(next)
     root.config = Model.readConfigFromText(next)
-    // keep the in-memory visual param cache in sync (reads from disk, not
-    // from the writable FileView binding path)
     if (section.indexOf("visual.") === 0) refreshVisualParamCache()
   }
 
@@ -132,6 +160,7 @@ Panel {
     writeConfig("desktop", "visual", name)
     writeConfig("full", "visual", name)
     persistShell({ visual: name })
+    refreshVisualParamCache()
   }
 
   function setKnob(name, value) {
@@ -152,34 +181,60 @@ Panel {
   }
 
   function detach() {
+    // Launch the detached desktop window (standalone Quickshell, 400x200).
+    // QML2_IMPORT_PATH lets the standalone config resolve qs.Commons/qs.Ui
+    // if it ever needs them; Desktop.qml is self-contained regardless.
+    var desktopPath = root.pluginDir + "/Desktop.qml"
+    detachProc.command = [
+      "env", "QML2_IMPORT_PATH=" + root.shellImportPath,
+      "quickshell", "-p", desktopPath
+    ]
+    detachProc.running = true
     writeConfig("desktop", "active", "true")
     persistShell({ desktopActive: true })
     root.close()
   }
 
-  // ---- visuals enumeration ----
+  // ---- visuals enumeration (reads ALL *.toml in visuals/) ----
+  // Plaintext sentinel delimiters (NUL bytes don't survive this bash's
+  // printf, so we use unambiguous sentinels instead).
   Process {
     id: readVisuals
     running: false
     command: ["bash", "-c",
-      "for f in " + Util.shellQuote(Model.visualsDir) + "/*.toml; do " +
-      "[ -f \"$f\" ] && printf '%s\\0%s\\0' \"$f\" \"$(cat \"$f\" 2>/dev/null)\"; done"]
+      "shopt -s nullglob; for f in " + Util.shellQuote(Model.visualsDir) + "/*.toml; do " +
+      "printf '%s|||OMAVIZ|||%s###OMAVIZ###' \"$f\" \"$(cat \"$f\" 2>/dev/null)\"; done"]
     function refresh() { if (!running) running = true }
-    stdout: SplitParser {
-      onRead: function(data) {
-        var chunks = String(data).split("\0")
+    stdout: StdioCollector {
+      onDataChanged: function() {
+        var raw = String(readVisuals.stdout.text)
+        var records = raw.split("###OMAVIZ###")
         var contents = []
-        for (var i = 0; i + 1 < chunks.length; i += 2) {
-          if (chunks[i]) {
-            contents.push({ path: chunks[i], text: chunks[i + 1] || "" })
-            Model.cacheFileText(chunks[i], chunks[i + 1] || "")
+        for (var i = 0; i < records.length; i++) {
+          var rec = records[i]
+          if (!rec) continue
+          var parts = rec.split("|||OMAVIZ|||")
+          if (parts.length === 2 && parts[0]) {
+            contents.push({ path: parts[0], text: parts[0] ? parts[1] || "" : "" })
+            Model.cacheFileText(parts[0], parts[1] || "")
           }
         }
         root.visuals = Model.discoverVisualsFromText(contents)
+        // Map visual name -> raw toml text for reliable knob rendering.
+        var tomlByName = {}
+        for (var c = 0; c < contents.length; c++) {
+          var p = contents[c].path || ""
+          var name = p.replace(/.*\/([^/]+)\.toml$/, "$1")
+          if (name) tomlByName[name] = contents[c].text || ""
+        }
+        root.visualTomlCache = tomlByName
         refreshVisualParamCache()
       }
     }
   }
+
+  // Detach window launcher (kept alive briefly; quickshell owns the process)
+  Process { id: detachProc; running: false }
 
   // ---- UI ----
   KeyboardPanel {
@@ -189,7 +244,7 @@ Panel {
     bar: root.bar
     open: root.opened
     focusTarget: keyCatcher
-    contentWidth: panel.fittedContentWidth(Style.space(320))
+    contentWidth: panel.fittedContentWidth(Style.space(340))
     contentHeight: panel.fittedContentHeight(scroll.contentHeight)
 
     PanelKeyCatcher {
@@ -211,13 +266,13 @@ Panel {
       Column {
         id: column
         width: scroll.width
-        spacing: Style.space(10)
+        spacing: Style.space(12)
         padding: Style.space(12)
 
-      // ---- top 30%: live preview ----
+      // ---- live visualization preview ----
       Item {
         width: parent.width
-        height: Math.max(Style.space(60), parent.width * 0.3)
+        height: Math.max(Style.space(70), parent.width * 0.28)
 
         Rectangle {
           anchors.fill: parent
@@ -247,21 +302,11 @@ Panel {
         }
       }
 
-      // ---- visualization dropdown ----
-      Text {
-        text: "VISUALIZATION"
-        color: Color.foreground
-        opacity: 0.6
-        font.family: Style.font.family
-        font.pixelSize: Style.font.bodySmall
-        font.letterSpacing: 1
-      }
-
+      // ---- visualization dropdown (lists ALL visualizations) ----
       Dropdown {
         id: vizDropdown
         width: parent.width
         label: "Visualization"
-        showLabel: false
         value: root.activeVisual
         options: root.visuals.map(function(v) { return { value: v.name, label: v.label } })
         onChanged: function(v) { root.selectVisual(v) }
@@ -278,31 +323,26 @@ Panel {
       }
 
       Repeater {
-        model: Model.visualParamsFromText(
-          Model.readFileText(Model.visualsDir + "/" + root.activeVisual + ".toml"),
-          root.activeVisual)
+        model: root.visualParams
 
-        Item {
+        Row {
           width: parent.width
-          height: knobRow.implicitHeight
-          Row {
-            id: knobRow
-            width: parent.width
-            spacing: Style.space(8)
-            Text {
-              text: modelData.label
-              color: Color.foreground
-              font.family: Style.font.family
-              font.pixelSize: Style.font.body
-              width: parent.width * 0.4
-              elide: Text.ElideRight
-              verticalAlignment: Text.AlignVCenter
-            }
-            Loader {
-              width: parent.width * 0.6
-              sourceComponent: modelData.type === "boolean" ? boolComp : sliderComp
-              property var param: modelData
-            }
+          height: knobCtrl.implicitHeight
+          spacing: Style.space(8)
+          Text {
+            text: modelData.label
+            color: Color.foreground
+            font.family: Style.font.family
+            font.pixelSize: Style.font.body
+            width: parent.width * 0.4
+            elide: Text.ElideRight
+            verticalAlignment: Text.AlignVCenter
+          }
+          Loader {
+            id: knobCtrl
+            width: parent.width * 0.6
+            sourceComponent: modelData.type === "boolean" ? boolComp : sliderComp
+            property var param: modelData
           }
         }
       }
@@ -310,6 +350,7 @@ Panel {
       Component {
         id: sliderComp
         PanelSlider {
+          width: parent ? parent.width : 100
           value: currentKnobValue(param)
           minimum: param.min
           maximum: param.max
@@ -325,6 +366,7 @@ Panel {
       Component {
         id: boolComp
         ToggleSwitch {
+          width: parent ? parent.width : 100
           checked: currentBoolValue(param)
           onToggled: root.setKnob(param.name, !checked)
           function currentBoolValue(p) {

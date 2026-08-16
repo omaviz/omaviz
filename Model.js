@@ -23,6 +23,8 @@ try {
 } catch (e) { /* keep default */ }
 var configPath = home + "/.config/omaviz/config.toml"
 var visualsDir = home + "/.config/omaviz/visuals"
+// Spectrum bridge binary (set by the shell at runtime; default for standalone).
+var bridgePath = home + "/.local/bin/omaviz-spectrum-bridge"
 
 // ---- TOML helpers ----
 
@@ -161,46 +163,46 @@ function parseVisualToml(tomlText, name) {
 
   if (!tomlText) return { name, label, description, params: [] }
 
+  var currentParamIndex = -1
+  function flush() {
+    if (currentParam && currentParam.name) params.push(currentParam)
+    currentParamIndex = -1
+  }
+
   var lines = String(tomlText).split("\n")
   for (var i = 0; i < lines.length; i++) {
     var line = lines[i].trim()
     if (line.startsWith("#") || line === "") continue
 
     if (line.startsWith("label =")) {
-      label = line.split("=")[1].trim().replace(/^["']|["']$/g, "")
+      if (!currentParam) label = line.split("=")[1].trim().replace(/^["']|["']$/g, "")
     } else if (line.startsWith("description =")) {
-      description = line.split("=")[1].trim().replace(/^["']|["']$/g, "")
-    } else if (line.startsWith("[params]") || (line.startsWith("[") && line.indexOf("params") >= 0)) {
-      // Read params until next section
-      for (var j = i + 1; j < lines.length; j++) {
-        var pl = lines[j].trim()
-        if (pl.startsWith("#")) continue
-        if (pl.startsWith("[") || pl === "") break
-        if (pl.indexOf("=") >= 0) {
-          var pk = pl.split("=")[0].trim()
-          var pv = pl.split("=").slice(1).join("=").trim().replace(/^["']|["']$/g, "")
-
-          if (pk === "name") {
-            if (currentParam && currentParam.name) {
-              params.push(currentParam)
-            }
-            currentParam = { name: pv, label: pv, default: 0, min: 0, max: 1, type: "float", help: "" }
-          } else if (currentParam) {
-            if (pk === "label") currentParam.label = pv
-            else if (pk === "default") currentParam.default = parseFloat(pv) || 0
-            else if (pk === "min") currentParam.min = parseFloat(pv) || 0
-            else if (pk === "max") currentParam.max = parseFloat(pv) || 1
-            else if (pk === "type") currentParam.type = pv
-            else if (pk === "help") currentParam.help = pv
-          }
-        }
-      }
-      if (currentParam && currentParam.name) {
-        params.push(currentParam)
-      }
-      break
+      if (!currentParam) description = line.split("=")[1].trim().replace(/^["']|["']$/g, "")
+    } else if (line.indexOf("params") >= 0 && line.startsWith("[")) {
+      // A [[params]] table starts a new param object. Flush any previous one.
+      if (currentParamIndex >= 0) flush()
+      currentParam = { name: null, label: null, default: 0, min: 0, max: 1, type: "float", help: "" }
+      currentParamIndex = params.length
+    } else if (currentParam && line.indexOf("=") >= 0) {
+      // Lines belonging to the current param table.
+      var pk = line.split("=")[0].trim()
+      var pv = line.split("=").slice(1).join("=").trim().replace(/^["']|["']$/g, "")
+      if (pk === "name") currentParam.name = pv
+      else if (pk === "label") currentParam.label = pv
+      else if (pk === "default") currentParam.default = parseFloat(pv) || 0
+      else if (pk === "min") currentParam.min = parseFloat(pv) || 0
+      else if (pk === "max") currentParam.max = parseFloat(pv) || 1
+      else if (pk === "type") currentParam.type = pv
+      else if (pk === "help") currentParam.help = pv
+    }
+    // A non-params section header (e.g. [other]) ends param parsing.
+    else if (line.startsWith("[") && line.indexOf("params") < 0) {
+      flush()
+      currentParam = null
+      currentParamIndex = -1
     }
   }
+  flush()
 
   return { name, label, description, params }
 }
