@@ -132,24 +132,39 @@ BarWidget {
     onTriggered: { spectrumProc.running = true }
   }
 
-  // ---- Detached desktop-window launcher (lives HERE, not in the panel) ----
-  // The panel closes when Detach is clicked; if the launch Process lived in
-  // the panel its QML subtree would be unloaded and the child never spawned.
-  // Keeping it on the always-loaded BarWidget makes the launch survive the
-  // panel close. A stdout parser is REQUIRED: without one the Process never
-  // sees EOF, `running` stays true after the window exits, and a second
-  // detach() (running=true on an already-true process) is a no-op.
+  // ---- Detached desktop-window launcher (lives on the persistent BarWidget) ----
+  // Kept on the BarWidget (not the panel) so the window survives the panel
+  // closing. detach()/attach() are methods here; the panel button just calls
+  // root.hostWidget.detach(). Uses the `environment` property (not an `env`
+  // wrapper) so setting running=false terminates the child quickshell
+  // directly — that is what makes Attach reliable.
   Process {
     id: detachProc
     running: false
+    environment: { "QML2_IMPORT_PATH": "/usr/share/omarchy/shell" }
     stdout: StdioCollector { onDataChanged: function() {} }
     onExited: function(code, status) {
       // Window closed (or launch failed). Resume the mini so it is never
       // left stuck-paused. Clear the in-memory detach flag FIRST (this is the
-      // authoritative unpause — it does not depend on the disk write or on the
-      // window's onClosing having run), then reset desktop.active on disk.
+      // authoritative unpause — it does not depend on the disk write), then
+      // reset desktop.active on disk.
       root.detachedRunning = false
       if (root.config.desktopActive === true) root.writeDesktopActive(false)
+    }
+  }
+
+  // Detach / Attach toggle.
+  function detach() {
+    if (root.config.desktopActive === true) {
+      // Currently detached -> Attach: terminate the window.
+      detachProc.running = false
+    } else {
+      // Detach: launch the standalone desktop window.
+      detachProc.command = ["quickshell", "-p", root.pluginDir + "/Desktop.qml"]
+      root.writeDesktopActive(true)
+      root.detachedRunning = true
+      detachProc.running = false
+      detachProc.running = true
     }
   }
 

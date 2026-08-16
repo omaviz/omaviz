@@ -75,6 +75,19 @@ else
   say "omarchy-restart-shell not found; restart the shell manually"
 fi
 
+# ---------------------------------------------------------------- enable
+# The bar-widget is NOT auto-enabled just by copying files — it must be
+# explicitly enabled or it stays `disabled` and never mounts (no mini, no
+# engine, no detach). Do this LAST, after the restart, so there is no race
+# with the live shell reloading mid-copy.
+step "enabling plugin"
+if command -v omarchy >/dev/null; then
+  omarchy plugin enable org.omaviz.visualizer 2>/dev/null || true
+  # one more restart so the freshly-enabled widget actually mounts
+  omarchy-restart-shell >/dev/null 2>&1 || true
+  say "plugin enabled: org.omaviz.visualizer"
+fi
+
 step "done"
 say "engine: plugin-local (no systemd, no socket)"
 say "plugin: org.omaviz.visualizer enabled in the bar"

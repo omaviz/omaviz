@@ -193,31 +193,12 @@ Panel {
       writeConfig("visual." + root.config.visualMini, params[i].name, params[i].default)
   }
 
+  // Forward detach/attach to the BarWidget, which owns the launch Process.
+  // (The button label toggles via the desktopActive flag below.)
   function detach() {
-    // The detached window is launched by a Process that lives on the
-    // BarWidget (root.hostWidget), NOT on this panel. The panel's QML subtree
-    // is unloaded when we close() it below, which would destroy a panel-local
-    // Process before it could spawn the child. Driving the persistent
-    // BarWidget process avoids that race.
-    var dt = root.hostWidget
-    if (!dt || !dt.detachProc) return
-    var desktopPath = dt.pluginDir + "/Desktop.qml"
-    dt.detachProc.command = [
-      "env", "QML2_IMPORT_PATH=" + dt.shellImportPath,
-      "quickshell", "-p", desktopPath
-    ]
-    // Pause the mini player while the desktop window is open (#7).
-    // detachedRunning lives on the BarWidget (root.hostWidget); set it there,
-    // not on this panel's own root — the BarWidget's `paused` reads its own
-    // root.detachedRunning.
-    writeConfig("desktop", "active", "true")
-    persistShell({ desktopActive: true })
-    dt.detachedRunning = true
-    // Force a fresh spawn: toggle false->true so Quickshell always re-spawns
-    // the child (a bare `running = true` is a no-op if already running).
-    dt.detachProc.running = false
-    dt.detachProc.running = true
-    root.close()
+    if (root.hostWidget && typeof root.hostWidget.detach === "function") {
+      root.hostWidget.detach()
+    }
   }
 
   // ---- visuals enumeration ----
@@ -483,7 +464,15 @@ Panel {
           width: parent.width; spacing: Style.space(8)
           Button { id: resetBtn; text: "↺ Reset"; leftAlign: true; onClicked: root.resetVisual() }
           Item { width: parent.width - resetBtn.width - detachBtn.width - Style.space(8); height: 1 }
-          Button { id: detachBtn; text: "Detach ↗"; onClicked: root.detach() }
+          Button {
+            id: detachBtn
+            // Read detach state from the BarWidget (source of truth), not the
+            // panel's own mirrored config, so the label flips immediately.
+            text: (root.hostWidget && root.hostWidget.config && root.hostWidget.config.desktopActive)
+              ? "Attach ↗" : "Detach ↗"
+            leftAlign: true
+            onClicked: root.detach()
+          }
         }
       }
     }
