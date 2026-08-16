@@ -273,8 +273,10 @@ Panel {
     bar: root.bar
     open: root.opened
     focusTarget: keyCatcher
-    contentWidth: 360
-    contentHeight: panel.fittedContentHeight(scroll.contentHeight)
+    // Clamp to the space actually available (omarchy pattern). A bare fixed
+    // width spilled past the panel viewport and clipped controls on the right.
+    contentWidth: panel.fittedContentWidth(Style.space(380))
+    contentHeight: panel.fittedContentHeight(column.implicitHeight, Style.space(560))
 
     PanelKeyCatcher {
       id: keyCatcher
@@ -283,24 +285,23 @@ Panel {
       onTabRequested: function(d) { root.switchPanel(d) }
     }
 
-    Flickable {
+    ScrollView {
       id: scroll
       anchors.fill: parent
-      contentWidth: column.width
-      contentHeight: column.implicitHeight
       clip: true
-      boundsBehavior: Flickable.StopAtBounds
-      interactive: contentHeight > height
+      ScrollBar.horizontal.policy: ScrollBar.AlwaysOff
+      ScrollBar.vertical.policy: column.implicitHeight > scroll.height ? ScrollBar.AsNeeded : ScrollBar.AlwaysOff
+      Binding { target: scroll.contentItem; property: "interactive"; value: column.implicitHeight > scroll.height }
 
       Column {
         id: column
-        width: scroll.width
+        // availableWidth already subtracts the panel chrome + scrollbar, so the
+        // column can never be wider than the visible viewport. Outer margin is
+        // provided by the card's own BorderSurface padding (popupPadding) — do NOT
+        // also pad the column here, or controls (width: parent.width) would ignore
+        // the column padding and spill past the right edge (clipped).
+        width: scroll.availableWidth
         spacing: Style.space(12)
-        // Even padding on all sides so nothing clips (fix #1).
-        leftPadding: Style.space(14)
-        rightPadding: Style.space(14)
-        topPadding: Style.space(14)
-        bottomPadding: Style.space(14)
 
         // ---- live visualization preview ----
         Text {
