@@ -202,6 +202,7 @@ Panel {
     // Pause the mini player while the desktop window is open (#7).
     writeConfig("desktop", "active", "true")
     persistShell({ desktopActive: true })
+    root.detachedRunning = true
     root.close()
     // Force a fresh start: toggle running false->true so Quickshell always
     // re-spawns the child (a bare `running = true` is a no-op if it already
@@ -260,7 +261,10 @@ Panel {
     stdout: StdioCollector { onDataChanged: function() {} }
     onExited: function(code, status) {
       // Window closed (or launch failed). Resume the mini so it is never
-      // left stuck-paused. Desktop.qml also writes active=false on close.
+      // left stuck-paused. Clear the in-memory detach flag FIRST (this is the
+      // authoritative unpause — it does not depend on the disk write or on the
+      // window's onClosing having run), then reset desktop.active on disk.
+      root.detachedRunning = false
       if (root.config.desktopActive === true) writeConfig("desktop", "active", "false")
     }
   }

@@ -26,7 +26,7 @@ module.exports = {
   parseVisualToml, discoverVisualsFromText, visualParamsFromText,
   visualConfigValues, readAudioFromText, parseSpectrumLine,
   sourceLabel, isDesktopActiveFromText, spectrumData, listVisualFiles,
-  engineBin, bridgePath
+  engineBin, bridgePath, isPaused
 }`
   const m = new Module('omaviz-model', null)
   m.filename = modelPath
@@ -610,4 +610,23 @@ test('bridgePath: retained for back-compat but NOT used by desktop window', () =
   // The constant still exists, but its binary was removed in v7; the desktop
   // window must use engineBin instead. This guards the regression.
   assert.ok(typeof M.bridgePath === 'string')
+})
+
+// v7: mini-pause must not stick when the desktop window died without resetting
+// ===========================================================================
+test('isPaused: false when detached window is genuinely open', () => {
+  // Normal detach: flag true AND detachProc running -> pause (freeze mini).
+  assert.strictEqual(M.isPaused(true, true), true)
+})
+
+test('isPaused: false when flag set but window died (no stuck pause)', () => {
+  // The desktop window was killed externally (crash/logout/SIGKILL) so its
+  // onClosing never reset desktop.active — flag stuck true, but the detach
+  // process is gone. The mini MUST keep running, not stay frozen.
+  assert.strictEqual(M.isPaused(true, false), false)
+})
+
+test('isPaused: false when no detach active', () => {
+  assert.strictEqual(M.isPaused(false, false), false)
+  assert.strictEqual(M.isPaused(false, true), false)
 })

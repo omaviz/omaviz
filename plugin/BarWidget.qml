@@ -20,8 +20,14 @@ BarWidget {
   property var visuals: []
   property var spectrumBands: []
   property bool spectrumSilent: true
-  // Mini player pauses (freezes + dims) while the detached desktop window is open.
-  readonly property bool paused: root.config.desktopActive === true
+  // Mini player pauses (freezes + dims) while the detached desktop window is
+  // open. Derived from BOTH the config flag and the actual detach process
+  // state (set by the panel via root.detachedRunning) so a stale
+  // desktop.active=true (window killed without onClosing) can never freeze
+  // the mini forever. detachedRunning is intentionally writable (NOT readonly)
+  // because the Panel assigns it from detach()/detachProc.onExited.
+  property bool detachedRunning: false
+  readonly property bool paused: Model.isPaused(root.config.desktopActive === true, root.detachedRunning)
   readonly property int barCount: Math.max(
     8, (root.config && root.config.bands !== undefined) ? root.config.bands : 32)
   // Explicit index model so each Repeater delegate gets its band index via
