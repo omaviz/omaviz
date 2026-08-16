@@ -94,6 +94,11 @@ BarWidget {
   readonly property string engineBin:
     Quickshell.env("HOME") + "/.config/omarchy/plugins/"
     + root.moduleName + "/bin/omaviz-engine"
+  // Paths the detached desktop window needs (mirrors Panel's, kept here so the
+  // detach Process — which lives on the persistent BarWidget, not the panel —
+  // can launch Desktop.qml after the panel closes).
+  readonly property string pluginDir: String(Qt.resolvedUrl(".")).replace(/^file:\/\//, "")
+  readonly property string shellImportPath: "/usr/share/omarchy/shell"
   Process {
     id: spectrumProc
     running: true
@@ -127,6 +132,27 @@ BarWidget {
     onTriggered: { spectrumProc.running = true }
   }
 
+  // ---- Detached desktop-window launcher (lives HERE, not in the panel) ----
+  // The panel closes when Detach is clicked; if the launch Process lived in
+  // the panel its QML subtree would be unloaded and the child never spawned.
+  // Keeping it on the always-loaded BarWidget makes the launch survive the
+  // panel close. A stdout parser is REQUIRED: without one the Process never
+  // sees EOF, `running` stays true after the window exits, and a second
+  // detach() (running=true on an already-true process) is a no-op.
+  Process {
+    id: detachProc
+    running: false
+    stdout: StdioCollector { onDataChanged: function() {} }
+    onExited: function(code, status) {
+      // Window closed (or launch failed). Resume the mini so it is never
+      // left stuck-paused. Clear the in-memory detach flag FIRST (this is the
+      // authoritative unpause — it does not depend on the disk write or on the
+      // window's onClosing having run), then reset desktop.active on disk.
+      root.detachedRunning = false
+      if (root.config.desktopActive === true) root.writeDesktopActive(false)
+    }
+  }
+
   // ---- Config reader (daemon writes ~/.config/omaviz/config.toml) ----
   FileView {
     id: configFile
@@ -136,6 +162,21 @@ BarWidget {
     onLoaded: root.config = Model.readConfigFromText(text())
     onFileChanged: root.config = Model.readConfigFromText(text())
     onLoadFailed: root.config = Model.defaultConfig()
+  }
+
+  // Writable config view (detach lifecycle writes desktop.active here so the
+  // reset does not depend on the panel being open). Same no-watch pattern as
+  // the panel's writer to avoid async reverts.
+  FileView {
+    id: detachConfigWrite
+    path: Model.configPath
+    watchChanges: false
+    printErrors: false
+  }
+  function writeDesktopActive(value) {
+    var txt = Model.writeConfigKey(detachConfigWrite.text(), "desktop", "active", value ? "true" : "false")
+    detachConfigWrite.setText(txt)
+    root.config = Model.readConfigFromText(txt)
   }
 
   // ---- Visual enumeration from ~/.config/omaviz/visuals/*.toml ----

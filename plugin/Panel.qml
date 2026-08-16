@@ -194,22 +194,30 @@ Panel {
   }
 
   function detach() {
-    var desktopPath = root.pluginDir + "/Desktop.qml"
-    detachProc.command = [
-      "env", "QML2_IMPORT_PATH=" + root.shellImportPath,
+    // The detached window is launched by a Process that lives on the
+    // BarWidget (root.hostWidget), NOT on this panel. The panel's QML subtree
+    // is unloaded when we close() it below, which would destroy a panel-local
+    // Process before it could spawn the child. Driving the persistent
+    // BarWidget process avoids that race.
+    var dt = root.hostWidget
+    if (!dt || !dt.detachProc) return
+    var desktopPath = dt.pluginDir + "/Desktop.qml"
+    dt.detachProc.command = [
+      "env", "QML2_IMPORT_PATH=" + dt.shellImportPath,
       "quickshell", "-p", desktopPath
     ]
     // Pause the mini player while the desktop window is open (#7).
+    // detachedRunning lives on the BarWidget (root.hostWidget); set it there,
+    // not on this panel's own root — the BarWidget's `paused` reads its own
+    // root.detachedRunning.
     writeConfig("desktop", "active", "true")
     persistShell({ desktopActive: true })
-    root.detachedRunning = true
+    dt.detachedRunning = true
+    // Force a fresh spawn: toggle false->true so Quickshell always re-spawns
+    // the child (a bare `running = true` is a no-op if already running).
+    dt.detachProc.running = false
+    dt.detachProc.running = true
     root.close()
-    // Force a fresh start: toggle running false->true so Quickshell always
-    // re-spawns the child (a bare `running = true` is a no-op if it already
-    // thinks it is running). The StdioCollector above ensures running flips
-    // to false when the previous window closed.
-    detachProc.running = false
-    Qt.callLater(function() { detachProc.running = true })
   }
 
   // ---- visuals enumeration ----
@@ -244,28 +252,6 @@ Panel {
         root.visualTomlCache = tomlByName
         refreshVisualParamCache()
       }
-    }
-  }
-
-  // Launches the standalone desktop window. A stdout parser is REQUIRED:
-  // without one the Process never sees EOF and its `running` flag stays true
-  // after the child quickshell exits, so a second detach() (running=true on an
-  // already-"true" process) is a no-op and no window spawns. The parser drains
-  // stdout so `running` correctly flips to false on exit, allowing re-launch.
-  Process {
-    id: detachProc
-    running: false
-    // StdioCollector drains stdout so the Process sees EOF when the child
-    // quickshell exits and `running` flips to false — otherwise a second
-    // detach() (running=true on an already-"true" process) is a no-op.
-    stdout: StdioCollector { onDataChanged: function() {} }
-    onExited: function(code, status) {
-      // Window closed (or launch failed). Resume the mini so it is never
-      // left stuck-paused. Clear the in-memory detach flag FIRST (this is the
-      // authoritative unpause — it does not depend on the disk write or on the
-      // window's onClosing having run), then reset desktop.active on disk.
-      root.detachedRunning = false
-      if (root.config.desktopActive === true) writeConfig("desktop", "active", "false")
     }
   }
 
