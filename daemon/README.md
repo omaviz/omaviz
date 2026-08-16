@@ -117,3 +117,10 @@ systemctl --user enable --now omaviz.service
 - `src/mini.rs` — waybar JSON module
 - `src/settings.rs` — egui settings panel
 - `src/config.rs` — TOML config
+
+## Committed binary (safety copy)
+The built `omaviz` daemon is kept at `daemon/bin/omaviz` (sha256
+`27c9775eedff3390765a207d71b65d8da4040edab5af3b4ee78407fb6198c1fb`) so the only
+known-good artifact is not lost. The `src/` here is the historical egui/wgpu-era
+source from tag `v0.2.0` and may not match the deployed binary exactly (the
+running daemon likely came from a later, unpublished revision).
