@@ -273,10 +273,12 @@ Panel {
     bar: root.bar
     open: root.opened
     focusTarget: keyCatcher
-    // Clamp to the space actually available (omarchy pattern). A bare fixed
-    // width spilled past the panel viewport and clipped controls on the right.
+    // Clamp WIDTH to available space (no right spill). Height grows to the
+    // full content height so EVERY field (including the footer Reset/Detach)
+    // is visible with no scroll. Capped only by the available screen height
+    // (so it never extends past the bottom edge on short displays).
     contentWidth: panel.fittedContentWidth(Style.space(380))
-    contentHeight: panel.fittedContentHeight(column.implicitHeight, Style.space(560))
+    contentHeight: panel.fittedContentHeight(column.implicitHeight)
 
     PanelKeyCatcher {
       id: keyCatcher
@@ -285,19 +287,19 @@ Panel {
       onTabRequested: function(d) { root.switchPanel(d) }
     }
 
-    // Plain column filling the card — no scroll. Everything renders flat.
+    // Plain column — no scroll. Everything renders flat.
     Column {
       id: column
-      anchors.fill: parent
+      // Size to CONTENT (not fill parent), so the card's
+      // contentHeight: column.implicitHeight grows to fit everything
+      // (including the footer Reset/Detach). Filling parent would make
+      // implicitHeight track the parent instead of the content and clip
+      // the bottom fields.
+      width: parent.width
       // Outer margin comes from the card's BorderSurface padding (popupPadding).
       // Controls use width: parent.width and never spill: contentWidth is clamped
-      // via fittedContentWidth, so the column (which fills the card) is always
-      // within the visible viewport.
-      spacing: Style.space(12)
-      topPadding: Style.space(4)
-      bottomPadding: Style.space(4)
-      leftPadding: Style.space(4)
-      rightPadding: Style.space(4)
+      // via fittedContentWidth, so the column is always within the visible viewport.
+      spacing: Style.space(10)
 
       // ---- live visualization preview ----
       Text {
