@@ -273,10 +273,10 @@ Panel {
     bar: root.bar
     open: root.opened
     focusTarget: keyCatcher
-    // Clamp to the space actually available (omarchy pattern). A bare fixed
-    // width spilled past the panel viewport and clipped controls on the right.
+    // Clamp WIDTH to available space (no right spill). Height grows to fit all
+    // content flat — no scroll — so nothing is clipped vertically either.
     contentWidth: panel.fittedContentWidth(Style.space(380))
-    contentHeight: panel.fittedContentHeight(column.implicitHeight, Style.space(560))
+    contentHeight: column.implicitHeight
 
     PanelKeyCatcher {
       id: keyCatcher
@@ -285,26 +285,22 @@ Panel {
       onTabRequested: function(d) { root.switchPanel(d) }
     }
 
-    ScrollView {
-      id: scroll
+    // Plain column filling the card — no scroll. Everything is shown flat.
+    Column {
+      id: column
       anchors.fill: parent
-      clip: true
-      ScrollBar.horizontal.policy: ScrollBar.AlwaysOff
-      ScrollBar.vertical.policy: column.implicitHeight > scroll.height ? ScrollBar.AsNeeded : ScrollBar.AlwaysOff
-      Binding { target: scroll.contentItem; property: "interactive"; value: column.implicitHeight > scroll.height }
+      // Outer margin comes from the card's BorderSurface padding (popupPadding).
+      // Controls use width: parent.width and never spill: contentWidth is clamped
+      // via fittedContentWidth, so the column (which fills the card) is always
+      // within the visible viewport.
+      spacing: Style.space(12)
+      topPadding: Style.space(4)
+      bottomPadding: Style.space(4)
+      leftPadding: Style.space(4)
+      rightPadding: Style.space(4)
 
-      Column {
-        id: column
-        // availableWidth already subtracts the panel chrome + scrollbar, so the
-        // column can never be wider than the visible viewport. Outer margin is
-        // provided by the card's own BorderSurface padding (popupPadding) — do NOT
-        // also pad the column here, or controls (width: parent.width) would ignore
-        // the column padding and spill past the right edge (clipped).
-        width: scroll.availableWidth
-        spacing: Style.space(12)
-
-        // ---- live visualization preview ----
-        Text {
+      // ---- live visualization preview ----
+      Text {
           text: "PREVIEW"
           color: Color.foreground
           opacity: 0.6
