@@ -1,338 +1,250 @@
-# omaviz — Application Specification
+# omaviz — Application Specification (current implementation)
 
-> Audio visualizer for Omarchy (Arch + Hyprland + Waybar). A daemon captures
-> system audio and broadcasts spectrum frames over a Unix socket; lightweight
-> clients (a Waybar text module, a floating desktop window, a fullscreen
-> window, and a settings panel) consume those frames and render them with
-> drop-in WGSL shaders.
+> **Plugin id:** `org.omaviz.visualizer`
+> **Version:** 2.0.0 (manifest) · code line `v3`+ as of 2026-08-16
+> **Status:** Self-contained Omarchy QML plugin. No Rust daemon, no WGSL, no egui
+> in the plugin itself. A small external `omaviz-spectrum-bridge` binary provides
+> the audio→spectrum frames; everything else is QML + JS rendered on a Canvas.
 
-This document captures the shipped features and the key engineering decisions
-made during development, including the root-cause fixes for the three
-"nothing works" failure modes reported by the user.
+This document describes what is **actually implemented and shipped** (verified by
+code + runtime tests), superseding the earlier Rust/WGSL design notes in
+`omaviz-v2-spec.md` (that file is the original design proposal; this one is the
+source of truth). The GPU/WGSL migration path is kept as a forward-looking section.
 
 ---
 
 ## 1. Goals & Non-Goals
 
 **Goals**
-- React to whatever the system is *playing* (not the microphone).
-- Live in the Waybar as a tiny unicode-bar module, plus optional desktop /
-  fullscreen GPU windows.
-- Let the user swap visualizations and tweak per-display fit without a rebuild
-  (shaders are data, not code).
-- Stay out of the user's way: the bar module is always present; the desktop
-  window only appears on demand.
+- React to system playback audio (not the microphone).
+- Live in the Omarchy bar as a mini stacked-rectangle visualizer.
+- Optional detached **desktop window** (floating, ~600×200) for a larger view.
+- A settings panel (summoned on click) to switch visualization + style, tweak
+  knobs, and toggle color sync — no rebuild needed.
+- Stay out of the user's way; the mini is always present, the desktop only on demand.
 
-**Non-Goals**
-- No microphone monitoring (capture is sink-monitor only).
-- No web/HTML UI — the settings panel is an `egui` GPU canvas themed to match
-  Omarchy; it is **not** CSS-colourable.
-- No GTK dependency. The earlier GtkBuilder XML menu was abandoned.
+**Non-Goals (current)**
+- No GPU/WGSL rendering yet — visuals are Canvas-2D in `VisualCanvas.qml`.
+- No microphone monitoring (bridge captures the sink monitor only).
+- No separate egui/GTK settings window — the panel is QML.
 
 ---
 
 ## 2. Architecture
 
 ```
-┌────────────┐   PipeWire    ┌──────────────────┐   Unix socket    ┌─────────────────────┐
-│ system sink│ ──monitor──▶  │ omaviz daemon     │ ──frames(JSON)──▶ │ clients (any number) │
-│ (playing    │              │  - capture.rs      │   /run/user/1000/  │  - mini   (waybar)   │
-│  audio)     │              │  - dsp.rs (FFT)    │   omaviz.sock     │  - desktop (floating) │
-└────────────┘              │  - ipc.rs (server) │                  │  - full    (fullscreen)│
-                           └──────────────────┘                  │  - settings (egui)    │
-                                                                └─────────────────────┘
+┌────────────────────── omarchy-shell (one Quickshell process) ─────────────────────┐
+│                                                                                   │
+│  BarWidget.qml  (bar-widget, always present)                                      │
+│   ├─ stacked Rectangle bars (mini mode)                                           │
+│   ├─ reads frames from Model.spectrumData                                        │
+│   ├─ left-click → open() the panel; desktop.active=true → render dimmed/paused   │
+│   └─ Loader → Panel.qml (settings UI, loaded in-process)                         │
+│                                                                                   │
+│  Panel.qml  (settings)                                                            │
+│   ├─ live preview (VisualCanvas.qml, Bars/Wave + Classic/Fire style)              │
+│   ├─ VISUALIZATION dropdown (Bars · Wave)                                        │
+│   ├─ STYLE dropdown (Classic · Fire)   ← Fire is a STYLE of Bars, not a viz      │
+│   ├─ OPTIONS knobs (dynamic, from visuals/*.toml)                                 │
+│   ├─ AUDIO (sensitivity / smoothing), color-sync toggle                          │
+│   └─ footer: Reset · Detach (launches Desktop.qml via Quickshell)                │
+│                                                                                   │
+│  Model.js  (shared business logic, .pragma library)                              │
+│   ├─ spectrumData  — latest frame (bands/energy/beat/silent)                     │
+│   ├─ config IO      — readConfigFromText / writeConfigKey (~/.config/omaviz/      │
+│   │                  config.toml)                                                 │
+│   └─ visual discovery — discoverVisualsFromText / visualParamsFromText /         │
+│                      visualConfigValues                                          │
+│                                                                                   │
+│  VisualCanvas.qml  (self-contained Canvas-2D renderer, no shell-only imports)    │
+│   └─ draws Bars / Wave / Fire-style from `bands`                                 │
+└───────────────────────────────────────────────────────────────────────────────────┘
+        │  frames (JSON lines on stdout)
+        ▼
+┌── omaviz-spectrum-bridge (external binary, ~/.local/bin) ────────────────────────┐
+│  PipeWire sink-monitor capture → FFT → JSON spectrum frames → stdout             │
+│  (the only "daemon"; minimal, one instance per consumer that launches it)        │
+└───────────────────────────────────────────────────────────────────────────────────┘
 ```
 
-- **Single daemon**, one capture stream, one FFT analyzer, broadcasts to all
-  connected clients. Clients never touch audio directly.
-- **Clients are pure consumers** of the broadcast frame (`ipc::Frame`): bands
-  vector, energy, beat flag, silent flag.
-- **One binary, many subcommands.** `omaviz <cmd>` dispatches to daemon, mini,
-  desktop, full, settings, menu, etc. The Waybar module runs `omaviz mini`;
-  right-click runs `omaviz menu`; left-click runs `omaviz toggle`.
-
-### Process / instance model
-- `daemon` acquires a single-instance lock (`instance::WindowKind::Daemon`).
-- `desktop` / `full` each acquire their own single-instance lock so a second
-  launch focuses the existing window instead of spawning a duplicate.
-- The desktop/full renderer intentionally **leaks its `App` on exit** (std::mem::forget)
-  to avoid a known wgpu + Mesa + Wayland EGL teardown segfault; GPU resources are
-  released by the OS at process exit.
+- **Single shell process.** The bar widget, the panel (loaded via `Loader`), and
+  the desktop window's *config* all live in `omarchy-shell`. The desktop window is
+  a *separate* Quickshell process launched on Detach.
+- **Frames** are produced by `omaviz-spectrum-bridge` (a standalone binary) and
+  consumed by a `Process` in `BarWidget.qml`/`Model.js` via a `SplitParser`; each
+  JSON line updates `Model.spectrumData`. The bar reads `spectrumData.bands`.
+- **Config** is the shared `~/.config/omaviz/config.toml` (also read by the bridge
+  for `audio.*`). The panel reads/writes it through `Model.js`; the bar keeps its
+  own watching `FileView` so detach-close → resume propagates cross-process.
 
 ---
 
-## 3. Audio Capture Pipeline (`capture.rs`)
+## 3. Files
 
-- Backend: **PipeWire** (`pipewire` 0.10 crate), F32LE mono mix-down.
-- Captures the **default sink's monitor** (`STREAM_CAPTURE_SINK=true`) so the
-  visualizer reacts to playback from any app.
-- Sample rate follows the device (rebuilds the analyzer if the sink changes
-  clock, e.g. 44.1k ↔ 48k).
-- **Decision — do NOT pin `target.object` to `<sink>.monitor` by name.**
-  Experiment showed that explicitly setting `target.object` to the monitor node
-  name linked to a suspended/idle monitor and produced *silence*, while relying
-  on session-manager autoconnect (`STREAM_CAPTURE_SINK`) reliably delivers
-  playback audio once the daemon has been running and audio is actually playing.
-  (PipeWire creates the monitor node on demand; a short-lived manual daemon may
-  not establish the link in time — this is why sterile test tones in a fresh
-  daemon read `e=0.000`, but the long-running systemd daemon + real audio works.)
-
-### DSP (`dsp.rs`)
-- `realfft` real→complex FFT, `FFT_SIZE = 2048`, Hann window.
-- Log-spaced band edges between 30 Hz and ≤16 kHz, count from `audio.bands`.
-- Per-band dB→0..1, attack/decay smoothing, global `energy` and a simple
-  `beat`/onset estimate. `is_silent()` below `energy < 0.02`.
-
----
-
-## 4. IPC (`ipc.rs`)
-
-Wire format (little-endian), one frame:
 ```
-magic   u32 = 0x4F4D4156 ("OMAV")
-n_bands u16
-flags   u16   bit0 = silent
-energy  f32
-beat    f32
-bands   [f32; n_bands]
+~/.config/omarchy/plugins/org.omaviz.visualizer/
+├── manifest.json          # Plugin contract (bar-widget kind)
+├── BarWidget.qml          # bar-widget entry (mini); loads Panel via Loader
+├── Panel.qml              # settings panel (preview, dropdowns, knobs, detach)
+├── Desktop.qml            # detached 600×200 window (Quickshell, launched on Detach)
+├── Model.js               # logic: frames, config IO, visual discovery (.pragma library)
+├── VisualCanvas.qml       # self-contained Canvas-2D renderer (Bars/Wave/Fire-style)
+└── visuals/
+    ├── equalizer.toml      # label "Bars"  — bar params (bar_count, colour_scheme, peak_fall)
+    ├── wave.toml           # label "Wave"  — wave params
+    ├── fire.toml           # label "Fire"  — fire-style params (intensity, borderless, …)
+    └── *.wgsl              # placeholders for the future GPU migration (see §10)
 ```
-- `Frame::encode` / `Frame::read_from` round-trip (unit-tested).
-- `Server` is non-blocking and drops slow/dead clients silently.
-- `spawn_reader` lets any client subscribe to the broadcast in its own thread.
+
+`tests/model.test.cjs` — 35 node tests for `Model.js` (run `node tests/model.test.cjs`).
 
 ---
 
-## 5. Clients
+## 4. Visualizations & the Fire-is-a-Style model
 
-### 5.1 Mini (Waybar module) — `mini.rs`
-- Runs as `omaviz mini --width 18`; emits one JSON line per frame:
-  ```json
-  {"text":"▁▂▃…","tooltip":"omaviz · bars · energy 0.43","class":"active"}
-  ```
-- `class` states: `active` (audio), `silent` (no audio), `off` (desktop window
-  open or paused — dimmed bars), `hidden` (after Quit — module disappears).
-- Bars are unicode block glyphs `▁▂▃▄▅▆▇█`; Waybar line-height is 1.0 so a
-  single row fills the bar height.
-- **Per-display fit** (fixes "too faint"): `mini_gain` amplifies quiet audio
-  and `mini_floor` keeps a minimum bar height, so "playing" is clearly different
-  from "flat". Both read from `config.mini.extra` with safe defaults.
-
-### 5.2 Desktop (floating window) — `client.rs`
-- Launched by left-click (`omaviz toggle`). Floating widget via Hyprland
-  windowrule (`class omaviz`, `float`, `size 640 200`, `move 100%-660 60`).
-- Double-click toggles fullscreen; `Esc`/`q` closes; `f` toggles fullscreen.
-- Hot-reloads config; auto-closes if the bar switches the mode off.
-
-### 5.3 Full (fullscreen) — `client.rs`
-- `omaviz full` / `SUPER+SHIFT+V`. Borderless fullscreen, uses the `full` visual.
-
-### 5.4 Settings (egui) — `settings.rs`
-- **Split Panel** layout:
-  - **Left:** vertical visualization list, current one pre-ticked "active".
-  - **Top-right:** live preview rendering from the working config (edits show
-    instantly).
-  - **Bottom-right:** options for the selected visual, including a **Per-display
-    fit** section (bar visuals fill the tiny bar; circular visuals want
-    full-screen room).
-  - Per-visual **Reset** lives inside the options panel.
-  - Footer is **Save / Cancel only**.
-- Applies live on Save (writes `config.toml`, daemon/client watchers pick it up).
-- Themed to the Omarchy accent (egui selection/accent/hyperlink tints) — no CSS.
+- **Visualizations:** `Bars` (equalizer.toml) and `Wave` (wave.toml). These are the
+  entries in the VISUALIZATION dropdown.
+- **Styles:** `Classic` and `Fire`. **Fire is a STYLE of the Bars visual, not a
+  separate visualization** — it is selected in the STYLE dropdown, not the
+  VISUALIZATION dropdown. When style=Fire and visual=Bars, the panel shows the
+  Bars knobs **plus** the Fire knobs (both written to their own
+  `[visual.<source>]` sections). `VisualCanvas.qml` renders the winamp-style flame
+  (red→yellow gradient, peak-cap bricks, energy glow) when `style==="fire"`.
+- Visuals/params are **data-driven**: `visuals/<name>.toml` declares `params`
+  (label, type, min/max/default, section). Adding a knob needs no rebuild — the
+  panel enumerates them at runtime via `Model.discoverVisualsFromText` +
+  `visualParamsFromText`. `parseVisualToml` keeps visual-level `label` separate
+  from per-param `label` (a bug fixed earlier: the top-level label handler used to
+  swallow param labels).
 
 ---
 
-## 6. Visualizations (`visual.rs` + `visuals/*.wgsl`)
+## 5. Configuration (`~/.config/omaviz/config.toml`)
 
-- Discovered at runtime from `visuals/<name>.wgsl` (user config dir first, then
-  the source tree). Adding a shader needs **no rebuild**.
-- Each visual may declare `<name>.toml` with `params` (per-visual knobs) and
-  `extra_params` (mode-only fit knobs stored in the mode's `extra` table, so a
-  mini density tweak doesn't leak into the desktop window).
-- `visual_kind()` heuristically classifies a visual as **Bars**, **Circular**, or
-  **Other** by name (`bar`/`fire`/`wave`/`pulse` → Bars; `disk`/`ring`/`circ`/
-  `spectro`/`sphere` → Circular) — drives which per-display fit knobs surface.
-- `discover()` returns visuals **sorted by display label** (fixes menu order).
-- `resolve_or_first()` falls back to the first visual for a bad config name.
+Key sections (read by `Model.readConfigFromText`):
+- `[audio]` — `sensitivity`, `smoothing`, `bands` (shared defaults).
+- `[mini]` / `[desktop]` / `[full]` — `visual`, `style`, `color_sync`, `active`,
+  `fps`, `sensitivity`, `smoothing`, `bands`.
+  - `style` (mini) vs `styleDesktop` (desktop) so the detached window can keep its
+    own style; `selectStyle` writes both.
+  - `desktop.active = "true"` → the mini pauses (dimmed). Set on Detach, cleared on
+    window close (cross-process via the bar's watching FileView, and as an
+    in-process safety net in `detachProc.onExited`).
+- `[visual.<name>]` — per-param overrides, e.g. `[visual.equalizer] bar_count=48`,
+  `[visual.fire] intensity=1.5`. Written by `setKnob` to the param's own source
+  section (so Bars' and Fire's `peak_fall` don't collide).
+- `[palette]` — present (bridge/legacy), not used by the QML renderer.
 
-Shipped visuals: `bars`, `fire`, `wave` (+ `_common.wgsl` shared prelude).
+**Write model (important):** the panel keeps an authoritative in-memory
+`configText` buffer. `writeConfigKey` mutates it synchronously; `configWrite`
+(`FileView`, `watchChanges:false`) only persists to disk. This avoids the earlier
+bug where `FileView.setText()` did not update `text()` synchronously and a
+self-watch reverted the value — which made every control need a second click.
 
----
-
-## 7. Menu / Right-Click UX (`menu.rs`)
-
-- **Decision — use a `walker --dmenu` popup, not the GtkBuilder XML menu.**
-  The earlier GtkBuilder XML `menu-file` path triggered a GTK assertion crash
-  in Waybar 0.15 (`gtk_menu_popup_at_pointer: assertion 'GTK_IS_MENU'`).
-- `omaviz menu` (right-click, no `--out`) builds the item list with icons
-  (`▮` bars, `◉` circular, `•` other) + preselects the current visual, pipes it
-  to `walker --dmenu --placeholder omaviz --current <viz> --exit`, and dispatches
-  the chosen visual via `omaviz select mini <name>`.
-- **Fix:** `walker` rejects `--prompt` and uses `--index` for output format, not
-  preselection. The broken invocation (`--prompt omaviz --index <n>`) made
-  `omaviz menu` exit immediately → right-click did nothing. Correct flags:
-  `--placeholder`, `--current <value>` (preselect), `--exit`.
-- `omaviz menu --out <file>` still regenerates the GtkBuilder XML artifact
-  (kept for debugging/install), but it is **not** wired into Waybar.
-- All menu actions use the **absolute binary path** (`/home/kishan/.local/bin/omaviz`)
-  because Waybar's environment does not have `~/.local/bin` on `PATH`. The
-  `omaviz_bin()` helper honors an `OMAVIZ_BIN` env override (used by tests).
+`writeConfigKey` inserts keys **within** their section (no duplicate-key
+corruption), and never creates a second `[mini]`/`[desktop]` header.
 
 ---
 
-## 8. Mode / Lifecycle (`mode.rs`)
+## 6. Settings Panel behavior
 
-Modes: `off` (paused, bar dimmed), `mini` (Waybar bars), `desktop` (floating
-window), `full` (fullscreen). Stored in `/run/user/1000/omaviz/omaviz.mode`.
-
-- `toggle` cycles **Mini ⇄ Desktop** (left-click).
-- `off` pauses; `quit` stops the daemon, removes the Waybar module, hides the bar.
-- `start` (app-launch) ensures daemon + Waybar module, resumes to Mini.
-- `add_waybar_module()` splices the module into `config.jsonc` with the absolute
-  path and the popup right-click (`on-click-right: omaviz menu`), and **does not**
-  emit the crashing `menu-file` keys.
-- `refresh_waybar()` sends `SIGUSR2` to Waybar to reload (used after config
-  changes); the bar module itself is never restarted as a standalone process.
-
-### CLI surface
-```
-omaviz daemon [--debug] [--seconds N]     # capture + broadcast (systemd)
-omaviz mini  [--width N]                  # waybar JSON module
-omaviz desktop | full                    # GPU windows
-omaviz settings                          # egui panel
-omaviz visuals                           # list shaders
-omaviz config                            # print config path
-omaviz mode [off|mini|desktop]           # get/set mode
-omaviz toggle | off | quit               # lifecycle
-omaviz menu [--out FILE]                 # right-click popup / XML
-omaviz sensitivity +0.1 | -0.1 | 1.5     # scroll wheel
-omaviz select <mini|desktop|full> <viz>  # set a visual
-omaviz window-closed | window-close      # desktop window close handshake
-omaviz start                             # app launch entry point
-```
-`--debug` enables ASCII-meter daemon logging and propagates via `OMAVIZ_DEBUG`
-to child processes.
+- **Preview** (top): live `VisualCanvas` bound to the active visual + style + the
+  live spectrum (`bands`, `silent`, `colorSync`, `barCount`, `colourScheme`).
+- **VISUALIZATION dropdown:** Bars · Wave (Fire excluded — it is a style).
+- **STYLE dropdown:** Classic · Fire.
+- **OPTIONS:** dynamic knobs from the active visual's `.toml` (+ Fire knobs when
+  style=Fire). Each knob writes to `[visual.<source>]`. Values reflect on the first
+  change (no second click).
+- **AUDIO:** sensitivity / smoothing sliders.
+- **Color sync (mini):** toggle → writes `mini.color_sync`; the mini bar recolors
+  (multicolor gradient) instead of monochrome. Pushed to the bar immediately via
+  `hostWidget.applyConfig(next)` so it does not depend on disk-watch timing.
+- **Reset:** restores the active visual's params to defaults.
+- **Detach:** launches `Desktop.qml` (600×200 floating window) and pauses the mini.
 
 ---
 
-## 9. Configuration (`config.rs`, `~/.config/omaviz/config.toml`)
+## 7. Detach / desktop window lifecycle
 
-Key sections:
-- `[audio]` — `sensitivity`, `smoothing`, `bands` (shared defaults; modes inherit
-  unless overridden with a negative/invalid value).
-- `[desktop]` / `[full]` / `[mini]` — `visual`, `fps`, `sensitivity`, `smoothing`,
-  `bands`, and an `extra` table for per-display fit.
-- `[mini.extra]` — `density`, **`mini_gain` (2.2)**, **`mini_floor` (0.15)** for the
-  tiny bar.
-- `[palette]` — `source = "auto"` (resolves Omarchy theme accent) or `manual`
-  with explicit `low`/`high`/`bg`/`opacity`.
-- `[visuals]` — per-visual knob overrides keyed by visual name.
-
-Inheritance: a mode with `sensitivity < 0` / `bands == 0` falls back to the
-shared `[audio]` value. `set_visual_all()` sets the same visual across all three
-modes (the visual choice is shared; only fit differs). `visual_param()` returns
-the override else the shader default, **clamped** to the param's min/max.
-`reset_visual()` clears overrides.
+- **Detach** (`detach()`): writes `desktop.active=true` (mini pauses), then launches
+  `Desktop.qml` via `detachProc` (a Quickshell `Process`).
+- **Re-launch fix:** `detachProc` has a `StdioCollector` draining stdout so its
+  `running` flag flips to `false` when the child window closes. A second Detach
+  forces `running=false → true` (`Qt.callLater`) so Quickshell always re-spawns the
+  window. Without the collector, `running` stayed `true` after the first close and
+  the second Detach was a no-op (window never reopened, mini left stuck paused).
+- **Close → resume:** `Desktop.qml` writes `desktop.active=false` on close; the bar's
+  watching `FileView` picks it up → mini resumes. `detachProc.onExited` is a safety
+  net that also clears `active` if a launch failed/was killed, so the mini can never
+  be left stuck paused.
+- **Desktop window** renders the same `VisualCanvas` at larger size; `styleDesktop`
+  drives its Fire/Classic choice.
 
 ---
 
-## 10. Waybar Integration (`config.jsonc` + `install.sh`)
+## 8. Rendering (`VisualCanvas.qml`)
 
-- `install.sh` writes a `custom/omaviz` module with **real newlines** (a prior
-  bug wrote literal `\n` escapes, corrupting the JSON and preventing Waybar from
-  starting at all — see §12).
-- Module keys: `exec` (absolute `omaviz mini --width 18`), `return-type: json`,
-  `format: {}`, `on-click` (toggle), `on-click-right` (`omaviz menu`), scroll
-  wheel → `sensitivity +/-0.1`.
-- `add_waybar_module()` and `install.sh` keep the module's object + the
-  `modules-right` array reference in sync (brace-aware edits).
+- Self-contained Canvas-2D (no `qs.Commons`/`qs.Ui` imports) so it loads standalone
+  inside `Loader` + `Binding` (the `when: item` guard avoids null-target binds).
+- Modes: `Bars` (stacked rectangles), `Wave` (sine-ribbon), `Fire` (winamp flame:
+  red→yellow gradient per band, peak-cap bricks, energy-reactive background glow).
+- `barCount` downsamples the 64-band spectrum for the requested bar density;
+  `colourScheme` selects a color preset; `colorSync` drives the mini multicolor.
 
 ---
 
-## 11. Rendering (`render.rs`, WGSL shaders)
+## 9. Testing
 
-- wgpu renderer; the shared prelude (`_common.wgsl`) + per-visual fragment stage.
-- Per-display fit knobs are uploaded as uniforms (`knobs2` carries
-  `full_detail`, `full_quality`, `mini_simplify`, …) so shaders can read mode
-  nuance (bar visuals fill the small bar height; circular visuals use full room).
-- `Renderer::set_visual()` hot-swaps the active shader; `apply_config()` applies
-  live config changes.
-
----
-
-## 12. Known Failure Modes & Fixes (root-cause log)
-
-These are the issues that produced the user's "nothing works" report, with the
-verified fixes.
-
-1. **Waybar never started (config corruption).** `install.sh`'s module template
-   used escaped `\\n`, collapsing the module into one invalid JSON line in
-   `config.jsonc`. Waybar aborted on parse → entire bar (and omaviz) absent.
-   *Fix:* module template uses real newlines; verified the file parses
-   (`json5`). (`mode.rs`'s `add_waybar_module` already used correct newlines.)
-
-2. **Right-click menu did nothing.** `omaviz menu` passed `walker --prompt …`
-   which walker rejects (`Unknown option --prompt`); the process exited before
-   showing anything. *Fix:* `--placeholder` / `--current` / `--exit`.
-
-3. **Mini flat / desktop window looked empty.** Two contributors:
-   - The capture works only with the running daemon + real audio; short-lived
-     test daemons/silence read `e=0.000`. *Fix:* rely on autoconnect (not
-     `target.object` pinning); the user's normal daemon + audio produces
-     `class:"active"` with energy.
-   - The config lacked `mini_gain`/`mini_floor`, so bars stayed at the lowest
-     glyph. *Fix:* added `mini_gain = 2.2`, `mini_floor = 0.15` → bars visibly
-     raised with a floor.
-
-4. **Left-click "doesn't open" the desktop window.** The window *does* spawn
-   (verified mapped + visible via Hyprland); it only looked empty because of the
-   capture/timing above. With audio it renders a live visualization.
-
-5. **GtkBuilder XML menu crash.** `menu-file` in Waybar 0.15 hits a GTK assertion.
-   *Decision:* abandoned XML menu for the `walker --dmenu` popup.
-
-6. **`debug()` duplicate.** `main.rs` had both `mod debug;` and a free
-   `debug()`, and a dead `src/debug.rs`. *Fix:* removed the duplicate; `main.rs`
-   owns `debug()`.
+- `tests/model.test.cjs` — 35 node tests (no deps). Covers: TOML read/write
+  (`writeConfigKey` no duplicate keys, in-section insert), `readConfigFromText`
+  (style/styleDesktop/desktopActive/colorSync), visual discovery + param parsing
+  (labels preserved), `visualConfigValues` from config (boolean honored, not
+  parseFloat'd), the Fire-is-a-style contract (VIZ excludes Fire), single-write
+  reflection (the 2-click regression guard), color-sync + pause round-trips, and
+  the stale-`active` recovery path.
+- Run: `node tests/model.test.cjs`.
+- QML-runtime behaviors (layout/clipping, drag feel, actual pixel output) are **not**
+  covered by unit tests — they require a live Quickshell scene. Verified manually
+  via runtime logs (`qs log`) + logic tests, not screenshots (the panel is a
+  Quickshell layer not captured by window/screen tools).
 
 ---
 
-## 13. Testing
+## 10. Migration path → GPU / WGSL (future)
 
-- **Unit tests** (`#[cfg(test)]` in `config.rs`, `visual.rs`, `dsp.rs`, `ipc.rs`,
-  `menu.rs`): defaults/inheritance, shared-viz (`set_visual_all`),
-  param clamping/reset, discovery + sort, DSP silence/tone, frame
-  encode/decode/round-trip, menu XML validity + absolute paths.
-- **CLI integration tests** (`tests/cli.rs`): `visuals` list, `mini` emits valid
-  Waybar JSON, `mode` round-trip — driven as subprocesses via
-  `CARGO_BIN_EXE_omaviz`.
-- Run: `cargo test` (unit) and `cargo test --test cli` (integration).
-- **Constraint:** GPU-free verification only. The agent must **never launch
-  Waybar or any GPU-surface process** (doing so has crashed the Hermes desktop
-  twice). Waybar restarts are left to the user; the bar module reloads via
-  `SIGUSR2` only.
+The current renderer is Canvas-2D for portability and zero GPU dependencies. The
+forward path to GPU-accelerated, shader-driven visuals (the original v2 "Option C"):
+
+1. **Keep the data contract.** `Model.spectrumData` (bands/energy/beat/silent) and
+   the `visuals/<name>.toml` param model are shader-agnostic. Shaders consume the
+   same `bands` array + the same `[visual.<name>]` params.
+2. **Swap the renderer, not the shell.** Replace `VisualCanvas.qml`'s Canvas-2D draw
+   with a `Wgpu`/`Shader` instance that loads `visuals/<name>.wgsl` (+ `_common.wgsl`
+   prelude, already present as placeholders). The `BarWidget`/`Panel`/`Desktop`
+   wrappers, dropdowns, and config IO stay unchanged.
+3. **Shader discovery.** Promote `visuals/*.wgsl` from placeholder to real shaders;
+   `discoverVisualsFromText` already enumerates the dir, so shader visuals appear in
+   the dropdown with no shell change.
+4. **Per-visual fit knobs** (`mini_simplify`, `full_detail`, …) become shader
+   uniforms — the same `.toml` `params` feed them.
+5. **Detach window** becomes the natural home for full-quality GPU shaders; the mini
+   bar keeps a cheap Canvas-2D (or a tiny shader) for performance.
+6. **Risk:** GPU process teardown on Wayland (the v1 daemon intentionally leaked its
+   `App` on exit to dodge a wgpu+Mesa EGL segfault). Any GPU migration must keep the
+   "leak-on-exit / never crash the shell" discipline and must not launch GPU surfaces
+   from the agent's verification path.
+
+This keeps the plugin self-contained and incrementally upgradable: today Canvas-2D,
+tomorrow drop-in WGSL, same UI and config.
 
 ---
 
-## 14. Operational Constraints (hard rules)
+## 11. Operational notes
 
-- **Never launch Waybar / GPU surfaces from the agent.** Backgrounding `waybar`
-  crashed Hermes twice. All Waybar restarts are the user's action.
-- **Absolute binary paths everywhere** in Waybar (env lacks `~/.local/bin`).
-- **No GTK**; use `walker` for popups and `egui` for the settings panel.
-- **Shaders are data** — drop-in WGSL, no rebuild to add a visual.
-- Capture is **sink-monitor only** (system playback, not mic).
-
----
-
-## 15. Summary of Decisions
-
-| Topic | Decision |
-|-------|----------|
-| Right-click menu | `walker --dmenu` popup (icons + preselect), not GtkBuilder XML |
-| Capture target | Autoconnect sink monitor (`STREAM_CAPTURE_SINK`); do **not** pin `target.object` |
-| Settings panel | `egui` Split Panel, Omarchy-themed, Save/Cancel footer, per-viz Reset |
-| Visual selection | Shared across modes; only per-display *fit* differs |
-| Mini visibility | `mini_gain` + `mini_floor` in `[mini.extra]` |
-| Config corruption | `install.sh` writes real newlines; `json5`-validated |
-| GPU safety | Agent never launches Waybar/GPU surfaces |
-| Shaders | Data-driven WGSL, discovered at runtime |
+- Edit the **repo** (`~/workspace/omaviz`) first, then copy changed files into the
+  live plugin dir to test. Never edit the live copy directly.
+- The spectrum bridge is a separate binary; only one consumer launches it (the bar).
+  Multiple stray `Desktop.qml` test windows monopolize the PipeWire capture and starve
+  the bar — kill them by explicit PID after visual checks.
+- `desktop.active` must be `"false"` for the mini to render; a killed detach window
+  can leave it stuck `true` (cleared by `detachProc.onExited` or manually).

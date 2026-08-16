@@ -1,5 +1,11 @@
 # Omaviz v2 Specification
 
+> ⚠️ **This file is the original design proposal (2026-08-15).** The shipped
+> implementation diverged (self-contained QML plugin, Canvas-2D renderer,
+> Fire-as-style, external `omaviz-spectrum-bridge` binary — no Rust daemon/egui/
+> WGSL in the plugin). **`APPLICATION_SPEC.md` is the authoritative, current spec.**
+> Keep this file only as historical design context + the Option C GPU migration idea.
+
 > **Implementation target:** Full QML (Option A) → migration path to QML + Shaders (Option C)
 >
 > **Plugin id:** `org.omaviz.visualizer`
