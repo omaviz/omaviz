@@ -59,10 +59,14 @@ Panel {
   FileView {
     id: configWrite
     path: Model.configPath
-    watchChanges: true
+    // Do NOT watchChanges: writeConfig() writes via setText() and updates
+    // root.config itself. If this view also watched the file, its async
+    // onFileChanged would re-read a stale in-memory buffer and REVERT root.config
+    // to the pre-write value — which is exactly why every control needed a
+    // second click to "stick". The bar widget keeps its own (watching) view.
+    watchChanges: false
     printErrors: false
-    onLoaded: root.config = Model.readConfigFromText(text())
-    onFileChanged: root.config = Model.readConfigFromText(text())
+    onLoaded: { root.configText = text(); root.config = Model.readConfigFromText(root.configText) }
   }
 
   // ---- live spectrum refresh ----
@@ -80,11 +84,15 @@ Panel {
   property var visualParamValues: {}
   property var visualParams: []
   property var visualTomlCache: {}
+  // Authoritative in-memory copy of the config text. Quickshell's
+  // FileView.setText() does NOT update text() synchronously, so we keep our
+  // own buffer and use it for all reads/writes. configWrite is only used to
+  // persist to disk.
+  property string configText: ""
 
   onHostWidgetChanged: refreshState()
-  Component.onCompleted: refreshState()
   function refreshState() {
-    root.config = Model.readConfigFromText(configWrite.text())
+    root.config = Model.readConfigFromText(root.configText)
     root.spectrumBands = Model.spectrumData.bands
     root.spectrumSilent = Model.spectrumData.silent
     refreshVisualParamCache()
@@ -105,7 +113,7 @@ Panel {
     }
     root.visualParams = params
     // Read saved values from the shared config (where the user's edits live).
-    root.visualParamValues = Model.visualConfigValues(configWrite.text(), params)
+    root.visualParamValues = Model.visualConfigValues(root.configText, params)
   }
 
   function refreshVisuals() { readVisuals.refresh() }
@@ -129,7 +137,8 @@ Panel {
   }
 
   function writeConfig(section, key, value) {
-    var next = Model.writeConfigKey(configWrite.text(), section, key, value)
+    var next = Model.writeConfigKey(root.configText, section, key, value)
+    root.configText = next
     configWrite.setText(next)
     root.config = Model.readConfigFromText(next)
     // Push the new config straight to the bar widget (same QML process) so
@@ -140,7 +149,7 @@ Panel {
       // Update only the values map (NOT visualParams) so the Repeater keeps
       // its delegates — rebuilding visualParams mid-drag caused the
       // "have to click twice" jank.
-      root.visualParamValues = Model.visualConfigValues(configWrite.text(), root.visualParams)
+      root.visualParamValues = Model.visualConfigValues(root.configText, root.visualParams)
     }
   }
 

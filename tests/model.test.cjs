@@ -532,3 +532,26 @@ test('style round-trip: selectStyle writes both mini and desktop style, knobs co
   assert.ok(eqPk && firePk)
   assert.notStrictEqual(eqPk, firePk)
 })
+
+// ===========================================================================
+// Panel write pattern: an in-memory config text buffer must reflect a write
+// IMMEDIATELY (synchronously) so the first click sticks. Quickshell's
+// FileView.setText() does NOT update text() synchronously, so the panel keeps
+// its own buffer; writeConfigKey + readTomlValue on that same string must
+// round-trip without a file round-trip. This is the "every control needs two
+// clicks" / "color sync doesn't work" regression guard.
+// ===========================================================================
+test('in-memory buffer: writeConfigKey then readTomlValue on same string reflects immediately', () => {
+  let buf = '[mini]\nvisual = "equalizer"\ncolor_sync = false\n\n[visual.equalizer]\nbar_count = 32\n'
+  // color sync toggle (single click)
+  buf = M.writeConfigKey(buf, 'mini', 'color_sync', 'true')
+  assert.strictEqual(M.readTomlValue(buf, 'mini', 'color_sync'), 'true',
+    'first click must reflect without re-reading from disk')
+  // knob write (single action)
+  buf = M.writeConfigKey(buf, 'visual.equalizer', 'bar_count', 48)
+  assert.strictEqual(M.readTomlValue(buf, 'visual.equalizer', 'bar_count'), '48',
+    'knob must reflect on first write')
+  // toggle back off
+  buf = M.writeConfigKey(buf, 'mini', 'color_sync', 'false')
+  assert.strictEqual(M.readTomlValue(buf, 'mini', 'color_sync'), 'false')
+})
