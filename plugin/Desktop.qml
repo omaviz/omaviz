@@ -76,17 +76,38 @@ Window {
       Loader {
         id: desktopViz
         anchors.fill: parent
-        // v7.1: GPU ShaderEffect renderer for the detached window by default;
-        // falls back to the CPU Canvas renderer when gpu is disabled.
         source: (win.config.gpu === false) ? "VisualCanvas.qml" : "VisualCanvasGL.qml"
       }
+      // Live data that updates every frame (works via Binding).
       Binding { when: desktopViz.item; target: desktopViz.item; property: "bands"; value: win.spectrumBands }
       Binding { when: desktopViz.item; target: desktopViz.item; property: "silent"; value: win.spectrumSilent }
-      Binding { when: desktopViz.item; target: desktopViz.item; property: "visual"; value: win.visualName }
-      Binding { when: desktopViz.item; target: desktopViz.item; property: "style"; value: win.visualStyle }
-      Binding { when: desktopViz.item; target: desktopViz.item; property: "colorSync"; value: true }
-      Binding { when: desktopViz.item; target: desktopViz.item; property: "barCount"; value: Model.readTomlInt(configWrite.text(), "visual.equalizer", "bar_count") || 0 }
-      Binding { when: desktopViz.item; target: desktopViz.item; property: "colourScheme"; value: Model.readTomlInt(configWrite.text(), "visual.equalizer", "colour_scheme") || 0 }
+      // Settings (visual/style/scheme/color): push directly on config change,
+      // not via the fragile Binding-when chain — those can miss re-evaluations.
+      Connections {
+        target: win
+        function onConfigChanged() { pushSettings() }
+      }
+      // Also push once when the Loader item first becomes available.
+      Connections {
+        target: desktopViz
+        function onItemChanged() { pushSettings() }
+      }
+      function pushSettings() {
+        var it = desktopViz.item
+        if (!it) return
+        it.visual = win.visualName
+        it.style = win.visualStyle
+        it.colorSync = true
+        it.colourScheme = Model.readTomlInt(configWrite.text(), "visual.equalizer", "colour_scheme") || 0
+        it.barCount = Model.readTomlInt(configWrite.text(), "visual.equalizer", "bar_count") || 0
+        it.border = Model.readTomlValue(configWrite.text(), "desktop", "border") !== "false"
+        it.render3d = Model.readTomlValue(configWrite.text(), "desktop", "render3d") === "true"
+        it.colorSource = Model.readTomlValue(configWrite.text(), "desktop", "color_source") || "theme"
+        var cc = Model.readTomlValue(configWrite.text(), "desktop", "custom_color") || "#5ec8ff"
+        it.customColor = cc
+        it.themeBottom = Model.readTomlValue(configWrite.text(), "desktop", "theme_bottom") || "#19e0d4"
+        it.themeTop = Model.readTomlValue(configWrite.text(), "desktop", "theme_top") || "#a45cff"
+      }
     }
   }
 
@@ -97,6 +118,13 @@ Window {
     path: Model.configPath
     onLoaded: { win.config = Model.readConfigFromText(text()) }
     onFileChanged: { win.config = Model.readConfigFromText(text()) }
+  }
+  // The detached window is a SEPARATE quickshell process, so it cannot rely on
+  // cross-process FileView watch signals to learn of panel edits. Poll the
+  // config file so visual/style/scheme changes apply live.
+  Timer {
+    interval: 300; repeat: true; running: true
+    onTriggered: configWrite.reload()
   }
 
   onClosing: {

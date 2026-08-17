@@ -38,7 +38,7 @@ var engineBin = pluginDir + "/bin/omaviz-engine"
 function readTomlValue(tomlText, section, key) {
   if (!tomlText) return null
   var lines = String(tomlText).split("\n")
-  var inSection = false
+  var inSection = (section === "")
   for (var i = 0; i < lines.length; i++) {
     var line = lines[i].trim()
     if (line.startsWith("#") || line === "") continue
@@ -57,6 +57,11 @@ function readTomlValue(tomlText, section, key) {
     }
   }
   return null
+}
+
+// Top-level (no-section) TOML key reader. Used for theme colors.toml.
+function readTomlTopKey(tomlText, key) {
+  return readTomlValue(tomlText, "", key)
 }
 
 function readTomlFloat(tomlText, section, key) {
@@ -85,6 +90,13 @@ function readConfigFromText(tomlText) {
   d.desktopActive = readTomlValue(tomlText, "desktop", "active") === "true"
   d.colorSync = readTomlValue(tomlText, "mini", "color_sync") === "true"
   d.gpu = readTomlValue(tomlText, "desktop", "gpu") !== "false"
+  // v7.2 visual options (window)
+  d.border = readTomlValue(tomlText, "desktop", "border") !== "false"   // default true
+  d.render3d = readTomlValue(tomlText, "desktop", "render3d") === "true"
+  d.colorSource = readTomlValue(tomlText, "desktop", "color_source") || "theme"
+  d.customColor = readTomlValue(tomlText, "desktop", "custom_color") || "#5ec8ff"
+  d.themeBottom = readTomlValue(tomlText, "desktop", "theme_bottom") || "#19e0d4"
+  d.themeTop = readTomlValue(tomlText, "desktop", "theme_top") || "#a45cff"
   return d
 }
 
@@ -100,7 +112,13 @@ function defaultConfig() {
     styleDesktop: "classic",
     desktopActive: false,
     colorSync: false,
-    gpu: true
+    gpu: true,
+    border: true,
+    render3d: false,
+    colorSource: "theme",
+    customColor: "#5ec8ff",
+    themeBottom: "#19e0d4",
+    themeTop: "#a45cff"
   }
 }
 
@@ -393,6 +411,7 @@ if (typeof module !== "undefined") {
     listVisualFiles: listVisualFiles,
     setVisualFiles: setVisualFiles,
     readTomlFile: readTomlFile,
+    readTomlTopKey: readTomlTopKey,
     engineBin: engineBin
   }
 }

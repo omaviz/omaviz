@@ -69,6 +69,22 @@ Panel {
     onLoaded: { root.configText = text(); root.config = Model.readConfigFromText(root.configText) }
   }
 
+  // ---- active theme colors (for theme-dominant visualization colors) ----
+  FileView {
+    id: themeColors
+    path: "/usr/share/omarchy/themes/active/colors.toml"
+    onLoaded: pushThemeColors()
+    onFileChanged: pushThemeColors()
+  }
+  function pushThemeColors() {
+    var t = themeColors.text()
+    if (!t) return
+    var acc = Model.readTomlTopKey(t, "accent") || "#e68e0d"
+    var top = Model.readTomlTopKey(t, "bright_blue") || acc
+    writeConfig("desktop", "theme_bottom", acc)
+    writeConfig("desktop", "theme_top", top)
+  }
+
   // ---- live spectrum refresh ----
   Timer {
     id: specTimer
@@ -95,6 +111,8 @@ Panel {
     root.config = Model.readConfigFromText(root.configText)
     root.spectrumBands = Model.spectrumData.bands
     root.spectrumSilent = Model.spectrumData.silent
+    // Theme colors are pushed by pushThemeColors() (reads active theme
+    // colors.toml) — not here, to avoid the pale QML Color.accent default.
     refreshVisualParamCache()
     refreshVisuals()
   }
@@ -184,6 +202,9 @@ Panel {
     writeConfig("visual." + src, name, value)
   }
   function setAudio(name, value) { writeConfig("audio", name, value) }
+  // Window appearance options live under [desktop] and must reach the detached
+  // window live (it polls config.toml every 300ms, so a disk write is enough).
+  function setWindowOption(key, value) { writeConfig("desktop", key, value) }
   function setColorSync(on) { writeConfig("mini", "color_sync", on ? "true" : "false") }
 
   function resetVisual() {
@@ -290,7 +311,9 @@ Panel {
             id: previewViz
             anchors.fill: parent
             anchors.margins: Style.space(6)
-            source: "VisualCanvas.qml"
+            // Parity: use the SAME GPU renderer as the detached window so the
+            // settings preview matches what you get on screen.
+            source: (root.config.gpu === false) ? "VisualCanvas.qml" : "VisualCanvasGL.qml"
           }
           Binding { when: previewViz.item; target: previewViz.item; property: "bands"; value: root.spectrumBands }
           Binding { when: previewViz.item; target: previewViz.item; property: "silent"; value: root.spectrumSilent }
@@ -299,6 +322,13 @@ Panel {
           Binding { when: previewViz.item; target: previewViz.item; property: "colorSync"; value: root.config.colorSync }
           Binding { when: previewViz.item; target: previewViz.item; property: "barCount"; value: (root.visualParamValues.bar_count !== undefined ? root.visualParamValues.bar_count : 0) }
           Binding { when: previewViz.item; target: previewViz.item; property: "colourScheme"; value: (root.visualParamValues.colour_scheme !== undefined ? root.visualParamValues.colour_scheme : 0) }
+          // v7.2 window options reflected live in the preview
+          Binding { when: previewViz.item; target: previewViz.item; property: "border"; value: (root.config.border !== false) }
+          Binding { when: previewViz.item; target: previewViz.item; property: "render3d"; value: (root.config.render3d === true) }
+          Binding { when: previewViz.item; target: previewViz.item; property: "colorSource"; value: (root.config.colorSource || "theme") }
+          Binding { when: previewViz.item; target: previewViz.item; property: "customColor"; value: (root.config.customColor || "#5ec8ff") }
+          Binding { when: previewViz.item; target: previewViz.item; property: "themeBottom"; value: (root.config.themeBottom || "#19e0d4") }
+          Binding { when: previewViz.item; target: previewViz.item; property: "themeTop"; value: (root.config.themeTop || "#a45cff") }
         }
 
         // ---- visualization dropdown ----
@@ -344,6 +374,59 @@ Panel {
             { value: "Fire", label: "Fire" }
           ]
           onChanged: function(v) { root.selectStyle(v) }
+        }
+
+        // ---- window appearance options (v7.2) ----
+        Text {
+          text: "APPEARANCE"
+          color: Color.foreground
+          opacity: 0.6
+          font.family: Style.font.family
+          font.pixelSize: Style.font.bodySmall
+          font.letterSpacing: 1
+        }
+        // Border between bars (background-colored gap) vs borderless (bars touch)
+        Row {
+          width: parent.width; spacing: Style.space(10)
+          Text { text: "Bar Border"; color: Color.foreground; font.family: Style.font.family; font.pixelSize: Style.font.body; width: parent.width * 0.40; verticalAlignment: Text.AlignVCenter }
+          ToggleSwitch {
+            width: parent.width * 0.60 - Style.space(10)
+            checked: root.config.border !== false
+            onToggled: function() { root.setWindowOption("border", checked ? "false" : "true") }
+          }
+        }
+        // 3D bar extrusion
+        Row {
+          width: parent.width; spacing: Style.space(10)
+          Text { text: "3D Bars"; color: Color.foreground; font.family: Style.font.family; font.pixelSize: Style.font.body; width: parent.width * 0.40; verticalAlignment: Text.AlignVCenter }
+          ToggleSwitch {
+            width: parent.width * 0.60 - Style.space(10)
+            checked: root.config.render3d === true
+            onToggled: function() { root.setWindowOption("render3d", checked ? "false" : "true") }
+          }
+        }
+        // Color source: sync from Omarchy theme, or a custom preset color
+        Row {
+          width: parent.width; spacing: Style.space(10)
+          Text { text: "Color"; color: Color.foreground; font.family: Style.font.family; font.pixelSize: Style.font.body; width: parent.width * 0.40; verticalAlignment: Text.AlignVCenter }
+          Dropdown {
+            width: parent.width * 0.60 - Style.space(10)
+            value: (root.config.colorSource === "custom") ? (root.config.customColor || "Custom") : "Theme"
+            options: [
+              { value: "Theme", label: "Theme" },
+              { value: "#5ec8ff", label: "Blue" },
+              { value: "#a45cff", label: "Purple" },
+              { value: "#ff5cb0", label: "Pink" },
+              { value: "#ff8c1a", label: "Orange" },
+              { value: "#3ddc84", label: "Green" },
+              { value: "#ff4d4d", label: "Red" },
+              { value: "#19e0d4", label: "Cyan" }
+            ]
+            onChanged: function(v) {
+              if (v === "Theme") { root.setWindowOption("color_source", "theme") }
+              else { root.setWindowOption("color_source", "custom"); root.setWindowOption("custom_color", v) }
+            }
+          }
         }
 
         // ---- per-visualization knobs ----

@@ -264,27 +264,26 @@ BarWidget {
 
           radius: Math.min(width * 0.5, 3)
           color: {
-            if (root.paused) {
-              return Util.alpha(root.bar ? root.bar.foreground : Color.foreground, 0.08)
-            }
-            if (root.spectrumSilent || root.spectrumBands.length === 0) {
-              return Util.alpha(root.bar ? root.bar.foreground : Color.foreground, 0.12)
+            if (root.config.style === "fire") {
+              var v0 = Math.min(1, Math.max(0, value))
+              return "rgba(255," + Math.round(80 + v0 * 175) + "," + Math.round(20 + v0 * 60) + ",1)"
             }
             var v = Math.min(1, Math.max(0, value))
-            if (root.config.style === "fire") {
-              // winamp-style warm flame: red at base -> yellow at tip
-              var r = Math.round(255)
-              var g = Math.round(80 + v * 175)
-              var b = Math.round(20 + v * 60)
-              return "rgba(" + r + "," + g + "," + b + ",1)"
+            // Default: monochrome (neutral, always visible on dark bar bg).
+            if (!root.config.colorSync) {
+              return "rgba(220,224,235," + (0.5 + v * 0.5).toFixed(2) + ")"
             }
-            if (root.config.colorSync) {
-              if (v < 0.33) return "#2a9df4"
-              if (v < 0.66) return "#9b5de5"
-              return "#f15bb5"
-            }
-            var base = root.bar ? root.bar.foreground : Color.foreground
-            return Util.alpha(base, 0.25 + v * 0.75)
+            // color-sync ON: theme-dominant bottom->top gradient
+            var botS = String(root.config.themeBottom || "")
+            var topS = String(root.config.themeTop || "")
+            if (botS === "undefined" || botS === "null" || botS === "") botS = "#e68e0d"
+            if (topS === "undefined" || topS === "null" || topS === "") topS = "#f59e0b"
+            var bot = Qt.color(botS)
+            var top = Qt.color(topS)
+            var r = Math.round((bot.r + (top.r - bot.r) * v) * 255)
+            var g = Math.round((bot.g + (top.g - bot.g) * v) * 255)
+            var bl = Math.round((bot.b + (top.b - bot.b) * v) * 255)
+            return "rgb(" + r + "," + g + "," + bl + ")"
           }
 
           Behavior on height { NumberAnimation { duration: 70; easing.type: Easing.OutCubic } }
