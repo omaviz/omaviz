@@ -630,3 +630,18 @@ test('isPaused: false when no detach active', () => {
   assert.strictEqual(M.isPaused(false, false), false)
   assert.strictEqual(M.isPaused(false, true), false)
 })
+
+// v7.1: GPU renderer toggle (desktop window picks ShaderEffect vs Canvas)
+// ===========================================================================
+test('defaultConfig: gpu enabled by default', () => {
+  assert.strictEqual(M.defaultConfig().gpu, true)
+})
+
+test('readConfigFromText: gpu=false disables GPU renderer', () => {
+  const toml = '[desktop]\ngpu = "false"\n'
+  assert.strictEqual(M.readConfigFromText(toml).gpu, false)
+})
+
+test('readConfigFromText: missing gpu defaults to enabled', () => {
+  assert.strictEqual(M.readConfigFromText('[audio]\nsensitivity = 1.0\n').gpu, true)
+})

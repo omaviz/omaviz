@@ -76,7 +76,9 @@ Window {
       Loader {
         id: desktopViz
         anchors.fill: parent
-        source: "VisualCanvas.qml"
+        // v7.1: GPU ShaderEffect renderer for the detached window by default;
+        // falls back to the CPU Canvas renderer when gpu is disabled.
+        source: (win.config.gpu === false) ? "VisualCanvas.qml" : "VisualCanvasGL.qml"
       }
       Binding { when: desktopViz.item; target: desktopViz.item; property: "bands"; value: win.spectrumBands }
       Binding { when: desktopViz.item; target: desktopViz.item; property: "silent"; value: win.spectrumSilent }

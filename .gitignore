@@ -10,5 +10,7 @@ v6/**/target/
 
 # v7 bundled engine IS committed (Architecture A: the plugin dir is a
 # self-contained, zero-build drop-in — matches Omarchy's plugin model).
-# Only the intermediate cargo target trees are ignored.
+# The GPU shader is compiled to .qsb by build.sh and is NOT committed
+# (generated artifact, like target/).
 # plugin/bin/
+plugin/visual.qsb

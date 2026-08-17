@@ -84,6 +84,7 @@ function readConfigFromText(tomlText) {
   d.styleDesktop = readTomlValue(tomlText, "desktop", "style") ?? d.style
   d.desktopActive = readTomlValue(tomlText, "desktop", "active") === "true"
   d.colorSync = readTomlValue(tomlText, "mini", "color_sync") === "true"
+  d.gpu = readTomlValue(tomlText, "desktop", "gpu") !== "false"
   return d
 }
 
@@ -98,7 +99,8 @@ function defaultConfig() {
     style: "classic",
     styleDesktop: "classic",
     desktopActive: false,
-    colorSync: false
+    colorSync: false,
+    gpu: true
   }
 }
 
