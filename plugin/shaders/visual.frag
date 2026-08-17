@@ -12,9 +12,9 @@ precision highp float;
 //   row 6  theme bottom RGB
 //   row 7  theme top RGB
 //   row 8  R=eqMode(0 bars/1 lines) G=eqColor(0 solid/1 line/2 fade/3 fire) B=eqGrid
-//   row 9  R=eqPeaks G=eqFalloff(0..1) B=eqZoom(0 1x/1 2x/2 4x)
+//   row 9  R=eqPeaks G=eqFalloff(0..1) B=eqZoom(0 1x/1 2x/2 4x) A=eqThickness(80..320)
 //   row 10 R=scopeStyle(0 line/1 dot) G=scopeColor(0-3) B=scopeGrid
-//   row 11 R=scopeScan G=scopeCentered B=scopeThickness(1..4)
+//   row 11 R=scopeScan G=scopeCentered A=scopeThickness(80..320)
 // Qt6 ShaderEffect provides the default vertex shader + qt_TexCoord0.
 
 layout(location = 0) in vec2 qt_TexCoord0;
@@ -62,6 +62,11 @@ float zoomX(float x, int zoom) {
   return x;
 }
 
+// Line thickness from packed int (80,160,240,320) -> normalized line width
+float lineWidth(int thick) {
+  return (float(thick) / 320.0) * 0.02 + 0.004;
+}
+
 void main() {
   vec2 uv = qt_TexCoord0;
   float x = uv.x, y = uv.y;
@@ -83,7 +88,7 @@ void main() {
     bool  sGrid  = sc1().b > 0.5;
     bool  sScan  = sc2().r > 0.5;
     bool  sCtr   = sc2().g > 0.5;
-    float th     = sc2().b;                       // 1..4
+    int   sThick = int(sc2().a * 255.0 + 0.5);
     float amp = bandAt(x);                        // 0..1 audio level proxy
     // Reconstruct a waveform: Winamp scope draws the time-domain signal. We
     // synthesize a plausible wave from the spectrum envelope + phase.
@@ -93,14 +98,26 @@ void main() {
     float w = env * 0.9;
     float ph = x * 12.0 + meta().g * 4.0;
     float wave = sin(ph) * w + 0.15 * sin(ph * 3.0 + 1.0) * w;
-    if (sCtr) wave = wave;                        // centered around 0.5
+    if (sCtr) wave = wave;  // centered around 0.5 (no DC shift)
     float wy = 0.5 + wave * 0.45;
+    // Centered mode: draw waveform centered at 0.5 with same amplitude
+    if (sCtr) {
+      wy = 0.5 + wave * 0.45;
+    } else {
+      // Non-centered: draw from bottom (like classic scope with DC offset)
+      wy = (wave * 0.5 + 0.5) * 0.9;
+    }
     float d = abs(y - wy);
-    float lw = (th / NB) * 1.2 + 0.004;
-    vec3 sc = (sColor == 3) ? fireColor(clamp(y, 0.0, 1.0))
-             : (sColor == 0 ? vColor(y) : vColor(y));
-    if (sColor == 2) { // fade blocks: fade with distance
-      sc *= (0.4 + 0.6 * (1.0 - d));
+    float lw = lineWidth(sThick);
+    vec3 sc;
+    if (sColor == 3) {
+      sc = fireColor(clamp(y, 0.0, 1.0));
+    } else if (sColor == 0) {
+      sc = vColor(y);  // solid (theme gradient)
+    } else if (sColor == 1) {
+      sc = vColor(y);  // line (same as solid for scope)
+    } else { // fade
+      sc = vColor(y) * (0.4 + 0.6 * (1.0 - d));
     }
     if (sStyle == 1) { // dot
       float dd = length(vec2((lx - 0.5), d));
@@ -108,9 +125,10 @@ void main() {
     } else {          // line
       if (d < lw) col = sc;
     }
-    if (sScan) { // sweep beam: brighten near a moving x
+    if (sScan) { // sweep beam: distinct vertical line sweeping left->right
       float sx = fract(meta().g * 0.5);
-      col += sc * 0.5 * smoothstep(0.03, 0.0, abs(x - sx));
+      float beam = smoothstep(0.015, 0.0, abs(x - sx));
+      col += vec3(1.0, 0.8, 0.3) * beam * 0.8;
     }
     if (sGrid) col += vec3(0.18) * gridLine(x, y);
   } else {
@@ -121,7 +139,7 @@ void main() {
     bool  ePeaks = eq2().r > 0.5;
     float fall   = eq2().g;
     int   zoom   = int(eq2().b * 2.0 + 0.5);
-    float th     = 2.0;
+    int   eThick = int(eq2().a * 255.0 + 0.5);
 
     if (eMode == 1) {
       // LINES: connected spectrum curve
@@ -129,9 +147,17 @@ void main() {
       float v = bandAt(zx);
       float wy = 1.0 - v * 0.96;
       float d = abs(y - wy);
-      float lw = 0.006 + th * 0.002;
-      vec3 lc = (eColor == 3) ? fireColor(v) : ((eColor == 1 || eColor == 2) ? vColor(v) : vColor(v));
-      if (eColor == 2) lc *= (0.4 + 0.6 * (1.0 - d));
+      float lw = lineWidth(eThick);
+      vec3 lc;
+      if (eColor == 3) {
+        lc = fireColor(v);
+      } else if (eColor == 0) {
+        lc = vColor(v);  // solid
+      } else if (eColor == 1) {
+        lc = vColor(v);  // line (thin line)
+      } else { // fade
+        lc = vColor(v) * (0.4 + 0.6 * (1.0 - d));
+      }
       if (d < lw) col = lc;
     } else {
       // BARS: discrete bars rising from bottom
@@ -140,9 +166,16 @@ void main() {
       float h = v * 0.96;
       float bottom = 1.0 - h;
       float inside = step(lx, 1.0 - gap) * step(bottom, y);
-      vec3 bc = (eColor == 3) ? fireColor((y - bottom) / max(h, 0.001))
-               : vColor((y - bottom) / max(h, 0.001));
-      if (eColor == 2) bc *= (0.5 + 0.5 * (y - bottom) / max(h, 0.001)); // fade blocks
+      vec3 bc;
+      if (eColor == 3) {
+        bc = fireColor((y - bottom) / max(h, 0.001));
+      } else if (eColor == 0) {
+        bc = vColor((y - bottom) / max(h, 0.001));  // solid
+      } else if (eColor == 1) {
+        bc = vColor((y - bottom) / max(h, 0.001));  // line = solid for bars
+      } else { // fade
+        bc = vColor((y - bottom) / max(h, 0.001)) * (0.5 + 0.5 * (y - bottom) / max(h, 0.001));
+      }
       if (is3d) bc *= 1.0 - 0.35 * (1.0 - lx / max(1.0 - gap, 0.001));
       col = bc * inside;
       // bright cap

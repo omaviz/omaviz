@@ -60,6 +60,8 @@ Item {
   readonly property int   cScGrid: scopeGrid ? 1 : 0
   readonly property int   cScScan: scopeScan ? 1 : 0
   readonly property int   cScCtr: scopeCentered ? 1 : 0
+  readonly property int   cEqThickness: eqThickness * 80  // 1..4 -> 80,160,240,320
+  readonly property int   cScThickness: scopeThickness * 80
   property real u_time: 0
   NumberAnimation on u_time { running: true; loops: Animation.Infinite; from: 0; to: 1000; duration: 1000000 }
 
@@ -89,7 +91,7 @@ Item {
         var pg = Math.round(Math.min(1, Math.max(0, root.peakArr[j] || 0)) * 255)
         ctx.fillStyle = "rgb(" + pg + "," + pg + "," + pg + ")"; ctx.fillRect(j, 1, 1, 1)
       }
-      function row(y, r,g,b){ ctx.fillStyle="rgb("+r+","+g+","+b+")"; ctx.fillRect(0,y,32,1) }
+      function row(y, r,g,b,a){ ctx.fillStyle="rgba("+r+","+g+","+b+","+(a!==undefined?a:255)+")"; ctx.fillRect(0,y,32,1) }
       row(2, cVisual*255, cColorSrc*255, 0)
       row(3, Math.round((u_time%1000)/1000*255), 0, 0)
       row(4, cBorder*255, c3d*255, 0)
@@ -100,9 +102,9 @@ Item {
       var tr=Math.round(themeTop.r*255), tg=Math.round(themeTop.g*255), tb=Math.round(themeTop.b*255)
       row(7, tr, tg, tb)
       row(8, cEqMode*255, cEqColor*255, cEqGrid*255)
-      row(9, cEqPeaks*255, Math.round(eqFalloff*255), cEqZoom*255)
+      row(9, cEqPeaks*255, Math.round(eqFalloff*255), cEqZoom*255, cEqThickness)
       row(10, cScStyle*255, cScColor*255, cScGrid*255)
-      row(11, cScScan*255, cScCtr*255, scopeThickness*255)
+      row(11, cScScan*255, cScCtr*255, cScThickness)
     }
     Component.onCompleted: requestPaint()
   }

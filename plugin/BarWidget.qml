@@ -269,9 +269,10 @@ BarWidget {
               return "rgba(255," + Math.round(80 + v0 * 175) + "," + Math.round(20 + v0 * 60) + ",1)"
             }
             var v = Math.min(1, Math.max(0, value))
-            // Default: monochrome (neutral, always visible on dark bar bg).
+            // Default: monochrome (bright, fully visible on dark bar bg).
             if (!root.config.colorSync) {
-              return "rgba(220,224,235," + (0.5 + v * 0.5).toFixed(2) + ")"
+              // Bright white/light gray at FULL opacity so it's always visible.
+              return "rgba(235,240,250,1)"
             }
             // color-sync ON: theme-dominant bottom->top gradient
             var botS = String(root.config.themeBottom || "")
