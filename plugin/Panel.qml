@@ -163,7 +163,9 @@ Panel {
     // pause / color-sync changes take effect immediately, without relying on
     // cross-FileView disk-watch propagation.
     if (root.hostWidget && "applyConfig" in root.hostWidget) root.hostWidget.applyConfig(next)
-    if (section.indexOf("visual.") === 0) {
+    if (section.indexOf("visual.") === 0
+        && section !== "visual.equalizer"
+        && section !== "visual.oscilloscope") {
       // Update only the values map (NOT visualParams) so the Repeater keeps
       // its delegates — rebuilding visualParams mid-drag caused the
       // "have to click twice" jank.
@@ -172,17 +174,18 @@ Panel {
   }
 
   function selectVisual(displayName) {
-    // displayName is the friendly label (Bars / Wave)
-    var name = displayName
-    if (name === "Bars") name = "equalizer"
-    else if (name === "Wave") name = "wave"
-    if (name === root.config.visualMini) return
+    // displayName is the friendly label (Bars / Oscilloscope)
+    var name = (displayName === "Oscilloscope") ? "oscilloscope" : "equalizer"
+    if (name === root.config.visualDesktop) return
     writeConfig("mini", "visual", name)
     writeConfig("desktop", "visual", name)
     writeConfig("full", "visual", name)
     persistShell({ visual: name })
-    refreshVisualParamCache()
   }
+
+  // Winamp visualization option writers (independent sections).
+  function setEqOption(key, value) { writeConfig("visual.equalizer", key, value) }
+  function setScopeOption(key, value) { writeConfig("visual.oscilloscope", key, value) }
 
   function selectStyle(displayName) {
     var s = (displayName === "Fire") ? "fire" : "classic"
@@ -318,10 +321,7 @@ Panel {
           Binding { when: previewViz.item; target: previewViz.item; property: "bands"; value: root.spectrumBands }
           Binding { when: previewViz.item; target: previewViz.item; property: "silent"; value: root.spectrumSilent }
           Binding { when: previewViz.item; target: previewViz.item; property: "visual"; value: root.activeVisual }
-          Binding { when: previewViz.item; target: previewViz.item; property: "style"; value: root.activeStyle }
           Binding { when: previewViz.item; target: previewViz.item; property: "colorSync"; value: root.config.colorSync }
-          Binding { when: previewViz.item; target: previewViz.item; property: "barCount"; value: (root.visualParamValues.bar_count !== undefined ? root.visualParamValues.bar_count : 0) }
-          Binding { when: previewViz.item; target: previewViz.item; property: "colourScheme"; value: (root.visualParamValues.colour_scheme !== undefined ? root.visualParamValues.colour_scheme : 0) }
           // v7.2 window options reflected live in the preview
           Binding { when: previewViz.item; target: previewViz.item; property: "border"; value: (root.config.border !== false) }
           Binding { when: previewViz.item; target: previewViz.item; property: "render3d"; value: (root.config.render3d === true) }
@@ -329,6 +329,20 @@ Panel {
           Binding { when: previewViz.item; target: previewViz.item; property: "customColor"; value: (root.config.customColor || "#5ec8ff") }
           Binding { when: previewViz.item; target: previewViz.item; property: "themeBottom"; value: (root.config.themeBottom || "#19e0d4") }
           Binding { when: previewViz.item; target: previewViz.item; property: "themeTop"; value: (root.config.themeTop || "#a45cff") }
+          // v7.4 Winamp visualization option sets (independent)
+          Binding { when: previewViz.item; target: previewViz.item; property: "eqMode"; value: (root.config.eqMode || "bars") }
+          Binding { when: previewViz.item; target: previewViz.item; property: "eqColor"; value: (root.config.eqColor || "fire") }
+          Binding { when: previewViz.item; target: previewViz.item; property: "eqGrid"; value: (root.config.eqGrid === true) }
+          Binding { when: previewViz.item; target: previewViz.item; property: "eqPeaks"; value: (root.config.eqPeaks !== false) }
+          Binding { when: previewViz.item; target: previewViz.item; property: "eqFalloff"; value: (root.config.eqFalloff ?? 0.5) }
+          Binding { when: previewViz.item; target: previewViz.item; property: "eqZoom"; value: (root.config.eqZoom || "1x") }
+          Binding { when: previewViz.item; target: previewViz.item; property: "eqThickness"; value: (root.config.eqThickness || 2) }
+          Binding { when: previewViz.item; target: previewViz.item; property: "scopeStyle"; value: (root.config.scopeStyle || "line") }
+          Binding { when: previewViz.item; target: previewViz.item; property: "scopeColor"; value: (root.config.scopeColor || "solid") }
+          Binding { when: previewViz.item; target: previewViz.item; property: "scopeGrid"; value: (root.config.scopeGrid === true) }
+          Binding { when: previewViz.item; target: previewViz.item; property: "scopeScan"; value: (root.config.scopeScan === true) }
+          Binding { when: previewViz.item; target: previewViz.item; property: "scopeCentered"; value: (root.config.scopeCentered === true) }
+          Binding { when: previewViz.item; target: previewViz.item; property: "scopeThickness"; value: (root.config.scopeThickness || 2) }
         }
 
         // ---- visualization dropdown ----
@@ -344,36 +358,11 @@ Panel {
           id: vizDropdown
           width: parent.width
           value: root.activeVisual
-          // Fire is a STYLE of Bars, not a visualization — exclude it here.
-          options: root.visuals
-            .filter(function(v) { return v.name !== "fire" })
-            .map(function(v) {
-              var d = v.name
-              if (d === "equalizer") d = "Bars"
-              else if (d === "wave") d = "Wave"
-              return { value: d, label: d }
-            })
-          onChanged: function(v) { root.selectVisual(v) }
-        }
-
-        // ---- style (Classic / Fire) — Fire is a style of the Bars visual ----
-        Text {
-          text: "STYLE"
-          color: Color.foreground
-          opacity: 0.6
-          font.family: Style.font.family
-          font.pixelSize: Style.font.bodySmall
-          font.letterSpacing: 1
-        }
-        Dropdown {
-          id: styleDropdown
-          width: parent.width
-          value: root.activeStyle
           options: [
-            { value: "Classic", label: "Classic" },
-            { value: "Fire", label: "Fire" }
+            { value: "Bars", label: "Bars" },
+            { value: "Oscilloscope", label: "Oscilloscope" }
           ]
-          onChanged: function(v) { root.selectStyle(v) }
+          onChanged: function(v) { root.selectVisual(v) }
         }
 
         // ---- window appearance options (v7.2) ----
@@ -429,65 +418,76 @@ Panel {
           }
         }
 
-        // ---- per-visualization knobs ----
+        // ---- Spectrum Analyzer (Bars) options — Winamp faithful ----
         Text {
-          text: "OPTIONS"
+          text: "ANALYZER (BARS)"
           color: Color.foreground
           opacity: 0.6
           font.family: Style.font.family
           font.pixelSize: Style.font.bodySmall
           font.letterSpacing: 1
         }
-        Repeater {
-          model: root.visualParams
-          Row {
-            width: parent.width
-            height: Math.max(Style.space(28), knobCtrl.implicitHeight)
-            spacing: Style.space(10)
-            Text {
-              text: modelData.label
-              color: Color.foreground
-              font.family: Style.font.family
-              font.pixelSize: Style.font.body
-              width: parent.width * 0.40
-              elide: Text.ElideRight
-              verticalAlignment: Text.AlignVCenter
-              wrapMode: Text.NoWrap
-            }
-            Loader {
-              id: knobCtrl
-              width: parent.width * 0.60 - Style.space(10)
-              sourceComponent: (modelData.boolean === true) ? boolComp : sliderComp
-              property var param: modelData
-            }
-          }
+        Row { width: parent.width; spacing: Style.space(10)
+          Text { text: "Mode"; color: Color.foreground; font.family: Style.font.family; font.pixelSize: Style.font.body; width: parent.width*0.40; verticalAlignment: Text.AlignVCenter }
+          Dropdown { width: parent.width*0.60 - Style.space(10); value: (root.config.eqMode || "bars"); options: [ {value:"bars",label:"Bars"}, {value:"lines",label:"Lines"} ]; onChanged: function(v){ root.setEqOption("mode", v) } }
         }
-        Component {
-          id: sliderComp
-          PanelSlider {
-            width: parent ? parent.width : 100
-            value: currentKnobValue(param)
-            minimum: param.min
-            maximum: param.max
-            step: Math.max(0.001, (param.max - param.min) / 100)
-            onMoved: function(v) { root.setKnob(param.name, v) }
-            function currentKnobValue(p) {
-              var v = root.visualParamValues[p.name]
-              return v !== undefined ? v : p.default
-            }
-          }
+        Row { width: parent.width; spacing: Style.space(10)
+          Text { text: "Color"; color: Color.foreground; font.family: Style.font.family; font.pixelSize: Style.font.body; width: parent.width*0.40; verticalAlignment: Text.AlignVCenter }
+          Dropdown { width: parent.width*0.60 - Style.space(10); value: (root.config.eqColor || "fire"); options: [ {value:"solid",label:"Solid"}, {value:"line",label:"Line"}, {value:"fade",label:"Fade Blocks"}, {value:"fire",label:"Fire"} ]; onChanged: function(v){ root.setEqOption("color", v) } }
         }
-        Component {
-          id: boolComp
-          ToggleSwitch {
-            width: parent ? parent.width : 100
-            checked: currentBoolValue(param)
-            onToggled: root.setKnob(param.name, !checked)
-            function currentBoolValue(p) {
-              var v = root.visualParamValues[p.name]
-              return v === undefined ? (p.default === true) : (v === true)
-            }
-          }
+        Row { width: parent.width; spacing: Style.space(10)
+          Text { text: "Grid"; color: Color.foreground; font.family: Style.font.family; font.pixelSize: Style.font.body; width: parent.width*0.40; verticalAlignment: Text.AlignVCenter }
+          ToggleSwitch { width: parent.width*0.60 - Style.space(10); checked: (root.config.eqGrid === true); onToggled: function(){ root.setEqOption("grid", checked ? "true":"false") } }
+        }
+        Row { width: parent.width; spacing: Style.space(10)
+          Text { text: "Peaks"; color: Color.foreground; font.family: Style.font.family; font.pixelSize: Style.font.body; width: parent.width*0.40; verticalAlignment: Text.AlignVCenter }
+          ToggleSwitch { width: parent.width*0.60 - Style.space(10); checked: (root.config.eqPeaks !== false); onToggled: function(){ root.setEqOption("peaks", checked ? "true":"false") } }
+        }
+        Row { width: parent.width; spacing: Style.space(10)
+          Text { text: "Falloff"; color: Color.foreground; font.family: Style.font.family; font.pixelSize: Style.font.body; width: parent.width*0.40; verticalAlignment: Text.AlignVCenter }
+          PanelSlider { width: parent.width*0.60 - Style.space(10); value: (root.config.eqFalloff ?? 0.5); minimum: 0.0; maximum: 1.0; step: 0.05; onMoved: function(v){ root.setEqOption("falloff", v) } }
+        }
+        Row { width: parent.width; spacing: Style.space(10)
+          Text { text: "Zoom"; color: Color.foreground; font.family: Style.font.family; font.pixelSize: Style.font.body; width: parent.width*0.40; verticalAlignment: Text.AlignVCenter }
+          Dropdown { width: parent.width*0.60 - Style.space(10); value: (root.config.eqZoom || "1x"); options: [ {value:"1x",label:"1x"}, {value:"2x",label:"2x"}, {value:"4x",label:"4x"} ]; onChanged: function(v){ root.setEqOption("zoom", v) } }
+        }
+        Row { width: parent.width; spacing: Style.space(10)
+          Text { text: "Thickness"; color: Color.foreground; font.family: Style.font.family; font.pixelSize: Style.font.body; width: parent.width*0.40; verticalAlignment: Text.AlignVCenter }
+          Dropdown { width: parent.width*0.60 - Style.space(10); value: String(root.config.eqThickness || 2); options: [ {value:"1",label:"1"}, {value:"2",label:"2"}, {value:"3",label:"3"}, {value:"4",label:"4"} ]; onChanged: function(v){ root.setEqOption("thickness", parseInt(v,10)) } }
+        }
+
+        // ---- Oscilloscope options — Winamp faithful ----
+        Text {
+          text: "OSCILLOSCOPE"
+          color: Color.foreground
+          opacity: 0.6
+          font.family: Style.font.family
+          font.pixelSize: Style.font.bodySmall
+          font.letterSpacing: 1
+        }
+        Row { width: parent.width; spacing: Style.space(10)
+          Text { text: "Style"; color: Color.foreground; font.family: Style.font.family; font.pixelSize: Style.font.body; width: parent.width*0.40; verticalAlignment: Text.AlignVCenter }
+          Dropdown { width: parent.width*0.60 - Style.space(10); value: (root.config.scopeStyle || "line"); options: [ {value:"line",label:"Line"}, {value:"dot",label:"Dot"} ]; onChanged: function(v){ root.setScopeOption("style", v) } }
+        }
+        Row { width: parent.width; spacing: Style.space(10)
+          Text { text: "Color"; color: Color.foreground; font.family: Style.font.family; font.pixelSize: Style.font.body; width: parent.width*0.40; verticalAlignment: Text.AlignVCenter }
+          Dropdown { width: parent.width*0.60 - Style.space(10); value: (root.config.scopeColor || "solid"); options: [ {value:"solid",label:"Solid"}, {value:"line",label:"Line"}, {value:"fade",label:"Fade Blocks"}, {value:"fire",label:"Fire"} ]; onChanged: function(v){ root.setScopeOption("color", v) } }
+        }
+        Row { width: parent.width; spacing: Style.space(10)
+          Text { text: "Grid"; color: Color.foreground; font.family: Style.font.family; font.pixelSize: Style.font.body; width: parent.width*0.40; verticalAlignment: Text.AlignVCenter }
+          ToggleSwitch { width: parent.width*0.60 - Style.space(10); checked: (root.config.scopeGrid === true); onToggled: function(){ root.setScopeOption("grid", checked ? "true":"false") } }
+        }
+        Row { width: parent.width; spacing: Style.space(10)
+          Text { text: "Scan"; color: Color.foreground; font.family: Style.font.family; font.pixelSize: Style.font.body; width: parent.width*0.40; verticalAlignment: Text.AlignVCenter }
+          ToggleSwitch { width: parent.width*0.60 - Style.space(10); checked: (root.config.scopeScan === true); onToggled: function(){ root.setScopeOption("scan", checked ? "true":"false") } }
+        }
+        Row { width: parent.width; spacing: Style.space(10)
+          Text { text: "Centered"; color: Color.foreground; font.family: Style.font.family; font.pixelSize: Style.font.body; width: parent.width*0.40; verticalAlignment: Text.AlignVCenter }
+          ToggleSwitch { width: parent.width*0.60 - Style.space(10); checked: (root.config.scopeCentered === true); onToggled: function(){ root.setScopeOption("centered", checked ? "true":"false") } }
+        }
+        Row { width: parent.width; spacing: Style.space(10)
+          Text { text: "Thickness"; color: Color.foreground; font.family: Style.font.family; font.pixelSize: Style.font.body; width: parent.width*0.40; verticalAlignment: Text.AlignVCenter }
+          Dropdown { width: parent.width*0.60 - Style.space(10); value: String(root.config.scopeThickness || 2); options: [ {value:"1",label:"1"}, {value:"2",label:"2"}, {value:"3",label:"3"}, {value:"4",label:"4"} ]; onChanged: function(v){ root.setScopeOption("thickness", parseInt(v,10)) } }
         }
 
         // ---- audio ----

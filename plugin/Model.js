@@ -97,6 +97,20 @@ function readConfigFromText(tomlText) {
   d.customColor = readTomlValue(tomlText, "desktop", "custom_color") || "#5ec8ff"
   d.themeBottom = readTomlValue(tomlText, "desktop", "theme_bottom") || "#19e0d4"
   d.themeTop = readTomlValue(tomlText, "desktop", "theme_top") || "#a45cff"
+  // v7.4 Winamp-faithful per-visualization option sets (independent).
+  d.eqMode = readTomlValue(tomlText, "visual.equalizer", "mode") || "bars"        // bars|lines
+  d.eqColor = readTomlValue(tomlText, "visual.equalizer", "color") || "fire"      // solid|line|fade|fire
+  d.eqGrid = readTomlValue(tomlText, "visual.equalizer", "grid") === "true"
+  d.eqPeaks = readTomlValue(tomlText, "visual.equalizer", "peaks") !== "false"    // default on
+  d.eqFalloff = readTomlFloat(tomlText, "visual.equalizer", "falloff") ?? 0.5      // 0 slow .. 1 fast
+  d.eqZoom = readTomlValue(tomlText, "visual.equalizer", "zoom") || "1x"          // 1x|2x|4x
+  d.eqThickness = readTomlInt(tomlText, "visual.equalizer", "thickness") || 2
+  d.scopeStyle = readTomlValue(tomlText, "visual.oscilloscope", "style") || "line" // line|dot
+  d.scopeColor = readTomlValue(tomlText, "visual.oscilloscope", "color") || "solid" // solid|line|fade|fire
+  d.scopeGrid = readTomlValue(tomlText, "visual.oscilloscope", "grid") === "true"
+  d.scopeScan = readTomlValue(tomlText, "visual.oscilloscope", "scan") === "true"
+  d.scopeCentered = readTomlValue(tomlText, "visual.oscilloscope", "centered") === "true"
+  d.scopeThickness = readTomlInt(tomlText, "visual.oscilloscope", "thickness") || 2
   return d
 }
 
@@ -118,7 +132,9 @@ function defaultConfig() {
     colorSource: "theme",
     customColor: "#5ec8ff",
     themeBottom: "#19e0d4",
-    themeTop: "#a45cff"
+    themeTop: "#a45cff",
+    eqMode: "bars", eqColor: "fire", eqGrid: false, eqPeaks: true, eqFalloff: 0.5, eqZoom: "1x", eqThickness: 2,
+    scopeStyle: "line", scopeColor: "solid", scopeGrid: false, scopeScan: false, scopeCentered: true, scopeThickness: 2
   }
 }
 

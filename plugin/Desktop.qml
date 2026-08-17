@@ -21,11 +21,9 @@ Window {
 
   property var spectrumBands: Model.spectrumData.bands
   property bool spectrumSilent: Model.spectrumData.silent
-  // Active visual display name (Bars/Wave/Fire).
-  readonly property string visualName: (win.config.visualDesktop || "equalizer")
-    .replace("equalizer", "Bars").replace("wave", "Wave").replace("fire", "Fire")
-  // Fire is a STYLE of the Bars visual, not a separate visualization.
-  readonly property string visualStyle: (win.config.styleDesktop || "classic") === "fire" ? "Fire" : "Classic"
+  // Active visual: equalizer -> Bars (Winamp Spectrum Analyzer),
+  // oscilloscope -> Oscilloscope. Fire is now a color mode, not a visual.
+  readonly property string visualName: (win.config.visualDesktop || "equalizer") === "oscilloscope" ? "Oscilloscope" : "Bars"
 
   Process {
     id: bridge
@@ -85,30 +83,43 @@ Window {
       // not via the fragile Binding-when chain — those can miss re-evaluations.
       Connections {
         target: win
-        function onConfigChanged() { pushSettings() }
+        function onConfigChanged() { win.pushSettings() }
       }
       // Also push once when the Loader item first becomes available.
       Connections {
         target: desktopViz
-        function onItemChanged() { pushSettings() }
-      }
-      function pushSettings() {
-        var it = desktopViz.item
-        if (!it) return
-        it.visual = win.visualName
-        it.style = win.visualStyle
-        it.colorSync = true
-        it.colourScheme = Model.readTomlInt(configWrite.text(), "visual.equalizer", "colour_scheme") || 0
-        it.barCount = Model.readTomlInt(configWrite.text(), "visual.equalizer", "bar_count") || 0
-        it.border = Model.readTomlValue(configWrite.text(), "desktop", "border") !== "false"
-        it.render3d = Model.readTomlValue(configWrite.text(), "desktop", "render3d") === "true"
-        it.colorSource = Model.readTomlValue(configWrite.text(), "desktop", "color_source") || "theme"
-        var cc = Model.readTomlValue(configWrite.text(), "desktop", "custom_color") || "#5ec8ff"
-        it.customColor = cc
-        it.themeBottom = Model.readTomlValue(configWrite.text(), "desktop", "theme_bottom") || "#19e0d4"
-        it.themeTop = Model.readTomlValue(configWrite.text(), "desktop", "theme_top") || "#a45cff"
+        function onItemChanged() { win.pushSettings() }
       }
     }
+  }
+
+  // Push all visualization settings into the renderer item (window scope so the
+  // Connections handlers above can call win.pushSettings()).
+  function pushSettings() {
+    var it = desktopViz.item
+    if (!it) return
+    var T = configWrite.text()
+    it.visual = win.visualName
+    it.colorSync = true
+    it.border = Model.readTomlValue(T, "desktop", "border") !== "false"
+    it.render3d = Model.readTomlValue(T, "desktop", "render3d") === "true"
+    it.colorSource = Model.readTomlValue(T, "desktop", "color_source") || "theme"
+    it.customColor = Model.readTomlValue(T, "desktop", "custom_color") || "#5ec8ff"
+    it.themeBottom = Model.readTomlValue(T, "desktop", "theme_bottom") || "#19e0d4"
+    it.themeTop = Model.readTomlValue(T, "desktop", "theme_top") || "#a45cff"
+    it.eqMode = Model.readTomlValue(T, "visual.equalizer", "mode") || "bars"
+    it.eqColor = Model.readTomlValue(T, "visual.equalizer", "color") || "fire"
+    it.eqGrid = Model.readTomlValue(T, "visual.equalizer", "grid") === "true"
+    it.eqPeaks = Model.readTomlValue(T, "visual.equalizer", "peaks") !== "false"
+    it.eqFalloff = Model.readTomlFloat(T, "visual.equalizer", "falloff") ?? 0.5
+    it.eqZoom = Model.readTomlValue(T, "visual.equalizer", "zoom") || "1x"
+    it.eqThickness = Model.readTomlInt(T, "visual.equalizer", "thickness") || 2
+    it.scopeStyle = Model.readTomlValue(T, "visual.oscilloscope", "style") || "line"
+    it.scopeColor = Model.readTomlValue(T, "visual.oscilloscope", "color") || "solid"
+    it.scopeGrid = Model.readTomlValue(T, "visual.oscilloscope", "grid") === "true"
+    it.scopeScan = Model.readTomlValue(T, "visual.oscilloscope", "scan") === "true"
+    it.scopeCentered = Model.readTomlValue(T, "visual.oscilloscope", "centered") === "true"
+    it.scopeThickness = Model.readTomlInt(T, "visual.oscilloscope", "thickness") || 2
   }
 
   property string configPath: Model.configPath
