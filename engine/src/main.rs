@@ -24,7 +24,7 @@ use std::time::Duration;
 #[derive(Parser, Debug)]
 #[command(name = "omaviz-engine", about = "omaviz audio capture + spectrum engine")]
 struct Cli {
-    /// Audio source backend. v7.0.0 supports "auto"/"pipewire".
+    /// Audio source backend. v7 supports "auto"/"pipewire".
     #[arg(long, default_value = "auto")]
     source: String,
 

@@ -1,6 +1,6 @@
 //! Audio source backends.
 //!
-//! v7.0.0 ships PipeWire only. The plugin spawns the engine with `--source
+//! v7 ships PipeWire only. The plugin spawns the engine with `--source
 //! auto`; `resolve()` maps that to a concrete backend name. Additional backends
 //! (pulse/jack/alsa/file) are added here later WITHOUT touching the plugin.
 
@@ -8,7 +8,7 @@ pub mod pipewire;
 
 /// Resolve a requested source flag to a concrete backend name.
 /// `auto`/`""` fall through to the default (PipeWire, the only compiled backend
-/// in v7.0.0). Returns Err for unsupported/unknown names.
+/// in v7). Returns Err for unsupported/unknown names.
 pub fn resolve(requested: &str) -> anyhow::Result<String> {
     match requested {
         "pipewire" | "auto" | "" => Ok("pipewire".to_string()),
