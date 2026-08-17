@@ -271,8 +271,8 @@ BarWidget {
             var v = Math.min(1, Math.max(0, value))
             // Default: monochrome (bright, fully visible on dark bar bg).
             if (!root.config.colorSync) {
-              // Bright white/light gray at FULL opacity so it's always visible.
-              return "rgba(235,240,250,1)"
+              // Bright white at FULL opacity - Qt.color() ensures proper parsing.
+              return Qt.rgba(0.92, 0.94, 0.98, 1.0)
             }
             // color-sync ON: theme-dominant bottom->top gradient
             var botS = String(root.config.themeBottom || "")
