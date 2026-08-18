@@ -696,10 +696,18 @@ test('defaultConfig theme gradient is DERIVED from THEME_PALETTE.md (not a tauto
   const palettePath = path.resolve(__dirname, '..', '..', 'THEME_PALETTE.md')
   const pal = fs.readFileSync(palettePath, 'utf8')
   function paletteHex(text, key) {
-    // THEME_PALETTE.md is a markdown table: '| accent | accent | `#e68e0d` |'
-    const re = new RegExp('\\|\\s*' + key + '\\b[^|]*\\|[^#]*(#[0-9a-fA-F]{6})', 'm')
-    const m = text.match(re)
-    return m ? m[1].toLowerCase() : null
+    // THEME_PALETTE.md is a markdown table: '| accent | accent | #e68e0d |'.
+    // Split each row on '|' and match the row whose cells contain `key`, then
+    // pull the hex. (Robust across Node versions — the earlier '/'|...[^#]*/'
+    // regex returned null on some engines.) Mirrors glspectrum.test.cjs.
+    for (const line of text.split("\n")) {
+      const cells = line.split("|").map(s => s.trim()).filter(Boolean)
+      if (cells.includes(key)) {
+        const m = line.match(/#[0-9A-Fa-f]{6}/)
+        if (m) return m[0].toLowerCase()
+      }
+    }
+    return null
   }
   const accent = paletteHex(pal, 'accent')
   const brightBlue = paletteHex(pal, 'bright_blue')

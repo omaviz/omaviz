@@ -288,6 +288,12 @@ with a QML `ShaderEffect` (GLSL) inside the scene graph — **no separate EGL
 context** — which avoids the historical wgpu+Mesa segfault that forced the old
 daemon to leak its `App` on exit.
 
+Because the renderer is a scene-graph `ShaderEffect` (not a spawned wgpu
+surface), it is safe to verify **live**: agents MAY deploy via `install.sh`
+and capture the running widget to confirm the GPU output. The old "agents must
+not launch the window" guardrail was written for the deleted `src/` wgpu core
+and no longer applies (see `GOVERNANCE.md` §5).
+
 **Files (this track):**
 - `VisualCanvasGL.qml` — the GPU renderer. It packs the 32-band spectrum plus
   control values (visual mode, color source, fire/peaks/border toggles, falloff,

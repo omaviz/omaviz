@@ -7,12 +7,13 @@ this team operates. All agents MUST comply. @user is final authority on product 
 - **@lotus (Coord/HR)** — single coordinator. Owns staffing, task assignment,
   priority, and Definition-of-Done sign-off. No agent starts non-trivial work
   without lotus direction. Routes handoffs between specialists.
-- **@coder** — general Rust implementation: daemon, mini client, mode state
-  machine, build/install scripts.
-- **@gl-dev** — GPU/OpenGL/wgpu desktop window, WGSL/shader work, the detached
-  `desktop`/`full` wgpu surfaces.
-- **@qml-dev** — QML plugin layer (`plugin/*.qml`, `shaders/visual.frag`), the
-  Qt/WindowedComposition surface.
+- **@coder** — Rust engine (`engine/`: capture → FFT/DSP → JSON frames on
+  stdout) plus build/install scripts. Owns `omaviz-engine`.
+- **@gl-dev** — QML `ShaderEffect` GL renderer (`VisualCanvasGL.qml` +
+  `shaders/visual.frag`): Winamp-style bar/fire shaders and the detached
+  desktop window. (The old wgpu/EGL core is deleted.)
+- **@qml-dev** — QML plugin layer (`plugin/*.qml` except the GL renderer), the
+  settings `Panel.qml`, and `Model.js` config/spectrum IO.
 - **@reviewer** — independent code review. Gates merges; flags regressions vs
   spec and the documented pitfalls.
 - **@tester** — verification & test authoring. Owns the suite as the acceptance gate.
@@ -23,8 +24,11 @@ this team operates. All agents MUST comply. @user is final authority on product 
 ## 2. Definition of Done (per task / PR)
 A task is DONE only when ALL hold:
 1. Behavior implemented and aligned to `APPLICATION_SPEC.md`.
-2. **Tests written AND run green** — Rust: `cargo test`; plugin verified per the
-   GPU-free recipe. Writing tests is NOT "done"; running them is.
+2. **Tests written AND run green** — Rust: `cargo test`; plugin: `node
+   plugin/tests/model.test.cjs` + `node plugin/tests/glspectrum.test.cjs`.
+   Rendered output MAY additionally be verified live via `install.sh` deploy +
+   a GPU capture of the running widget. Writing tests is NOT "done"; running
+   them is.
 3. Real execution evidence attached (actual command output), not a description.
 4. Independent review pass by @reviewer (no self-merge of one's own substantial
    change without a second set of eyes).
@@ -35,11 +39,15 @@ A task is DONE only when ALL hold:
 1. **Intent** — lotus states the task; for behavioral changes, confirm against
    `APPLICATION_SPEC.md` (flag a spec update first if needed).
 2. **Implement** — assigned dev implements in a focused change set.
-3. **Verify (GPU-FREE)** — agents MUST NOT launch the wgpu desktop window from
-   an agent session (it crashes the Hermes desktop + corrupts state.db). Verify
-   via: daemon + `omaviz mini --width N` JSON (`class: silent|active|off|hidden`),
-   `omaviz mode/quit/start` transitions, `hyprctl configerrors`, brace-balance
-   for waybar jsonc. Use the sustained (>=10s) tone capture test, NOT a 3s probe.
+3. **Verify (GPU allowed)** — the legacy Rust+wgpu desktop core that crashed the
+   Hermes desktop is deleted; rendering is now the QML `ShaderEffect` GL track
+   that runs inside the user's live Omarchy shell (not a separately-launched
+   agent window). Agents MAY deploy (`install.sh`) and capture the live
+   bar/desktop widget to verify the rendered output directly. Headless fallback
+   probes remain available: `omaviz mini --width N` JSON
+   (`class: silent|active|off|hidden`), `omaviz mode/quit/start` transitions,
+   `hyprctl configerrors`, brace-balance. Use the sustained (>=10s) tone capture
+   test, NOT a 3s probe.
 4. **Test** — @tester (or author + tester review) runs the suite; green required.
 5. **Review** — @reviewer checks regressions vs spec + the 8 documented pitfalls
    (Hyprland 0.56 windowrule syntax, waybar module splicing, PATH, pkill
@@ -71,9 +79,10 @@ A task is DONE only when ALL hold:
   input from the team.
 
 ## 5. Standing guardrails (non-negotiable)
-- **GPU-free verification** — agents must not open the wgpu window. Desktop/
-  windowed rendering is verified only by the user on their live desktop or via
-  the documented headless probes.
+- **GPU verification is allowed** — the QML `ShaderEffect` renderer runs inside
+  the live Omarchy shell; agents may deploy (`install.sh`) and capture the live
+  widget to verify rendering. (The old "never launch the wgpu window" rule was
+  written for the deleted `src/` wgpu core and no longer applies.)
 - **Idempotent install** — `install.sh`/`uninstall.sh` must re-run cleanly
   without corrupting the waybar config.
 - **No regression on locked behavior** — the 8 pitfalls + the menu/UX decisions
