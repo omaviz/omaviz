@@ -28,7 +28,7 @@ Window {
   Process {
     id: bridge
     running: false
-    command: [Model.engineBin, "--source", "auto", "--bands", "32"]
+    command: [Model.engineBin, "--bands", "32"]
     stdout: SplitParser {
       splitMarker: "\n"
       onRead: function(data) {
@@ -93,33 +93,20 @@ Window {
     }
   }
 
-  // Push all visualization settings into the renderer item (window scope so the
-  // Connections handlers above can call win.pushSettings()).
+  // Push all visualization settings into the renderer item.
   function pushSettings() {
     var it = desktopViz.item
     if (!it) return
     var T = configWrite.text()
     it.visual = win.visualName
-    it.colorSync = true
-    it.border = Model.readTomlValue(T, "desktop", "border") !== "false"
-    it.render3d = Model.readTomlValue(T, "desktop", "render3d") === "true"
     it.colorSource = Model.readTomlValue(T, "desktop", "color_source") || "theme"
     it.customColor = Model.readTomlValue(T, "desktop", "custom_color") || "#5ec8ff"
-    it.themeBottom = Model.readTomlValue(T, "desktop", "theme_bottom") || "#19e0d4"
-    it.themeTop = Model.readTomlValue(T, "desktop", "theme_top") || "#a45cff"
-    it.eqMode = Model.readTomlValue(T, "visual.equalizer", "mode") || "bars"
-    it.eqColor = Model.readTomlValue(T, "visual.equalizer", "color") || "fire"
-    it.eqGrid = Model.readTomlValue(T, "visual.equalizer", "grid") === "true"
-    it.eqPeaks = Model.readTomlValue(T, "visual.equalizer", "peaks") !== "false"
-    it.eqFalloff = Model.readTomlFloat(T, "visual.equalizer", "falloff") ?? 0.5
-    it.eqZoom = Model.readTomlValue(T, "visual.equalizer", "zoom") || "1x"
-    it.eqThickness = Model.readTomlInt(T, "visual.equalizer", "thickness") || 2
-    it.scopeStyle = Model.readTomlValue(T, "visual.oscilloscope", "style") || "line"
-    it.scopeColor = Model.readTomlValue(T, "visual.oscilloscope", "color") || "solid"
-    it.scopeGrid = Model.readTomlValue(T, "visual.oscilloscope", "grid") === "true"
-    it.scopeScan = Model.readTomlValue(T, "visual.oscilloscope", "scan") === "true"
-    it.scopeCentered = Model.readTomlValue(T, "visual.oscilloscope", "centered") === "true"
-    it.scopeThickness = Model.readTomlInt(T, "visual.oscilloscope", "thickness") || 2
+    it.themeBottom = Model.readTomlValue(T, "desktop", "theme_bottom") || "#e68e0d"
+    it.themeTop = Model.readTomlValue(T, "desktop", "theme_top") || "#f59e0b"
+    it.fire = Model.readTomlValue(T, "desktop", "fire") === "true"
+    it.peaks = Model.readTomlValue(T, "visual.equalizer", "peaks") !== "false"
+    it.falloff = Model.readTomlFloat(T, "visual.equalizer", "falloff") ?? 0.5
+    it.border = Model.readTomlValue(T, "desktop", "border") !== "false"
   }
 
   property string configPath: Model.configPath
@@ -132,9 +119,9 @@ Window {
   }
   // The detached window is a SEPARATE quickshell process, so it cannot rely on
   // cross-process FileView watch signals to learn of panel edits. Poll the
-  // config file so visual/style/scheme changes apply live.
+  // config file so bar option changes apply live (100ms for near-instant sync).
   Timer {
-    interval: 300; repeat: true; running: true
+    interval: 100; repeat: true; running: true
     onTriggered: configWrite.reload()
   }
 

@@ -6,18 +6,23 @@ import qs.Commons
 import qs.Ui
 import "Model.js" as Model
 
-// Omaviz settings panel (v2).
-// Loaded internally by BarWidget.qml via Loader. Follows the clock-plugin
-// popout contract: the bar forwards opened / open() / close() / toggle() /
-// popoutSwitchClosing, and injects bar / anchorItem / hostWidget / settings.
+// Omaviz settings panel (v7.2 / TASK #2).
 //
-// Layout (top-down):
-//   preview  — live visualization (Bars / Wave / Fire), updates with dropdown
-//   dropdown — visualization selector (Bars / Wave / Fire)
-//   knobs     — per-visualization sliders/checkboxes (declared in .toml)
-//   audio     — sensitivity / smoothing
-//   options    — color sync toggle
-//   footer    — Reset · Detach
+// Bar-widget contract (verified against live BarWidget.qml):
+//   injectPanel() sets:  t.bar, t.anchorItem, t.hostWidget, t.settings
+//   the widget reads:    panelLoader.item.opened / open() / close() / toggle()
+//
+// We build on the shared `Panel` base (qs.Ui/Panel.qml) which owns the
+// PanelController show/hide lifecycle, so opened/open/close/toggle resolve to
+// the controller's open state — exactly what BarWidget.qml expects. The
+// KeyboardPanel renders the popup surface (anchorItem + owner + open: root.opened).
+// manageIpc is false so the panel does NOT register a second IpcHandler for the
+// same target (BarWidget already owns it).
+//
+// Left-click on the bar button -> root.toggle() -> controller show/hide.
+// Everything here is GPU-free: the panel never launches a window. The preview
+// uses the Canvas-2D VisualCanvas (not the GL ShaderEffect) so it is safe to
+// load inside the bar process.
 
 Panel {
   id: root
@@ -25,530 +30,398 @@ Panel {
   ipcTarget: "org.omaviz.visualizer"
   manageIpc: false
 
+  // ---- Injected by BarWidget.injectPanel() ----
   property var anchorItem: null
   property var hostWidget: null
-  property bool popoutSwitchClosing: false
+  // `bar` and `settings` are provided by the Panel base and overwritten by
+  // injectPanel(); declared here so the base binding does not error pre-injection.
 
-  readonly property var barIdentity: hostWidget || root
+  // ---- In-memory config buffer (synchronous round-trip) ----
+  // Quickshell FileView.setText() does NOT update text() synchronously, so the
+  // panel keeps its own buffer and writes through Model.writeConfigKey, then
+  // re-parses the same string so the first click always sticks (regression
+  // guard: "every control needs two clicks").
+  property string cfgText: configFile.text()
 
-  readonly property string pluginDir: String(Qt.resolvedUrl(".")).replace(/^file:\/\//, "")
-  readonly property string shellImportPath: "/usr/share/omarchy/shell"
+  // Live config object (mirrors BarWidget's `root.config`). The preview binds
+  // to this so it re-renders on every write; it MUST exist or the bindings
+  // throw "Cannot read property of undefined".
+  property var config: Model.readConfigFromText(cfgText)
 
-  // ---- live state mirrored from shared singleton ----
-  property var config: Model.defaultConfig()
-  property var visuals: []
-  property var spectrumBands: []
-  property bool spectrumSilent: true
-  readonly property int barCount: Math.max(
-    8, (root.config && root.config.bands !== undefined) ? root.config.bands : 32)
-  readonly property var barModel: (function() {
-    var a = []; for (var i = 0; i < root.barCount; i++) a.push(i); return a
-  })()
-  // Friendly display name for the active visual.
-  readonly property string activeVisual: (root.config.visualMini || "equalizer")
-    .replace("equalizer", "Bars").replace("wave", "Wave").replace("fire", "Fire")
-  // Style display name (Classic / Fire). Fire is a style of the Bars visual.
-  readonly property string activeStyle: (root.config.style || "classic") === "fire" ? "Fire" : "Classic"
-
-  function open() { refreshState(); root.controller.show() }
-  function close() { root.controller.hide() }
-  function toggle() { if (root.opened) root.close(); else root.open() }
-  function closeForPopoutSwitch() { root.controller.hide() }
-
-  // ---- writable config view ----
-  FileView {
-    id: configWrite
-    path: Model.configPath
-    // Do NOT watchChanges: writeConfig() writes via setText() and updates
-    // root.config itself. If this view also watched the file, its async
-    // onFileChanged would re-read a stale in-memory buffer and REVERT root.config
-    // to the pre-write value — which is exactly why every control needed a
-    // second click to "stick". The bar widget keeps its own (watching) view.
-    watchChanges: false
-    printErrors: false
-    onLoaded: { root.configText = text(); root.config = Model.readConfigFromText(root.configText) }
+  function reloadCfg() { cfgText = configFile.text(); root.config = Model.readConfigFromText(cfgText) }
+  function commit(key, value, section) {
+    cfgText = Model.writeConfigKey(cfgText, section || "desktop", key, value)
+    configFile.setText(cfgText)
+    root.config = Model.readConfigFromText(cfgText)
+    if (hostWidget && typeof hostWidget.applyConfig === "function")
+      hostWidget.applyConfig(cfgText)
+  }
+  function readCfg(key, section) {
+    return Model.readTomlValue(cfgText, section || "desktop", key)
+  }
+  function cfgBool(key, section) {
+    return readCfg(key, section) === "true"
   }
 
-  // ---- active theme colors (for theme-dominant visualization colors) ----
-  FileView {
-    id: themeColors
-    path: "/usr/share/omarchy/themes/active/colors.toml"
-    onLoaded: pushThemeColors()
-    onFileChanged: pushThemeColors()
+  // ---- Popup lifecycle (consumed by BarWidget) ----
+  readonly property bool opened: panel.open
+  function open() { panel.open = true }
+  function close() { panel.open = false }
+  function toggle() { panel.open = !panel.open }
+
+  // ---- Live preview of the selected mini visual (Canvas-2D, GPU-free) ----
+  function currentViz() {
+    return (root.readCfg("visual", "mini") || "equalizer") === "oscilloscope" ? "Wave" : "Bars"
   }
-  function pushThemeColors() {
-    var t = themeColors.text()
-    if (!t) return
-    var acc = Model.readTomlTopKey(t, "accent") || "#e68e0d"
-    var top = Model.readTomlTopKey(t, "bright_blue") || acc
-    writeConfig("desktop", "theme_bottom", acc)
-    writeConfig("desktop", "theme_top", top)
+  function currentStyle() {
+    return (root.readCfg("style", "mini") || "classic") === "fire" ? "Fire" : "Classic"
   }
 
-  // ---- live spectrum refresh ----
-  Timer {
-    id: specTimer
-    interval: 50
-    repeat: true
-    running: true
-    onTriggered: {
-      root.spectrumBands = Model.spectrumData.bands
-      root.spectrumSilent = Model.spectrumData.silent
-    }
+  // ---- Source (read-only, from the engine's stdout) ----
+  readonly property string sourceLabelText:
+    Model.sourceLabel(Model.spectrumData.source || "")
+
+  // ---- Detach/Attach label derived from desktop.active (source of truth) ----
+  readonly property bool detached: root.cfgBool("active", "desktop")
+  function toggleDetach() {
+    if (hostWidget && typeof hostWidget.detach === "function") hostWidget.detach()
+    // The flag flips in the config file (hostWidget writes desktop.active +
+    // reset); reload so our label follows immediately.
+    Qt.callLater(root.reloadCfg)
   }
 
-  property var visualParamValues: {}
-  property var visualParams: []
-  property var visualTomlCache: {}
-  // Authoritative in-memory copy of the config text. Quickshell's
-  // FileView.setText() does NOT update text() synchronously, so we keep our
-  // own buffer and use it for all reads/writes. configWrite is only used to
-  // persist to disk.
-  property string configText: ""
-
-  onHostWidgetChanged: refreshState()
-  function refreshState() {
-    root.config = Model.readConfigFromText(root.configText)
-    root.spectrumBands = Model.spectrumData.bands
-    root.spectrumSilent = Model.spectrumData.silent
-    // Theme colors are pushed by pushThemeColors() (reads active theme
-    // colors.toml) — not here, to avoid the pale QML Color.accent default.
-    refreshVisualParamCache()
-    refreshVisuals()
+  function resetAll() {
+    // Reset to defaults (Matte Black-aligned). Writes a clean audio+mini+desktop
+    // block; visuals keep their own sections untouched.
+    var base = "[audio]\nsensitivity = 1.0\nsmoothing = 0.5\nbands = 32\n\n" +
+      "[mini]\nvisual = \"equalizer\"\nstyle = \"classic\"\ncolor_sync = false\n\n" +
+      "[desktop]\nactive = \"false\"\ngpu = \"true\"\ncolor_source = \"theme\"\n" +
+      "custom_color = \"#5ec8ff\"\ntheme_bottom = \"#e68e0d\"\ntheme_top = \"#f59e0b\"\n" +
+      "fire = \"false\"\n"
+    cfgText = base
+    configFile.setText(cfgText)
+    root.config = Model.readConfigFromText(cfgText)
+    if (hostWidget && typeof hostWidget.applyConfig === "function")
+      hostWidget.applyConfig(cfgText)
   }
 
-  function refreshVisualParamCache() {
-    var cache = root.visualTomlCache || {}
-    var file = root.config.visualMini || "equalizer"
-    var toml = cache[file] || ""
-    var params = Model.visualParamsFromText(toml, file)
-    // When the Fire style is active and the current visual is Bars, also show
-    // the fire-specific knobs (they live under [visual.fire] in config).
-    if ((root.config.style || "classic") === "fire" && file === "equalizer") {
-      var fireToml = cache["fire"] || ""
-      var fireParams = Model.visualParamsFromText(fireToml, "fire")
-      params = params.concat(fireParams)
-    }
-    root.visualParams = params
-    // Read saved values from the shared config (where the user's edits live).
-    root.visualParamValues = Model.visualConfigValues(root.configText, params)
-  }
-
-  function refreshVisuals() { readVisuals.refresh() }
-
-  function barValue(index) {
-    var bands = root.spectrumBands
-    if (!bands || bands.length === 0) return 0
-    var sens = (root.config && root.config.sensitivity !== undefined) ? root.config.sensitivity : 1.0
-    var bi = Math.min(bands.length - 1, Math.floor(index * bands.length / root.barCount))
-    return Math.min(1, bands[bi] * sens)
-  }
-
-  function persistShell(values) {
-    var entry = { id: root.moduleName }
-    for (var k in root.settings) if (k !== "id") entry[k] = root.settings[k]
-    for (var key in values) entry[key] = values[key]
-    root.settings = entry
-    if (root.hostWidget && "settings" in root.hostWidget) root.hostWidget.settings = entry
-    if (root.bar && root.bar.shell && typeof root.bar.shell.updateEntryInline === "function")
-      root.bar.shell.updateEntryInline(root.moduleName, entry)
-  }
-
-  function writeConfig(section, key, value) {
-    var next = Model.writeConfigKey(root.configText, section, key, value)
-    root.configText = next
-    configWrite.setText(next)
-    root.config = Model.readConfigFromText(next)
-    // Push the new config straight to the bar widget (same QML process) so
-    // pause / color-sync changes take effect immediately, without relying on
-    // cross-FileView disk-watch propagation.
-    if (root.hostWidget && "applyConfig" in root.hostWidget) root.hostWidget.applyConfig(next)
-    if (section.indexOf("visual.") === 0
-        && section !== "visual.equalizer"
-        && section !== "visual.oscilloscope") {
-      // Update only the values map (NOT visualParams) so the Repeater keeps
-      // its delegates — rebuilding visualParams mid-drag caused the
-      // "have to click twice" jank.
-      root.visualParamValues = Model.visualConfigValues(root.configText, root.visualParams)
-    }
-  }
-
-  function selectVisual(displayName) {
-    // displayName is the friendly label (Bars / Oscilloscope)
-    var name = (displayName === "Oscilloscope") ? "oscilloscope" : "equalizer"
-    if (name === root.config.visualDesktop) return
-    writeConfig("mini", "visual", name)
-    writeConfig("desktop", "visual", name)
-    writeConfig("full", "visual", name)
-    persistShell({ visual: name })
-  }
-
-  // Winamp visualization option writers (independent sections).
-  function setEqOption(key, value) { writeConfig("visual.equalizer", key, value) }
-  function setScopeOption(key, value) { writeConfig("visual.oscilloscope", key, value) }
-
-  function selectStyle(displayName) {
-    var s = (displayName === "Fire") ? "fire" : "classic"
-    if (s === root.config.style) return
-    writeConfig("mini", "style", s)
-    writeConfig("desktop", "style", s)
-    persistShell({ style: s })
-    refreshVisualParamCache()
-  }
-
-  function setKnob(name, value) {
-    // Write to the [visual.<source>] section the param belongs to.
-    var src = "equalizer"
-    for (var i = 0; i < root.visualParams.length; i++) {
-      if (root.visualParams[i].name === name) { src = root.visualParams[i].source || "equalizer"; break }
-    }
-    writeConfig("visual." + src, name, value)
-  }
-  function setAudio(name, value) { writeConfig("audio", name, value) }
-  // Window appearance options live under [desktop] and must reach the detached
-  // window live (it polls config.toml every 300ms, so a disk write is enough).
-  function setWindowOption(key, value) { writeConfig("desktop", key, value) }
-  function setColorSync(on) { writeConfig("mini", "color_sync", on ? "true" : "false") }
-
-  function resetVisual() {
-    var params = Model.visualParamsFromText(
-      root.visualTomlCache[root.activeVisual] || "", root.activeVisual)
-    for (var i = 0; i < params.length; i++)
-      writeConfig("visual." + root.config.visualMini, params[i].name, params[i].default)
-  }
-
-  // Forward detach/attach to the BarWidget, which owns the launch Process.
-  // (The button label toggles via the desktopActive flag below.)
-  function detach() {
-    if (root.hostWidget && typeof root.hostWidget.detach === "function") {
-      root.hostWidget.detach()
-    }
-  }
-
-  // ---- visuals enumeration ----
-  Process {
-    id: readVisuals
-    running: false
-    command: ["bash", "-c",
-      "shopt -s nullglob; for f in " + Util.shellQuote(Model.visualsDir) + "/*.toml; do " +
-      "printf '%s|||OMAVIZ|||%s###OMAVIZ###' \"$f\" \"$(cat \"$f\" 2>/dev/null)\"; done"]
-    function refresh() { if (!running) running = true }
-    stdout: StdioCollector {
-      onDataChanged: function() {
-        var raw = String(readVisuals.stdout.text)
-        var records = raw.split("###OMAVIZ###")
-        var contents = []
-        for (var i = 0; i < records.length; i++) {
-          var rec = records[i]
-          if (!rec) continue
-          var parts = rec.split("|||OMAVIZ|||")
-          if (parts.length === 2 && parts[0]) {
-            contents.push({ path: parts[0], text: parts[0] ? parts[1] || "" : "" })
-            Model.cacheFileText(parts[0], parts[1] || "")
-          }
-        }
-        root.visuals = Model.discoverVisualsFromText(contents)
-        var tomlByName = {}
-        for (var c = 0; c < contents.length; c++) {
-          var p = contents[c].path || ""
-          var name = p.replace(/.*\/([^/]+)\.toml$/, "$1")
-          if (name) tomlByName[name] = contents[c].text || ""
-        }
-        root.visualTomlCache = tomlByName
-        refreshVisualParamCache()
-      }
-    }
-  }
-
-  // ---- UI ----
+  // surface
   KeyboardPanel {
     id: panel
+    anchors.fill: parent
     anchorItem: root.anchorItem
-    owner: root.barIdentity
+    owner: root.hostWidget || root
     bar: root.bar
     open: root.opened
+    centerOnBar: false
     focusTarget: keyCatcher
-    // Clamp WIDTH to available space (no right spill). Height grows to the
-    // full content height so EVERY field (including the footer Reset/Detach)
-    // is visible with no scroll. Capped only by the available screen height
-    // (so it never extends past the bottom edge on short displays).
-    contentWidth: panel.fittedContentWidth(Style.space(380))
-    contentHeight: panel.fittedContentHeight(column.implicitHeight)
+    contentWidth: panel.fittedContentWidth(Style.space(460))
+    contentHeight: panel.fittedContentHeight(column.implicitHeight, Style.space(720))
 
     PanelKeyCatcher {
       id: keyCatcher
       anchors.fill: parent
       onCloseRequested: root.close()
-      onTabRequested: function(d) { root.switchPanel(d) }
+      onActivateRequested: root.close()
     }
 
-    // Plain column — no scroll. Everything renders flat.
-    Column {
-      id: column
-      // Size to CONTENT (not fill parent), so the card's
-      // contentHeight: column.implicitHeight grows to fit everything
-      // (including the footer Reset/Detach). Filling parent would make
-      // implicitHeight track the parent instead of the content and clip
-      // the bottom fields.
-      width: parent.width
-      // Outer margin comes from the card's BorderSurface padding (popupPadding).
-      // Controls use width: parent.width and never spill: contentWidth is clamped
-      // via fittedContentWidth, so the column is always within the visible viewport.
-      spacing: Style.space(10)
+    ScrollView {
+      anchors.fill: parent
+      contentWidth: column.implicitWidth
+      contentHeight: column.implicitHeight
+      clip: true
 
-      // ---- live visualization preview ----
-      Text {
-        text: "PREVIEW"
-          color: Color.foreground
-          opacity: 0.6
-          font.family: Style.font.family
-          font.pixelSize: Style.font.bodySmall
-          font.letterSpacing: 1
-        }
+      Column {
+        id: column
+        width: panel.contentWidth
+        spacing: Style.space(10)
+        padding: Style.space(14)
+
+        // ---- Live preview ----
+        PanelSectionHeader { text: "PREVIEW" }
         Rectangle {
-          width: parent.width
-          height: Math.max(Style.space(80), parent.width * 0.3)
+          width: parent.width; height: Style.space(60)
+          color: Color.popups.background
           radius: Style.cornerRadius
-          color: Util.alpha(Color.background, 0.35)
-          Loader {
+          border.width: 1; border.color: Qt.rgba(1,1,1,0.08)
+          VisualCanvas {
             id: previewViz
-            anchors.fill: parent
-            anchors.margins: Style.space(6)
-            // Parity: use the SAME GPU renderer as the detached window so the
-            // settings preview matches what you get on screen.
-            source: (root.config.gpu === false) ? "VisualCanvas.qml" : "VisualCanvasGL.qml"
+            anchors.fill: parent; anchors.margins: Style.space(6)
+            bands: Model.spectrumData.bands
+            silent: Model.spectrumData.silent
+            visual: root.currentViz()
+            style: root.currentStyle()
+            colorSync: root.config.colorSync
+            barCount: 32
+            colourScheme: 0
           }
-          Binding { when: previewViz.item; target: previewViz.item; property: "bands"; value: root.spectrumBands }
-          Binding { when: previewViz.item; target: previewViz.item; property: "silent"; value: root.spectrumSilent }
-          Binding { when: previewViz.item; target: previewViz.item; property: "visual"; value: root.activeVisual }
-          Binding { when: previewViz.item; target: previewViz.item; property: "colorSync"; value: root.config.colorSync }
-          // v7.2 window options reflected live in the preview
-          Binding { when: previewViz.item; target: previewViz.item; property: "border"; value: (root.config.border !== false) }
-          Binding { when: previewViz.item; target: previewViz.item; property: "render3d"; value: (root.config.render3d === true) }
-          Binding { when: previewViz.item; target: previewViz.item; property: "colorSource"; value: (root.config.colorSource || "theme") }
-          Binding { when: previewViz.item; target: previewViz.item; property: "customColor"; value: (root.config.customColor || "#5ec8ff") }
-          Binding { when: previewViz.item; target: previewViz.item; property: "themeBottom"; value: (root.config.themeBottom || "#19e0d4") }
-          Binding { when: previewViz.item; target: previewViz.item; property: "themeTop"; value: (root.config.themeTop || "#a45cff") }
-          // v7.4 Winamp visualization option sets (independent)
-          Binding { when: previewViz.item; target: previewViz.item; property: "eqMode"; value: (root.config.eqMode || "bars") }
-          Binding { when: previewViz.item; target: previewViz.item; property: "eqColor"; value: (root.config.eqColor || "fire") }
-          Binding { when: previewViz.item; target: previewViz.item; property: "eqGrid"; value: (root.config.eqGrid === true) }
-          Binding { when: previewViz.item; target: previewViz.item; property: "eqPeaks"; value: (root.config.eqPeaks !== false) }
-          Binding { when: previewViz.item; target: previewViz.item; property: "eqFalloff"; value: (root.config.eqFalloff ?? 0.5) }
-          Binding { when: previewViz.item; target: previewViz.item; property: "eqZoom"; value: (root.config.eqZoom || "1x") }
-          Binding { when: previewViz.item; target: previewViz.item; property: "eqThickness"; value: (root.config.eqThickness || 2) }
-          Binding { when: previewViz.item; target: previewViz.item; property: "scopeStyle"; value: (root.config.scopeStyle || "line") }
-          Binding { when: previewViz.item; target: previewViz.item; property: "scopeColor"; value: (root.config.scopeColor || "solid") }
-          Binding { when: previewViz.item; target: previewViz.item; property: "scopeGrid"; value: (root.config.scopeGrid === true) }
-          Binding { when: previewViz.item; target: previewViz.item; property: "scopeScan"; value: (root.config.scopeScan === true) }
-          Binding { when: previewViz.item; target: previewViz.item; property: "scopeCentered"; value: (root.config.scopeCentered === true) }
-          Binding { when: previewViz.item; target: previewViz.item; property: "scopeThickness"; value: (root.config.scopeThickness || 2) }
         }
+        // v7.2 window options reflected live in the preview
+        Binding { when: previewViz.item; target: previewViz.item; property: "border"; value: (root.config.border !== false) }
+        Binding { when: previewViz.item; target: previewViz.item; property: "colorSource"; value: (root.config.colorSource || "theme") }
+        Binding { when: previewViz.item; target: previewViz.item; property: "customColor"; value: (root.config.customColor || "#5ec8ff") }
+        Binding { when: previewViz.item; target: previewViz.item; property: "themeBottom"; value: (root.config.themeBottom || "#e68e0d") }
+        Binding { when: previewViz.item; target: previewViz.item; property: "themeTop"; value: (root.config.themeTop || "#f59e0b") }
+        // TASK #2: fire toggle drives the winamp-flame preview too
+        Binding { when: previewViz.item; target: previewViz.item; property: "fire"; value: (root.config.fire === true) }
+        Binding { when: previewViz.item; target: previewViz.item; property: "peaks"; value: (root.config.peaks !== false) }
+        Binding { when: previewViz.item; target: previewViz.item; property: "falloff"; value: (root.config.falloff ?? 0.5) }
+        Binding { when: previewViz.item; target: previewViz.item; property: "alpha"; value: (root.config.alpha ?? 1.0) }
 
-        // ---- visualization dropdown ----
-        Text {
-          text: "VISUALIZATION"
-          color: Color.foreground
-          opacity: 0.6
-          font.family: Style.font.family
-          font.pixelSize: Style.font.bodySmall
-          font.letterSpacing: 1
-        }
-        Dropdown {
-          id: vizDropdown
+        PanelSeparator { }
+
+        // ---- VISUALIZATION (Bar vs Oscilloscope; Fire is a style, not a viz) ----
+        PanelSectionHeader { text: "VISUALIZATION" }
+        ButtonGroup {
+          id: vizGroup
           width: parent.width
-          value: root.activeVisual
-          options: [
-            { value: "Bars", label: "Bars" },
-            { value: "Oscilloscope", label: "Oscilloscope" }
-          ]
-          onChanged: function(v) { root.selectVisual(v) }
+          options: ["Bar", "Oscilloscope"]
+          value: (root.readCfg("visual", "mini") || "equalizer") === "oscilloscope" ? "Oscilloscope" : "Bar"
+          onChanged: function(v) {
+            var key = v === "Oscilloscope" ? "oscilloscope" : "equalizer"
+            commit("visual", '"' + key + '"', "mini")
+            commit("visual", '"' + key + '"', "desktop")
+          }
         }
 
-        // ---- window appearance options (v7.2) ----
+        PanelSeparator { }
+
+        // ---- STYLE (Canvas-2D bar style; GL path uses the Fire toggle below) ----
+        PanelSectionHeader { text: "STYLE" }
+        // On the GL-default render path, STYLE 'Fire' is a no-op (the winamp
+        // flame is driven by the Fire toggle, which sets desktop.fire and feeds
+        // the shader). STYLE 'Fire' only restyles the Canvas-2D fallback, so we
+        // disable it when GPU rendering is active to avoid a misleading control.
+        ButtonGroup {
+          id: styleGroup
+          width: parent.width
+          enabled: (root.readCfg("gpu", "desktop") || "true") === "false"
+          options: ["Classic", "Fire (Canvas)"]
+          value: (root.readCfg("style", "mini") || "classic") === "fire" ? "Fire (Canvas)" : "Classic"
+          onChanged: function(v) {
+            var key = v === "Fire (Canvas)" ? "fire" : "classic"
+            commit("style", '"' + key + '"', "mini")
+            commit("style", '"' + key + '"', "desktop")
+          }
+        }
         Text {
-          text: "APPEARANCE"
-          color: Color.foreground
-          opacity: 0.6
-          font.family: Style.font.family
-          font.pixelSize: Style.font.bodySmall
-          font.letterSpacing: 1
+          visible: (root.readCfg("gpu", "desktop") || "true") === "false"
+          text: "Canvas-2D style only (GPU renderer uses the Fire toggle below)"
+          color: Qt.darker(root.bar ? root.bar.foreground : Color.foreground, 1.4)
+          font.family: Style.font.family; font.pixelSize: Style.font.bodySmall
+          wrapMode: Text.WordWrap
+          width: parent.width
         }
-        // Border between bars (background-colored gap) vs borderless (bars touch)
+        // NEW (TASK #2): independent Fire toggle. Drives the winamp-flame on the
+        // GL/default renderer (desktop.fire -> visual.frag fireOn()), regardless
+        // of the Classic/Fire CANVAS style above.
         Row {
-          width: parent.width; spacing: Style.space(10)
-          Text { text: "Bar Border"; color: Color.foreground; font.family: Style.font.family; font.pixelSize: Style.font.body; width: parent.width * 0.40; verticalAlignment: Text.AlignVCenter }
+          width: parent.width
+          spacing: Style.space(10)
           ToggleSwitch {
-            width: parent.width * 0.60 - Style.space(10)
-            checked: root.config.border !== false
-            onToggled: function() { root.setWindowOption("border", checked ? "false" : "true") }
+            id: fireToggle
+            checked: root.cfgBool("fire")
+            onToggled: commit("fire", checked ? "true" : "false")
+          }
+          Text {
+            text: "Fire effect (winamp flame, GPU/GL)"
+            color: root.bar ? root.bar.foreground : Color.foreground
+            font.family: Style.font.family; font.pixelSize: Style.font.body
+            anchors.verticalCenter: parent.verticalCenter
           }
         }
-        // 3D bar extrusion
+
+        PanelSeparator { }
+
+        // ---- Winamp-style controls (bar style, colors, glow) ----
+        PanelSectionHeader { text: "BAR STYLE" }
         Row {
-          width: parent.width; spacing: Style.space(10)
-          Text { text: "3D Bars"; color: Color.foreground; font.family: Style.font.family; font.pixelSize: Style.font.body; width: parent.width * 0.40; verticalAlignment: Text.AlignVCenter }
-          ToggleSwitch {
-            width: parent.width * 0.60 - Style.space(10)
-            checked: root.config.render3d === true
-            onToggled: function() { root.setWindowOption("render3d", checked ? "false" : "true") }
+          width: parent.width
+          spacing: Style.space(10)
+          Text {
+            text: "Bars"
+            color: root.bar ? root.bar.foreground : Color.foreground
+            font.family: Style.font.family; font.pixelSize: Style.font.body
+            anchors.verticalCenter: parent.verticalCenter
           }
-        }
-        // Color source: sync from Omarchy theme, or a custom preset color
-        Row {
-          width: parent.width; spacing: Style.space(10)
-          Text { text: "Color"; color: Color.foreground; font.family: Style.font.family; font.pixelSize: Style.font.body; width: parent.width * 0.40; verticalAlignment: Text.AlignVCenter }
-          Dropdown {
-            width: parent.width * 0.60 - Style.space(10)
-            value: (root.config.colorSource === "custom") ? (root.config.customColor || "Custom") : "Theme"
-            options: [
-              { value: "Theme", label: "Theme" },
-              { value: "#5ec8ff", label: "Blue" },
-              { value: "#a45cff", label: "Purple" },
-              { value: "#ff5cb0", label: "Pink" },
-              { value: "#ff8c1a", label: "Orange" },
-              { value: "#3ddc84", label: "Green" },
-              { value: "#ff4d4d", label: "Red" },
-              { value: "#19e0d4", label: "Cyan" }
-            ]
+          ButtonGroup {
+            id: eqModeGroup
+            width: parent.width - Style.space(60)
+            options: ["Bars", "Lines"]
+            value: (root.readCfg("mode", "visual.equalizer") || "bars") === "lines" ? "Lines" : "Bars"
             onChanged: function(v) {
-              if (v === "Theme") { root.setWindowOption("color_source", "theme") }
-              else { root.setWindowOption("color_source", "custom"); root.setWindowOption("custom_color", v) }
+              commit("mode", '"' + (v === "Lines" ? "lines" : "bars") + '"', "visual.equalizer")
+            }
+          }
+        }
+        Row {
+          width: parent.width
+          spacing: Style.space(10)
+          Text {
+            text: "Color"
+            color: root.bar ? root.bar.foreground : Color.foreground
+            font.family: Style.font.family; font.pixelSize: Style.font.body
+            anchors.verticalCenter: parent.verticalCenter
+          }
+          ButtonGroup {
+            id: eqColorGroup
+            width: parent.width - Style.space(60)
+            options: ["Solid", "Line", "Fade", "Fire"]
+            value: (function() {
+              var c = root.readCfg("color", "visual.equalizer") || "fire"
+              return c === "solid" ? "Solid" : c === "line" ? "Line" : c === "fade" ? "Fade" : "Fire"
+            })()
+            onChanged: function(v) {
+              var key = v === "Solid" ? "solid" : v === "Line" ? "line" : v === "Fade" ? "fade" : "fire"
+              commit("color", '"' + key + '"', "visual.equalizer")
+            }
+          }
+        }
+        Row {
+          width: parent.width
+          spacing: Style.space(10)
+          Text {
+            text: "Glow"
+            color: root.bar ? root.bar.foreground : Color.foreground
+            font.family: Style.font.family; font.pixelSize: Style.font.body
+            anchors.verticalCenter: parent.verticalCenter
+          }
+          ToggleSwitch {
+            id: glowToggle
+            checked: root.cfgBool("peaks", "visual.equalizer")
+            onToggled: commit("peaks", checked ? "true" : "false", "visual.equalizer")
+          }
+          Text {
+            text: "Peak hold"
+            color: root.bar ? root.bar.foreground : Color.foreground
+            font.family: Style.font.family; font.pixelSize: Style.font.body
+            anchors.verticalCenter: parent.verticalCenter
+          }
+        }
+
+        PanelSeparator { }
+
+        // ---- OPTIONS ----
+        PanelSectionHeader { text: "OPTIONS" }
+        Row {
+          width: parent.width
+          spacing: Style.space(10)
+          Text {
+            text: "Color sync"
+            color: root.bar ? root.bar.foreground : Color.foreground
+            font.family: Style.font.family; font.pixelSize: Style.font.body
+            anchors.verticalCenter: parent.verticalCenter
+          }
+          ToggleSwitch {
+            id: colorSyncToggle
+            checked: root.cfgBool("color_sync", "mini")
+            onToggled: commit("color_sync", checked ? "true" : "false", "mini")
+          }
+        }
+        Row {
+          width: parent.width
+          spacing: Style.space(10)
+          Text {
+            text: "Color source"
+            color: root.bar ? root.bar.foreground : Color.foreground
+            font.family: Style.font.family; font.pixelSize: Style.font.body
+            anchors.verticalCenter: parent.verticalCenter
+          }
+          ButtonGroup {
+            id: colorSrcGroup
+            width: parent.width - Style.space(100)
+            options: ["Theme", "Custom"]
+            value: (root.readCfg("color_source", "desktop") || "theme") === "custom" ? "Custom" : "Theme"
+            onChanged: function(v) {
+              commit("color_source", '"' + (v === "Custom" ? "custom" : "theme") + '"', "desktop")
             }
           }
         }
 
-        // ---- Spectrum Analyzer (Bars) options — Winamp faithful ----
-        Text {
-          text: "ANALYZER (BARS)"
-          color: Color.foreground
-          opacity: 0.6
-          font.family: Style.font.family
-          font.pixelSize: Style.font.bodySmall
-          font.letterSpacing: 1
-        }
-        Row { width: parent.width; spacing: Style.space(10)
-          Text { text: "Mode"; color: Color.foreground; font.family: Style.font.family; font.pixelSize: Style.font.body; width: parent.width*0.40; verticalAlignment: Text.AlignVCenter }
-          Dropdown { width: parent.width*0.60 - Style.space(10); value: (root.config.eqMode || "bars"); options: [ {value:"bars",label:"Bars"}, {value:"lines",label:"Lines"} ]; onChanged: function(v){ root.setEqOption("mode", v) } }
-        }
-        Row { width: parent.width; spacing: Style.space(10)
-          Text { text: "Color"; color: Color.foreground; font.family: Style.font.family; font.pixelSize: Style.font.body; width: parent.width*0.40; verticalAlignment: Text.AlignVCenter }
-          Dropdown { width: parent.width*0.60 - Style.space(10); value: (root.config.eqColor || "fire"); options: [ {value:"solid",label:"Solid"}, {value:"line",label:"Line"}, {value:"fade",label:"Fade Blocks"}, {value:"fire",label:"Fire"} ]; onChanged: function(v){ root.setEqOption("color", v) } }
-        }
-        Row { width: parent.width; spacing: Style.space(10)
-          Text { text: "Grid"; color: Color.foreground; font.family: Style.font.family; font.pixelSize: Style.font.body; width: parent.width*0.40; verticalAlignment: Text.AlignVCenter }
-          ToggleSwitch { width: parent.width*0.60 - Style.space(10); checked: (root.config.eqGrid === true); onToggled: function(){ root.setEqOption("grid", checked ? "true":"false") } }
-        }
-        Row { width: parent.width; spacing: Style.space(10)
-          Text { text: "Peaks"; color: Color.foreground; font.family: Style.font.family; font.pixelSize: Style.font.body; width: parent.width*0.40; verticalAlignment: Text.AlignVCenter }
-          ToggleSwitch { width: parent.width*0.60 - Style.space(10); checked: (root.config.eqPeaks !== false); onToggled: function(){ root.setEqOption("peaks", checked ? "true":"false") } }
-        }
-        Row { width: parent.width; spacing: Style.space(10)
-          Text { text: "Falloff"; color: Color.foreground; font.family: Style.font.family; font.pixelSize: Style.font.body; width: parent.width*0.40; verticalAlignment: Text.AlignVCenter }
-          PanelSlider { width: parent.width*0.60 - Style.space(10); value: (root.config.eqFalloff ?? 0.5); minimum: 0.0; maximum: 1.0; step: 0.05; onMoved: function(v){ root.setEqOption("falloff", v) } }
-        }
-        Row { width: parent.width; spacing: Style.space(10)
-          Text { text: "Zoom"; color: Color.foreground; font.family: Style.font.family; font.pixelSize: Style.font.body; width: parent.width*0.40; verticalAlignment: Text.AlignVCenter }
-          Dropdown { width: parent.width*0.60 - Style.space(10); value: (root.config.eqZoom || "1x"); options: [ {value:"1x",label:"1x"}, {value:"2x",label:"2x"}, {value:"4x",label:"4x"} ]; onChanged: function(v){ root.setEqOption("zoom", v) } }
-        }
-        Row { width: parent.width; spacing: Style.space(10)
-          Text { text: "Thickness"; color: Color.foreground; font.family: Style.font.family; font.pixelSize: Style.font.body; width: parent.width*0.40; verticalAlignment: Text.AlignVCenter }
-          Dropdown { width: parent.width*0.60 - Style.space(10); value: String(root.config.eqThickness || 2); options: [ {value:"1",label:"1"}, {value:"2",label:"2"}, {value:"3",label:"3"}, {value:"4",label:"4"} ]; onChanged: function(v){ root.setEqOption("thickness", parseInt(v,10)) } }
-        }
+        PanelSeparator { }
 
-        // ---- Oscilloscope options — Winamp faithful ----
-        Text {
-          text: "OSCILLOSCOPE"
-          color: Color.foreground
-          opacity: 0.6
-          font.family: Style.font.family
-          font.pixelSize: Style.font.bodySmall
-          font.letterSpacing: 1
-        }
-        Row { width: parent.width; spacing: Style.space(10)
-          Text { text: "Style"; color: Color.foreground; font.family: Style.font.family; font.pixelSize: Style.font.body; width: parent.width*0.40; verticalAlignment: Text.AlignVCenter }
-          Dropdown { width: parent.width*0.60 - Style.space(10); value: (root.config.scopeStyle || "line"); options: [ {value:"line",label:"Line"}, {value:"dot",label:"Dot"} ]; onChanged: function(v){ root.setScopeOption("style", v) } }
-        }
-        Row { width: parent.width; spacing: Style.space(10)
-          Text { text: "Color"; color: Color.foreground; font.family: Style.font.family; font.pixelSize: Style.font.body; width: parent.width*0.40; verticalAlignment: Text.AlignVCenter }
-          Dropdown { width: parent.width*0.60 - Style.space(10); value: (root.config.scopeColor || "solid"); options: [ {value:"solid",label:"Solid"}, {value:"line",label:"Line"}, {value:"fade",label:"Fade Blocks"}, {value:"fire",label:"Fire"} ]; onChanged: function(v){ root.setScopeOption("color", v) } }
-        }
-        Row { width: parent.width; spacing: Style.space(10)
-          Text { text: "Grid"; color: Color.foreground; font.family: Style.font.family; font.pixelSize: Style.font.body; width: parent.width*0.40; verticalAlignment: Text.AlignVCenter }
-          ToggleSwitch { width: parent.width*0.60 - Style.space(10); checked: (root.config.scopeGrid === true); onToggled: function(){ root.setScopeOption("grid", checked ? "true":"false") } }
-        }
-        Row { width: parent.width; spacing: Style.space(10)
-          Text { text: "Scan"; color: Color.foreground; font.family: Style.font.family; font.pixelSize: Style.font.body; width: parent.width*0.40; verticalAlignment: Text.AlignVCenter }
-          ToggleSwitch { width: parent.width*0.60 - Style.space(10); checked: (root.config.scopeScan === true); onToggled: function(){ root.setScopeOption("scan", checked ? "true":"false") } }
-        }
-        Row { width: parent.width; spacing: Style.space(10)
-          Text { text: "Centered"; color: Color.foreground; font.family: Style.font.family; font.pixelSize: Style.font.body; width: parent.width*0.40; verticalAlignment: Text.AlignVCenter }
-          ToggleSwitch { width: parent.width*0.60 - Style.space(10); checked: (root.config.scopeCentered === true); onToggled: function(){ root.setScopeOption("centered", checked ? "true":"false") } }
-        }
-        Row { width: parent.width; spacing: Style.space(10)
-          Text { text: "Thickness"; color: Color.foreground; font.family: Style.font.family; font.pixelSize: Style.font.body; width: parent.width*0.40; verticalAlignment: Text.AlignVCenter }
-          Dropdown { width: parent.width*0.60 - Style.space(10); value: String(root.config.scopeThickness || 2); options: [ {value:"1",label:"1"}, {value:"2",label:"2"}, {value:"3",label:"3"}, {value:"4",label:"4"} ]; onChanged: function(v){ root.setScopeOption("thickness", parseInt(v,10)) } }
-        }
-
-        // ---- audio ----
-        Text {
-          text: "AUDIO"
-          color: Color.foreground
-          opacity: 0.6
-          font.family: Style.font.family
-          font.pixelSize: Style.font.bodySmall
-          font.letterSpacing: 1
+        // ---- AUDIO (read-only source + sensitivity/smoothing) ----
+        PanelSectionHeader { text: "AUDIO" }
+        Row {
+          width: parent.width
+          spacing: Style.space(8)
+          Text {
+            text: "SOURCE"
+            color: Qt.darker(root.bar ? root.bar.foreground : Color.foreground, 1.4)
+            font.family: Style.font.family; font.pixelSize: Style.font.bodySmall
+            font.letterSpacing: 1
+            anchors.verticalCenter: parent.verticalCenter
+          }
+          Text {
+            text: root.sourceLabelText + " · default sink"
+            color: Color.accent
+            font.family: Style.font.family; font.pixelSize: Style.font.body
+            anchors.verticalCenter: parent.verticalCenter
+          }
         }
         Row {
-          width: parent.width; spacing: Style.space(10)
-          Text { text: "Sensitivity"; color: Color.foreground; font.family: Style.font.family; font.pixelSize: Style.font.body; width: parent.width * 0.42; verticalAlignment: Text.AlignVCenter }
-          PanelSlider { width: parent.width * 0.58 - Style.space(10); value: root.config.sensitivity; minimum: 0.1; maximum: 3.0; step: 0.05; onMoved: function(v) { root.setAudio("sensitivity", v) } }
+          width: parent.width
+          spacing: Style.space(10)
+          Text {
+            text: "Sensitivity"
+            color: root.bar ? root.bar.foreground : Color.foreground
+            font.family: Style.font.family; font.pixelSize: Style.font.body
+            anchors.verticalCenter: parent.verticalCenter
+          }
+          PanelSlider {
+            width: parent.width - Style.space(110)
+            minimum: 0.1; maximum: 3.0; step: 0.1
+            value: parseFloat(root.readCfg("sensitivity", "audio") || "1.0")
+            onMoved: function(v) { commit("sensitivity", v.toFixed(1), "audio") }
+          }
         }
         Row {
-          width: parent.width; spacing: Style.space(10)
-          Text { text: "Smoothing"; color: Color.foreground; font.family: Style.font.family; font.pixelSize: Style.font.body; width: parent.width * 0.42; verticalAlignment: Text.AlignVCenter }
-          PanelSlider { width: parent.width * 0.58 - Style.space(10); value: root.config.smoothing; minimum: 0.0; maximum: 1.0; step: 0.05; onMoved: function(v) { root.setAudio("smoothing", v) } }
-        }
-        // ---- options: color sync (#8) ----
-        Text {
-          text: "OPTIONS"
-          color: Color.foreground
-          opacity: 0.6
-          font.family: Style.font.family
-          font.pixelSize: Style.font.bodySmall
-          font.letterSpacing: 1
-        }
-        Row {
-          width: parent.width; spacing: Style.space(10)
-          Text { text: "Color sync (mini)"; color: Color.foreground; font.family: Style.font.family; font.pixelSize: Style.font.body; width: parent.width * 0.42; verticalAlignment: Text.AlignVCenter }
-          ToggleSwitch {
-            width: parent.width * 0.58 - Style.space(10)
-            checked: root.config.colorSync
-            onToggled: root.setColorSync(checked)
+          width: parent.width
+          spacing: Style.space(10)
+          Text {
+            text: "Smoothing"
+            color: root.bar ? root.bar.foreground : Color.foreground
+            font.family: Style.font.family; font.pixelSize: Style.font.body
+            anchors.verticalCenter: parent.verticalCenter
+          }
+          PanelSlider {
+            width: parent.width - Style.space(110)
+            minimum: 0.0; maximum: 1.0; step: 0.05
+            value: parseFloat(root.readCfg("smoothing", "audio") || "0.5")
+            onMoved: function(v) { commit("smoothing", v.toFixed(2), "audio") }
           }
         }
 
-        // ---- footer ----
+        PanelSeparator { }
+
+        // ---- Footer: Reset + Detach/Attach ----
         Row {
-          width: parent.width; spacing: Style.space(8)
-          Button { id: resetBtn; text: "↺ Reset"; leftAlign: true; onClicked: root.resetVisual() }
+          width: parent.width
+          spacing: Style.space(8)
+          Button {
+            text: "Reset"
+            onClicked: root.resetAll()
+          }
           Item { width: parent.width - resetBtn.width - detachBtn.width - Style.space(8); height: 1 }
           Button {
             id: detachBtn
-            // Read detach state from the BarWidget (source of truth), not the
-            // panel's own mirrored config, so the label flips immediately.
-            text: (root.hostWidget && root.hostWidget.config && root.hostWidget.config.desktopActive)
-              ? "Attach ↗" : "Detach ↗"
-            leftAlign: true
-            onClicked: root.detach()
+            text: root.detached ? "Attach ↗" : "Detach ↗"
+            onClicked: root.toggleDetach()
           }
         }
       }
     }
 
-  function switchPanel(direction) {
-    if (root.bar && typeof root.bar.switchPanelFrom === "function")
-      return root.bar.switchPanelFrom(root.barIdentity, direction)
-    return false
+    Component.onCompleted: configFile.reload()
+  }
+
+  // Writable config view — no watch so async reverts never clobber a click.
+  FileView {
+    id: configFile
+    path: Model.configPath
+    watchChanges: false
+    printErrors: false
+    onLoaded: root.reloadCfg()
+    onFileChanged: root.reloadCfg()
   }
 }

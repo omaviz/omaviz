@@ -1,7 +1,7 @@
-# omaviz — Application Specification (v7.1.0)
+# omaviz — Application Specification (v7.5.0)
 
 > **Plugin id:** `org.omaviz.visualizer`
-> **Version:** 7.1.0 (manifest) · repo tag `v7.1`
+> **Version:** 7.5.0 (spec) · manifest `2.0.0` · repo tag `v7.5`
 > **Status:** Single-package Omarchy QML plugin. Audio analysis is bundled as
 > one native binary (`plugin/bin/omaviz-engine`) shipped **inside** the plugin
 > directory. No systemd service, no Unix socket, no `~/.local/bin` binaries.
@@ -22,16 +22,20 @@ The prior multi-process design (daemon + socket + bridge) is archived in `v6/`.
   directory + `omarchy plugin enable` — no Rust toolchain required. This matches
   Omarchy's native plugin model (every other plugin is a drop-in directory).
 - Support **multiple audio backends** behind an auto-detected source mapping.
-  v7.1.0 ships **PipeWire only**; PulseAudio/JACK/ALSA/File follow later with
+  v7.2.0 ships **PipeWire only**; PulseAudio/JACK/ALSA/File follow later with
   **no plugin (QML) changes** — the plugin never picks a backend.
-- Keep the existing UI: bar mini, desktop detach, settings panel, Canvas-2D
-  visuals (Bars/Wave/Fire-style). The audio plumbing changes; the product does not.
+- Keep the existing UI: bar mini, desktop detach, settings panel, GPU
+  (ShaderEffect) visuals (Bars/Wave/Fire-style) with the Canvas-2D
+  `VisualCanvas.qml` retained only as a legacy fallback. The audio plumbing
+  changes; the product does not.
 - Show the active audio source in the settings panel (read-only).
 
-**Non-Goals (v7.1.0)**
-- No GPU/WGSL/ShaderEffect rendering yet (planned, separate track — §10).
+**Non-Goals (v7.2.0)**
 - No microphone monitoring.
 - No backend switching UI (source is auto + displayed, not chosen).
+- No separate EGL/wgpu context — rendering uses the QML scene-graph
+  `ShaderEffect` only; `VisualCanvas.qml` (Canvas-2D) is a legacy fallback, not
+  a goal.
 
 ---
 
@@ -44,15 +48,18 @@ plugin/  (deployed to ~/.config/omarchy/plugins/org.omaviz.visualizer/)
 ├── Panel.qml       (settings: shows Source: <backend> in AUDIO section)
 ├── Desktop.qml     (detached window)
 ├── Model.js        (.pragma singleton: config IO, spectrum parse)
-├── VisualCanvas.qml (Canvas-2D renderer)
+├── VisualCanvasGL.qml (GPU/ShaderEffect renderer — default)
+├── VisualCanvas.qml  (Canvas-2D renderer — legacy fallback)
+├── shaders/visual.frag (+ visual.qsb)
+├── glspectrum.js   (spectrum → texture packing, shared by GL renderer)
 ├── visuals/*.toml  (equalizer / wave / fire)
 ├── bin/
 │   └── omaviz-engine   (Rust: capture → FFT/DSP → JSON lines on stdout;
 │                         COMMITTED artifact — see Architecture A, §2)
-└── tests/model.test.cjs
+└── tests/{model,glspectrum}.test.cjs
 ```
 
-> **Architecture A (v7.1):** `plugin/bin/omaviz-engine` is a **committed**,
+> **Architecture A (v7):** `plugin/bin/omaviz-engine` is a **committed**,
 > self-contained artifact. The plugin directory is a drop-in that installs with
 > no build step (`cp -r plugin …/org.omaviz.visualizer/ && omarchy plugin
 > enable org.omaviz.visualizer`). `build.sh` rebuilds it from `engine/` source
@@ -74,7 +81,7 @@ Quickshell BarWidget.spectrumProc (Process)
    ▼
 Model.spectrumData { bands, energy, beat, silent, source }
    ▼
-VisualCanvas / bars (unchanged rendering contract)
+VisualCanvasGL (GPU/ShaderEffect) / VisualCanvas (Canvas-2D) — unchanged contract
 ```
 
 - **No socket, no daemon, no systemd.** The engine is spawned by the bar widget
@@ -83,7 +90,7 @@ VisualCanvas / bars (unchanged rendering contract)
   the old bridge across reboots).
 - **Lifecycle tradeoff (accepted):** capture stops when the Omarchy shell
   exits/restarts. This is the explicit cost of "no daemon."
-- **Backend auto-mapping:** the engine defaults to `--source auto`. In v7.1.0
+- **Backend auto-mapping:** the engine defaults to `--source auto`. In v7.2.0
   only PipeWire is compiled in, so `auto` resolves to PipeWire. Future builds
   add more backends and `auto` probes in priority order (PipeWire → Pulse →
   JACK → ALSA). The plugin **never passes `--source`** — it just spawns the
@@ -117,7 +124,7 @@ CLI:
 ```
 omaviz-engine [--source auto|pipewire] [--bands N]
 ```
-- `--source` default `auto`. v7.1.0 accepts `auto`/`pipewire` only.
+- `--source` default `auto`. v7.2.0 accepts `auto`/`pipewire` only.
 - `--bands` default `32`; must match the bar's `config.bands`.
 
 stdout frame (one JSON object per line, flushed):
@@ -128,7 +135,7 @@ stdout frame (one JSON object per line, flushed):
   consumes via `Model.parseSpectrumLine`.
 - `energy`/`beat`: smoothed envelope + simple onset detection.
 - `silent`: `energy < 0.02`.
-- `source`: the resolved backend name (always `"pipewire"` in v7.1.0). Consumed
+- `source`: the resolved backend name (always `"pipewire"` in v7.2.0). Consumed
   by the panel's read-only source display.
 
 The frame is emitted at ~60 Hz regardless of audio chunk rate (the engine
@@ -138,11 +145,14 @@ drains the channel, keeps the latest chunk, and ticks on a timer).
 
 ## 5. Files
 
-Live plugin (`~/.config/omarchy/plugins/org.omaviz.visualizer/`):
+Live plugin (`~/.config/omarchy/plugins/org.omaviz.visualizer/`, manifest `2.0.0`):
 ```
-manifest.json, BarWidget.qml, Panel.qml, Desktop.qml,
-Model.js, VisualCanvas.qml, visuals/{equalizer,wave,fire}.toml,
-bin/omaviz-engine, tests/model.test.cjs
+manifest.json (v2.0.0), BarWidget.qml, Panel.qml, Desktop.qml,
+Model.js, VisualCanvasGL.qml (GPU/ShaderEffect renderer — default),
+VisualCanvas.qml (Canvas-2D legacy fallback),
+shaders/visual.frag + visual.qsb, glspectrum.js,
+visuals/{equalizer,wave,fire}.toml,
+bin/omaviz-engine, tests/{model,glspectrum}.test.cjs
 ```
 
 Engine (`engine/`, Rust source; built by `build.sh` → `plugin/bin/`):
@@ -176,9 +186,13 @@ AUDIO (sensitivity/smoothing), Color sync, Reset, Detach.
 `SOURCE  PipeWire · default sink`. Driven by `Model.spectrumData.source`. No
 switching control — the engine auto-detects; the panel only reports.
 
+**GPU toggle (v7.2):** the desktop window honors `desktop.gpu` in the config
+TOML. It defaults to `true` (GPU/ShaderEffect renderer, `VisualCanvasGL.qml`);
+set `desktop.gpu = false` to fall back to the Canvas-2D `VisualCanvas.qml`.
+
 ---
 
-## 7. Detach / desktop window lifecycle (v7.1)
+## 7. Detach / desktop window lifecycle (v7.2)
 
 **Toggle button:** the panel footer shows **`Detach ↗`** when the desktop
 window is closed and **`Attach ↗`** when it is open. The label is derived from
@@ -202,7 +216,7 @@ directly (the Process uses the `environment` property, not an `env` wrapper, so
 the child is the direct descendant). `onExited` then clears `detachedRunning`
 and resets `desktop.active=false`.
 
-**Resilience (v7.1 fixes):**
+**Resilience (v7.2 fixes):**
 - The Attach branch resets `desktop.active=false` **unconditionally**, not only
   via `onExited`. If the window died without firing `onExited` (external kill /
   crash), the flag would otherwise stay stuck `true` and the button would freeze
@@ -216,10 +230,14 @@ bar keeps its own. Both feed their respective visualizers independently.
 
 ---
 
-## 8. Rendering (`VisualCanvas.qml`) — unchanged (verified).
+## 8. Rendering — `VisualCanvasGL.qml` (GPU, default) + `VisualCanvas.qml` (Canvas-2D fallback)
 
-Self-contained Canvas-2D. Modes: Bars, Wave, Fire (winamp flame). `barCount`
-downsamples the 32-band spectrum; `colourScheme`/`colorSync` drive color.
+Primary rendering is the GPU/ShaderEffect path (`VisualCanvasGL.qml` +
+`shaders/visual.frag` → `visual.qsb`); see §10. `VisualCanvas.qml` is the
+self-contained Canvas-2D legacy fallback (modes: Bars, Wave, Fire winamp
+flame; `barCount` downsamples the 32-band spectrum; `colourScheme`/`colorSync`
+drive color). Both honor the same rendering contract consumed by the bar/desktop
+widgets — switching between them never changes the upstream data shape.
 
 ---
 
@@ -232,12 +250,23 @@ downsamples the 32-band spectrum; `colourScheme`/`colorSync` drive color.
   with the exact v7 key set/order; parseable; numeric precision stable.
 - source resolution: `auto`/`pipewire`/`""` → `pipewire`; unknown → error.
 
-**Plugin (node, `node plugin/tests/model.test.cjs`):** 45 tests green.
+**Plugin (node, `node plugin/tests/model.test.cjs`):** 48 tests green.
 - Carry forward all v6 Model.js tests (TOML read/write, visual discovery,
   spectrum parse, pause cycle, color sync, style round-trip).
 - `parseSpectrumLine` captures `source` into `spectrumData.source`; panel
   source-display string derives from it.
 - `isPaused(desktopActive, detachRunning)` — two-signal pause resolution.
+- `defaultConfig.gpu` is `true`; `readConfigFromText` honors `desktop.gpu`.
+
+**GPU packing (node, `node plugin/tests/glspectrum.test.cjs`):** 7 tests green.
+- `packBands(bands, n)` downsamples/upsamples the variable-length spectrum to a
+  fixed `n=32` slot array and clamps out-of-range values so a bad frame can
+  never poison the shader; empty/undefined → all zeros.
+- `peakOf(packed)` returns the max packed value (drives glow/beat in the shader).
+- `packFire(fire)` → `1.0`/`0.0` for control-texture row 8; `fireOn(v)` mirrors
+  `visual.frag`'s decoder (`row8.r > 0.5 == on`). **Decode note (v7.5 fix):** the
+  shader now reads toggles with `> 0.5` (the old `int(r*2+0.5)==1` wrongly read
+  the painted `1.0` as `2`, leaving fire/peaks permanently off).
 
 **Integration (manual, gated):**
 - After install: spawn engine standalone with a 440 Hz tone playing → confirm
@@ -246,20 +275,54 @@ downsamples the 32-band spectrum; `colourScheme`/`colorSync` drive color.
 - Detach/Attach: click Detach → desktop window opens + its own engine spawns;
   click Attach (or close window) → window closes, `desktop.active` resets to
   false, mini resumes.
+- GPU path: with `desktop.gpu` unset/true the desktop window renders via
+  `VisualCanvasGL.qml` (ShaderEffect); setting `desktop.gpu=false` falls back to
+  Canvas-2D `VisualCanvas.qml`.
 
 ---
 
-## 10. Migration path → GPU / ShaderEffect (future, separate track)
+## 10. GPU / ShaderEffect rendering (current implementation)
 
-The engine is **orthogonal to rendering**. To move from rectangles to Winamp-
-style GPU visuals, change only the render side:
-- Port `VisualCanvas.qml` from Canvas-2D to a QML `ShaderEffect` (GLSL) inside
-  the scene graph (no separate EGL context → avoids the historical wgpu+Mesa
-  segfault that forced the daemon to leak its `App` on exit). Feed `bands` as a
-  `uniform` array or a 1-D `Texture`.
-- Each Winamp visual = one `visuals/<name>.toml` + one fragment shader. Roll
-  them out one by one (Bars → Wave → Fire → …). The panel dropdown already
-  enumerates `*.toml`, so new visuals appear automatically.
+The engine is **orthogonal to rendering**. Since v7.2 the live plugin renders
+with a QML `ShaderEffect` (GLSL) inside the scene graph — **no separate EGL
+context** — which avoids the historical wgpu+Mesa segfault that forced the old
+daemon to leak its `App` on exit.
+
+**Files (this track):**
+- `VisualCanvasGL.qml` — the GPU renderer. It packs the 32-band spectrum plus
+  control values (visual mode, color source, fire/peaks/border toggles, falloff,
+  alpha, theme/custom colors, time) into a `32×12` RGBA `Canvas`, promotes that
+  to a `ShaderEffectSource`, and runs `visual.qsb` as the `ShaderEffect`
+  fragment shader. `glspectrum.js` (`packBands`/`peakOf`) clamps and
+  downsamples the variable-length `bands` array into the fixed 32-slot texture
+  row so a bad frame can never poison the shader. GPU is **enabled by default**
+  (`Model` reads `desktop.gpu`; it is `true` unless explicitly `"false"`).
+- `shaders/visual.frag` — GLSL ES 3.10 fragment shader, compiled to
+  `visual.qsb` by `build.sh`. Data is read from the `32×12` texture rows
+  (row 0 = spectrum magnitudes, row 1 = JS-maintained peak-hold, rows 2–11 =
+  control/color/time uniforms). The shader draws Winamp-style bars plus a
+  functional oscilloscope branch. Visuals are **flat 2D** (no 3D, product
+  direction) and bar colors are sourced from the active Omarchy theme per
+  `THEME_PALETTE.md` (defaults seeded to Matte Black `#e68e0d`→`#f59e0b`).
+- `VisualCanvas.qml` — **legacy Canvas-2D fallback**, retained only for
+  non-GPU/debug use. It is not the default path.
+
+**How shaders map to visuals (v7.5 — two visualizations, per product direction):**
+the visual is selected by a control row; a `visuals/<name>.toml` enumerates the
+available modes so the panel dropdown stays in sync. Mapping onto the single
+shared shader:
+- **Bar** (priority visual) → analyzer branch (`visual` control row = 0):
+  Winamp-style 2D spectrum bars, themed gradient (active Omarchy accent ramp,
+  `THEME_PALETTE.md`) or custom color. The **fire** option is a *Bar effect* —
+  a 2D fluid/drip flame post-process over the bars (`fireOn()` flag, row 8),
+  render-only, no engine change. (The legacy `visuals/fire.toml` toggles this
+  effect rather than defining a separate visual.)
+- **Oscilloscope** → oscilloscope branch (`visual` control row = 1): an animated
+  sine envelope driven by the spectrum. This is the second shipped visual; it
+  derives from the same `bands` frame (no engine mode field).
+`fire`/`peaks`/`border`/`alpha`/`falloff` and the `colorSource` (theme vs
+custom) are passed as texture control rows and consumed in `visual.frag`. Both
+visuals share the one compiled shader rather than separate shader files.
 
 This track touches only QML/GLSL; the engine (audio) is unaffected.
 
@@ -279,8 +342,8 @@ This track touches only QML/GLSL; the engine (audio) is unaffected.
   enable org.omaviz.visualizer` + restart. Zero-build by default (the committed
   binary ships inside `plugin/bin`). Use `./install.sh --build` to rebuild the
   engine from `engine/` first. `./build.sh` alone rebuilds the binary into
-  `plugin/bin/`. Uninstall: `./uninstall.sh` (removes plugin + bin; no systemd
-  step).
+  `plugin/bin/` (and recompiles `shaders/visual.frag` → `visual.qsb`).
+  Uninstall: `./uninstall.sh` (removes plugin + bin; no systemd step).
 - Because the engine binary is committed, the plugin directory is a true
   drop-in: `cp -r plugin ~/.config/omarchy/plugins/org.omaviz.visualizer/ &&
   omarchy plugin enable org.omaviz.visualizer` is sufficient.
@@ -290,18 +353,20 @@ This track touches only QML/GLSL; the engine (audio) is unaffected.
 ## 12. Repository structure
 
 ```
-omaviz/                  (this repo, tag v7.1)
+omaviz/                  (this repo, tag v7.5)
 ├── APPLICATION_SPEC.md  (this file)
 ├── engine/              (Rust omaviz-engine source — build.sh compiles → plugin/bin)
 │   ├── Cargo.toml
 │   └── src/{main,dsp,frame}.rs, src/source/{mod,pipewire}.rs
 ├── plugin/              (QML/JS — copied verbatim to live dir; bin/ is committed)
-│   ├── manifest.json, BarWidget.qml, Panel.qml, Desktop.qml
-│   ├── Model.js, VisualCanvas.qml
+│   ├── manifest.json (v2.0.0), BarWidget.qml, Panel.qml, Desktop.qml
+│   ├── Model.js, VisualCanvasGL.qml (GPU renderer), VisualCanvas.qml (Canvas-2D fallback)
+│   ├── shaders/{visual.frag, visual.qsb}
+│   ├── glspectrum.js
 │   ├── visuals/{equalizer,wave,fire}.toml
 │   ├── bin/omaviz-engine   (COMMITTED engine binary — Architecture A)
-│   └── tests/model.test.cjs
-├── build.sh             (cargo build → plugin/bin/omaviz-engine)
+│   └── tests/{model,glspectrum}.test.cjs
+├── build.sh             (cargo build → plugin/bin/omaviz-engine; compiles shaders)
 ├── install.sh           (copy plugin dir + omarchy plugin enable; zero-build)
 ├── uninstall.sh         (remove plugin; no systemd)
 └── v6/                  (ARCHIVE: prior daemon+bridge+socket design)
@@ -318,22 +383,22 @@ omaviz/                  (this repo, tag v7.1)
 
 ## 13. Feature roadmap
 
-Progress reflects shipped capability in the live plugin (tag `v7.1`).
+Progress reflects shipped capability in the live plugin (tag `v7.5`).
 
 | # | Feature | Status | Progress |
 |---|---------|--------|---------:|
 | 1 | Single-package plugin (QML + bundled native engine, no systemd/socket) | Shipped | 100% |
 | 2 | Zero-build drop-in install (committed binary, `omarchy plugin enable`) | Shipped | 100% |
 | 3 | PipeWire audio capture → 32-band spectrum (default sink monitor) | Shipped | 100% |
-| 4 | Mini bar visualizer (Bars / Wave / Fire Canvas-2D) | Shipped | 100% |
+| 4 | Mini bar visualizer (Bars / Wave / Fire) | Shipped | 100% |
 | 5 | Settings panel (visualization, style, audio, color sync, reset) | Shipped | 100% |
 | 6 | Read-only audio source indicator (PipeWire) | Shipped | 100% |
 | 7 | Desktop detach window (standalone spectrum window) | Shipped | 100% |
 | 8 | Detach/Attach toggle with mini pause + stale-flag resilience | Shipped | 100% |
-| 9 | TDD: engine (Rust) + plugin (node) test suites green | Shipped | 100% |
+| 9 | TDD: engine (Rust) + plugin (node) + gl-spectrum test suites green | Shipped | 100% |
 | 10 | Additional backends (PulseAudio / JACK / ALSA) | Planned | 0% |
 | 11 | File/loopback source for offline testing | Planned | 0% |
-| 12 | GPU / ShaderEffect Winamp visuals (Bars→Wave→Fire) | Planned | 0% |
+| 12 | GPU / ShaderEffect Winamp visuals (Bar + Oscilloscope, fire effect, omarchy-themed) | Shipped | 100% |
 | 13 | Backend-switching UI (manual source selection) | Planned | 0% |
 | 14 | Multi-monitor / position presets for detach window | Backlog | 0% |
 | 15 | Preset/theme sharing for visuals | Backlog | 0% |

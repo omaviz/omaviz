@@ -92,11 +92,16 @@ function readConfigFromText(tomlText) {
   d.gpu = readTomlValue(tomlText, "desktop", "gpu") !== "false"
   // v7.2 visual options (window)
   d.border = readTomlValue(tomlText, "desktop", "border") !== "false"   // default true
-  d.render3d = readTomlValue(tomlText, "desktop", "render3d") === "true"
   d.colorSource = readTomlValue(tomlText, "desktop", "color_source") || "theme"
   d.customColor = readTomlValue(tomlText, "desktop", "custom_color") || "#5ec8ff"
-  d.themeBottom = readTomlValue(tomlText, "desktop", "theme_bottom") || "#19e0d4"
-  d.themeTop = readTomlValue(tomlText, "desktop", "theme_top") || "#a45cff"
+  // Theme gradient defaults: Matte Black active theme (see THEME_PALETTE.md).
+  // accent (#e68e0d) -> bright_blue (#f59e0b). Replaces the old cyan/purple
+  // (#19e0d4 / #a45cff) which did NOT match the active theme.
+  d.themeBottom = readTomlValue(tomlText, "desktop", "theme_bottom") || "#e68e0d"
+  d.themeTop = readTomlValue(tomlText, "desktop", "theme_top") || "#f59e0b"
+  // v7.4 fire toggle: a top-level visualization option (independent of style)
+  // that enables the winamp flame on the desktop renderer. Default OFF.
+  d.fire = readTomlValue(tomlText, "desktop", "fire") === "true"
   // v7.4 Winamp-faithful per-visualization option sets (independent).
   d.eqMode = readTomlValue(tomlText, "visual.equalizer", "mode") || "bars"        // bars|lines
   d.eqColor = readTomlValue(tomlText, "visual.equalizer", "color") || "fire"      // solid|line|fade|fire
@@ -128,11 +133,11 @@ function defaultConfig() {
     colorSync: false,
     gpu: true,
     border: true,
-    render3d: false,
     colorSource: "theme",
     customColor: "#5ec8ff",
-    themeBottom: "#19e0d4",
-    themeTop: "#a45cff",
+    themeBottom: "#e68e0d",
+    themeTop: "#f59e0b",
+    fire: false,
     eqMode: "bars", eqColor: "fire", eqGrid: false, eqPeaks: true, eqFalloff: 0.5, eqZoom: "1x", eqThickness: 2,
     scopeStyle: "line", scopeColor: "solid", scopeGrid: false, scopeScan: false, scopeCentered: true, scopeThickness: 2
   }

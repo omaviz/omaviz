@@ -59,9 +59,11 @@ Canvas {
       if (h < 0.66) return "#ff8c1a"
       return "#ffd000"
     }
-    if (h < 0.33) return "#2a9df4"
-    if (h < 0.66) return "#9b5de5"
-    return "#f15bb5"
+    // colourScheme 0 = theme (Matte Black, see THEME_PALETTE.md):
+    // accent #e68e0d -> bright_blue #f59e0b ramp.
+    if (h < 0.33) return "#e68e0d"
+    if (h < 0.66) return "#f08e0d"
+    return "#f59e0b"
   }
   function fillFor(h, a) { return colorSync ? cssColorFor(h) : cssMonoTint(a) }
   function isFire() { return style === "Fire" && visual === "Bars" }

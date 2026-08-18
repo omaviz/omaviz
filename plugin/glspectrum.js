@@ -31,6 +31,11 @@ function peakOf(packed) {
   return m
 }
 
+// Fire toggle -> control-texture row 8 value, mirroring VisualCanvasGL.qml
+// (cFire*255) and visual.frag (fireOn(): fireRow().r > 0.5). 1.0 == on.
+function packFire(fire) { return fire ? 1.0 : 0.0 }
+function fireOn(packed) { return packed > 0.5 }
+
 if (typeof module !== "undefined" && module.exports) {
-  module.exports = { packBands: packBands, peakOf: peakOf }
+  module.exports = { packBands: packBands, peakOf: peakOf, packFire: packFire, fireOn: fireOn }
 }

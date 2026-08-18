@@ -26,7 +26,7 @@ module.exports = {
   parseVisualToml, discoverVisualsFromText, visualParamsFromText,
   visualConfigValues, readAudioFromText, parseSpectrumLine,
   sourceLabel, isDesktopActiveFromText, spectrumData, listVisualFiles,
-  engineBin, bridgePath, isPaused
+  engineBin, bridgePath, isPaused, readTomlValue
 }`
   const m = new Module('omaviz-model', null)
   m.filename = modelPath
@@ -644,4 +644,67 @@ test('readConfigFromText: gpu=false disables GPU renderer', () => {
 
 test('readConfigFromText: missing gpu defaults to enabled', () => {
   assert.strictEqual(M.readConfigFromText('[audio]\nsensitivity = 1.0\n').gpu, true)
+})
+
+// ===========================================================================
+// TASK #2: NEW `fire` config field (default + round-trip)
+// ===========================================================================
+test('defaultConfig: fire is false by default', () => {
+  assert.strictEqual(M.defaultConfig().fire, false)
+})
+
+test('readConfigFromText: fire=true reads back as true', () => {
+  const toml = '[desktop]\nfire = "true"\n'
+  assert.strictEqual(M.readConfigFromText(toml).fire, true)
+})
+
+test('readConfigFromText: fire absent defaults to false', () => {
+  assert.strictEqual(M.readConfigFromText('[audio]\nsensitivity = 1.0\n').fire, false)
+})
+
+test('fire: writeConfigKey round-trip is immediate (single click sticks)', () => {
+  let buf = '[desktop]\nactive = "false"\n'
+  // toggle ON
+  buf = M.writeConfigKey(buf, 'desktop', 'fire', 'true')
+  assert.strictEqual(M.readTomlValue(buf, 'desktop', 'fire'), 'true',
+    'fire=true must reflect immediately on first write')
+  assert.strictEqual(M.readConfigFromText(buf).fire, true)
+  // toggle OFF
+  buf = M.writeConfigKey(buf, 'desktop', 'fire', 'false')
+  assert.strictEqual(M.readTomlValue(buf, 'desktop', 'fire'), 'false')
+  assert.strictEqual(M.readConfigFromText(buf).fire, false)
+  // exactly one [desktop] header, no duplicate fire key
+  assert.strictEqual((buf.match(/\[desktop\]/g) || []).length, 1)
+  assert.strictEqual((buf.match(/fire\s*=/g) || []).length, 1)
+})
+
+test('themeBottom/themeTop: aligned to Matte Black (not old cyan/purple)', () => {
+  const d = M.defaultConfig()
+  assert.strictEqual(d.themeBottom, '#e68e0d')
+  assert.strictEqual(d.themeTop, '#f59e0b')
+  const toml = '[desktop]\ntheme_bottom = "#e68e0d"\ntheme_top = "#f59e0b"\n'
+  const r = M.readConfigFromText(toml)
+  assert.strictEqual(r.themeBottom, '#e68e0d')
+  assert.strictEqual(r.themeTop, '#f59e0b')
+})
+
+// Palette-tautology guard: the seeded themeBottom/themeTop MUST derive from the
+// canonical THEME_PALETTE.md (the acceptance reference), not from a hardcoded
+// literal that merely repeats the same hex. Parse the palette table and assert
+// the model seeds match the live Matte Black accent/bright_blue.
+test('defaultConfig theme gradient is DERIVED from THEME_PALETTE.md (not a tautology)', () => {
+  const palettePath = path.resolve(__dirname, '..', '..', 'THEME_PALETTE.md')
+  const pal = fs.readFileSync(palettePath, 'utf8')
+  function paletteHex(text, key) {
+    // THEME_PALETTE.md is a markdown table: '| accent | accent | `#e68e0d` |'
+    const re = new RegExp('\\|\\s*' + key + '\\b[^|]*\\|[^#]*(#[0-9a-fA-F]{6})', 'm')
+    const m = text.match(re)
+    return m ? m[1].toLowerCase() : null
+  }
+  const accent = paletteHex(pal, 'accent')
+  const brightBlue = paletteHex(pal, 'bright_blue')
+  assert.ok(accent && brightBlue, 'THEME_PALETTE.md must define accent + bright_blue')
+  const d = M.defaultConfig()
+  assert.strictEqual(d.themeBottom, accent, 'themeBottom must equal palette accent')
+  assert.strictEqual(d.themeTop, brightBlue, 'themeTop must equal palette bright_blue')
 })
