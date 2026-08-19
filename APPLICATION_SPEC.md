@@ -341,12 +341,15 @@ blocks across the modules above).
 - **Decode note (v7.6 fix):** the visual selector (row 2 R) is packed **RAW**
   `0/1/2` (Bars/Oscilloscope/Wave) and the shader decodes with
   `int(ctrl().r*255.0+0.5)`. The earlier `*2` scheme mapped `2`→`1`, so the WAVE
-  branch never fired. Additionally the control texture (`specTex`) must use
-  `ShaderEffectSource.Nearest` filtering — the default `Linear` averaged the
+  branch never fired. Additionally the control texture (`specTex`) must be
+  sampled with **NEAREST** filtering — the default `Linear` averaged the
   packed `2/255` with the animated time row, again decoding WAVE as
-  Oscilloscope. Both are covered by `glspectrum.test.cjs`
-  (`visual decode rides raw 0/1/2…`, `control-texture source uses NEAREST
-  filtering…`).
+  Oscilloscope. **In Qt 6 the `ShaderEffectSource.filtering` property does
+  not exist (see ADR-0005)**, so NEAREST is forced via
+  `specCanvas.layer.enabled: true; specCanvas.layer.smooth: false` on the
+  `ShaderEffectSource.sourceItem` (the only QML-facing mechanism). Covered by
+  `glspectrum.test.cjs` (`visual decode rides raw 0/1/2…`, `control texture
+  uses NEAREST via sourceItem.layer.smooth:false…`).
 - **Density generalization (v7.6):** `packBands(bands, density)` downsamples/
   upsamples the variable-length spectrum to the fixed `density` length and clamps
   out-of-range values; `packGap(gap)` mirrors the QML `barGap` paint
@@ -454,10 +457,12 @@ hard cap `256`), so the desktop window renders a dense spectrum (e.g. `128`
 bars, `barGap = 0` = contiguous/immersive) while the mini keeps its 32-band
 feed — no free-standing uniform (qsb/Vulkan rejects those in a ShaderEffect).
 `barGap` rides in row 11 G (`0` = contiguous dense, `~0.10` = slim gaps, mini
-default). The control texture is sampled with **`ShaderEffectSource.Nearest`**
-filtering so packed codes (visual `0/1/2`, toggles, density) are not averaged
-with neighbouring rows — without it, visual-code `2` decoded as `1` and Wave
-silently rendered as the Oscilloscope branch. `packBands` generalizes the
+default). The control texture is sampled with **NEAREST** filtering (forced in
+Qt 6 via `specCanvas.layer.enabled: true; specCanvas.layer.smooth: false` on the
+`ShaderEffectSource.sourceItem` — `ShaderEffectSource.filtering` does not exist
+in Qt 6; see ADR-0005) so packed codes (visual `0/1/2`, toggles, density) are
+not averaged with neighbouring rows — without it, visual-code `2` decoded as `1`
+and Wave silently rendered as the Oscilloscope branch. `packBands` generalizes the
 variable-length `bands` array to the fixed `density` length (clamps out-of-range
 so a bad frame can never poison the shader); `packGap` mirrors the QML paint.
 
@@ -543,3 +548,4 @@ Progress reflects shipped capability in the live plugin (tag `v7.6`).
 | 16 | Expose **Wave** in the settings-panel VISUALIZATION selector (was Bar/Oscilloscope only) — UI label "Wave", commits `visual="wave"` to `[mini]`+`[desktop]` | Shipped | 100% | (spec: ADR-0002) |
 | 17 | `visuals/wave.toml` params (amplitude/frequency/brightness/peak_fall) trimmed — inert in the continuous-carrier WAVE shader (decision: trim, not wire) | Shipped | 100% | (spec: ADR-0003) |
 | 18 | Oscilloscope line-width dead input removed; control-texture row 10 G/B/A marked reserved (was falsely documented "unused") (P3) | Shipped | 100% | (spec: ADR-0004) |
+| 19 | Control-texture NEAREST filtering (T-013): `ShaderEffectSource.Nearest` is invalid in Qt 6; force NEAREST via `sourceItem.layer.smooth:false`. Fixes WAVE decoding to Oscilloscope under LINEAR. | In Progress | 0% | (spec: ADR-0005) |
