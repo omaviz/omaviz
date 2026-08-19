@@ -228,6 +228,16 @@ test('readConfigFromText: missing keys fall back to defaults', () => {
   assert.strictEqual(d.colorSync, false)       // default
 })
 
+test('v7.6 desktop density: drives dense GL spectrum, independent of audio.bands', () => {
+  const def = M.readConfigFromText('')
+  assert.strictEqual(def.density, 128, 'default density 128 (dense/immersive)')
+  const d = M.readConfigFromText('[desktop]\ndensity = 128\n')
+  assert.strictEqual(d.density, 128, 'density read from [desktop]')
+  assert.strictEqual(d.bands, 32, 'audio.bands unaffected by density')
+  const def2 = M.defaultConfig()
+  assert.strictEqual(def2.density, 128, 'defaultConfig carries density')
+})
+
 // ===========================================================================
 // writeConfigKey — the config.toml corruption fix
 // ===========================================================================

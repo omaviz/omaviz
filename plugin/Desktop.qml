@@ -21,14 +21,18 @@ Window {
 
   property var spectrumBands: Model.spectrumData.bands
   property bool spectrumSilent: Model.spectrumData.silent
-  // Active visual: equalizer -> Bars (Winamp Spectrum Analyzer),
-  // oscilloscope -> Oscilloscope. Fire is now a color mode, not a visual.
-  readonly property string visualName: (win.config.visualDesktop || "equalizer") === "oscilloscope" ? "Oscilloscope" : "Bars"
+  // Active visual: equalizer -> Bars, oscilloscope -> Oscilloscope,
+  // wave -> Wave (GL mode 2). Fire is a color mode, not a visual.
+  readonly property string visualName: (win.config.visualDesktop || "equalizer") === "oscilloscope" ? "Oscilloscope"
+                                       : (win.config.visualDesktop || "equalizer") === "wave" ? "Wave"
+                                       : "Bars"
 
   Process {
     id: bridge
     running: false
-    command: [Model.engineBin, "--bands", "32"]
+    // v7.6: honor desktop window density (dense spectrum). The engine accepts
+    // any N; the GL renderer (VisualCanvasGL.qml) must generalize to N bars.
+    command: [Model.engineBin, "--bands", String((win.config && win.config.density) || 128)]
     stdout: SplitParser {
       splitMarker: "\n"
       onRead: function(data) {
@@ -107,6 +111,9 @@ Window {
     it.peaks = Model.readTomlValue(T, "visual.equalizer", "peaks") !== "false"
     it.falloff = Model.readTomlFloat(T, "visual.equalizer", "falloff") ?? 0.5
     it.border = Model.readTomlValue(T, "desktop", "border") !== "false"
+    // v7.6: immersive dense desktop spectrum (128 bars, contiguous — barGap 0).
+    it.density = (Model.readTomlInt(T, "desktop", "density") || 128)
+    it.barGap = 0.0
   }
 
   property string configPath: Model.configPath

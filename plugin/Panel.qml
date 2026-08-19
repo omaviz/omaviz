@@ -63,11 +63,17 @@ Panel {
     return readCfg(key, section) === "true"
   }
 
-  // ---- Popup lifecycle (consumed by BarWidget) ----
-  readonly property bool opened: panel.open
-  function open() { panel.open = true }
-  function close() { panel.open = false }
-  function toggle() { panel.open = !panel.open }
+  // ---- Popup lifecycle ----
+  // IMPORTANT: do NOT override opened/open/close/toggle here. The `Panel`
+  // base (qs.Ui/Panel.qml) owns a PanelController and drives the popup surface
+  // through it: `opened` === panelController.open, and open()/close()/toggle()
+  // call panelController.show()/hide(). The KeyboardPanel below binds its
+  // `open` to `root.opened` (= panelController.open), so the show path is:
+  //   BarWidget.toggle() -> panelLoader.item.toggle() -> Panel base toggle()
+  //     -> panelController.show() -> panelController.open=true -> KeyboardPanel
+  //        shows.
+  // The earlier (broken) version overrode these to set panel.open directly,
+  // which never invoked panelController.show(), so the panel never appeared.
 
   // ---- Live preview of the selected mini visual (Canvas-2D, GPU-free) ----
   function currentViz() {
@@ -95,7 +101,7 @@ Panel {
     // block; visuals keep their own sections untouched.
     var base = "[audio]\nsensitivity = 1.0\nsmoothing = 0.5\nbands = 32\n\n" +
       "[mini]\nvisual = \"equalizer\"\nstyle = \"classic\"\ncolor_sync = false\n\n" +
-      "[desktop]\nactive = \"false\"\ngpu = \"true\"\ncolor_source = \"theme\"\n" +
+      "[desktop]\nactive = \"false\"\ngpu = \"true\"\ncolor_source = \"theme\"\ndensity = 128\n" +
       "custom_color = \"#5ec8ff\"\ntheme_bottom = \"#e68e0d\"\ntheme_top = \"#f59e0b\"\n" +
       "fire = \"false\"\n"
     cfgText = base
@@ -152,7 +158,7 @@ Panel {
             visual: root.currentViz()
             style: root.currentStyle()
             colorSync: root.config.colorSync
-            barCount: 32
+            barCount: (root.config.density || 64)   // dense preview reflects the desktop window
             colourScheme: 0
           }
         }
@@ -338,6 +344,25 @@ Panel {
           }
         }
 
+        // v7.6: Desktop window spectrum density. Drives the engine's --bands for
+        // the detached window and the GL bar count (GL track generalizes NB).
+        // Higher = denser/immense spectrum; engine supports up to ~256.
+        Row {
+          width: parent.width
+          spacing: Style.space(10)
+          Text {
+            text: "Density"
+            color: root.bar ? root.bar.foreground : Color.foreground
+            font.family: Style.font.family; font.pixelSize: Style.font.body
+            anchors.verticalCenter: parent.verticalCenter
+          }
+          PanelSlider {
+            width: parent.width - Style.space(110)
+            minimum: 32; maximum: 128; step: 8
+            value: parseInt(root.readCfg("density", "desktop") || "128")
+            onMoved: function(v) { commit("density", String(Math.round(v)), "desktop") }
+          }
+        }
         PanelSeparator { }
 
         // ---- AUDIO (read-only source + sensitivity/smoothing) ----

@@ -1,12 +1,12 @@
 import QtQuick
 import "glspectrum.js" as GLpack
 
-// GPU visualization renderer (v7.5, Winamp-style bars).
+// GPU visualization renderer (v7.6, Winamp-style DENSE spectrum + WAVE).
 // QML ShaderEffect driven by visual.qsb.
-// 32x12 texture layout:
+// density (desktop.density, default 64) x 12 texture layout:
 //   row 0  spectrum magnitudes (R)
 //   row 1  peak-hold (JS-maintained) (R)
-//   row 2  R=visual(0/1)  G=colorSource(0 theme/1 custom)  B=unused
+//   row 2  R=visual(0 Bars /1 Oscilloscope /2 Wave)  G=colorSource(0 theme/1 custom)  B=unused
 //   row 3  R=time (for background animation)
 //   row 4  R=border(0/1)  G=unused  B=unused
 //   row 5  custom color RGB
@@ -15,16 +15,16 @@ import "glspectrum.js" as GLpack
 //   row 8  R=fire(0/1)  G=unused  B=unused
 //   row 9  R=peaks(0/1)  G=falloff(0..1)  B=unused  A=unused
 //   row 10 R=alpha(0..1)  G=unused  B=unused  A=unused
-//   row 11 unused
+//   row 11 R=density/256 (NB bar count)  G=barGap(0..1)  B=unused
 //
-// Unused branches (lines, fade, grid, zoom, thickness, oscilloscope) remain in
+// Unused branches (lines, fade, grid, zoom, thickness) remain in
 // the shader for compatibility but are not exposed in the panel.
 
 Item {
   id: root
   property var bands: []
   property bool silent: false
-  property string visual: "Bars"          // "Bars" | "Oscilloscope"
+  property string visual: "Bars"          // "Bars" | "Oscilloscope" | "Wave"
   property string colorSource: "theme"    // "theme" | "custom"
   property color customColor: "#5ec8ff"
   // Defaults seeded from the active Omarchy theme (Matte Black) per
@@ -37,15 +37,23 @@ Item {
   property real falloff: 0.5
   property bool border: true
   property real alpha: 1.0
-  // (legacy, unused) eqThickness kept for compat
+  // Desktop-window spectrum resolution (dense). Independent of the mini bar's
+  // 32-band feed; the engine is spawned with --bands density (Desktop.qml).
+  property int density: 64
+  // Bar separation (0..1 of one bar slot). 0 = contiguous (immersive dense
+  // spectrum, used by the desktop window); ~0.10 = slim gaps (mini bar default).
+  // Packed into control-texture row 11 G (no free-standing uniform).
+  property real barGap: 0.10
 
   readonly property var packed: silent
-    ? (function () { var z = []; for (var i = 0; i < 32; i++) z.push(0); return z })()
-    : GLpack.packBands(bands, 32)
+    ? (function () { var z = []; for (var i = 0; i < root.density; i++) z.push(0); return z })()
+    : GLpack.packBands(bands, root.density)
 
-  property var peakArr: (function () { var z = []; for (var i = 0; i < 32; i++) z.push(0); return z })
+  property var peakArr: (function () { var z = []; for (var i = 0; i < root.density; i++) z.push(0); return z })
 
-  readonly property int   cVisual: (visual === "Oscilloscope") ? 1 : 0
+  // Visual control code packed into texture row 2 R as a raw 0/1/2 integer
+  // (the shader decodes it with int(ctrl().r*255.0+0.5)). Bars=0, Osc=1, Wave=2.
+  readonly property int   cVisual: (visual === "Wave") ? 2 : (visual === "Oscilloscope") ? 1 : 0
   readonly property int   cColorSrc: (colorSource === "custom") ? 1 : 0
   readonly property int   cFire: fire ? 1 : 0
   readonly property int   cPeaks: peaks ? 1 : 0
@@ -55,7 +63,8 @@ Item {
 
   function updatePeaks() {
     var f = Math.max(0.05, 1.0 - Math.min(1.0, root.falloff) * 0.12)
-    for (var i = 0; i < 32; i++) {
+    var n = root.density
+    for (var i = 0; i < n; i++) {
       var v = packed[i] || 0
       if (v >= root.peakArr[i]) root.peakArr[i] = Math.max(root.peakArr[i], v)
       else root.peakArr[i] = root.peakArr[i] * f
@@ -64,24 +73,25 @@ Item {
 
   Canvas {
     id: specCanvas
-    width: 32; height: 12
+    width: root.density; height: 12
     visible: true
     onPaint: {
       var ctx = getContext("2d")
+      var n = root.density
       ctx.clearRect(0, 0, width, height)
       // row 0: spectrum
-      for (var i = 0; i < 32; i++) {
+      for (var i = 0; i < n; i++) {
         var g = Math.round(Math.min(1, Math.max(0, packed[i] || 0)) * 255)
         ctx.fillStyle = "rgb(" + g + "," + g + "," + g + ")"; ctx.fillRect(i, 0, 1, 1)
       }
       // row 1: peak-hold (JS-maintained)
-      for (var j = 0; j < 32; j++) {
+      for (var j = 0; j < n; j++) {
         var pg = Math.round(Math.min(1, Math.max(0, root.peakArr[j] || 0)) * 255)
         ctx.fillStyle = "rgb(" + pg + "," + pg + "," + pg + ")"; ctx.fillRect(j, 1, 1, 1)
       }
-      function row(y, r,g,b,a){ ctx.fillStyle="rgba("+r+","+g+","+b+","+(a!==undefined?a:255)+")"; ctx.fillRect(0,y,32,1) }
-      // row 2: visual + colorSource
-      row(2, cVisual*255, cColorSrc*255, 0)
+      function row(y, r,g,b,a){ ctx.fillStyle="rgba("+r+","+g+","+b+","+(a!==undefined?a:255)+")"; ctx.fillRect(0,y,n,1) }
+      // row 2: visual (raw 0/1/2) + colorSource
+      row(2, cVisual, cColorSrc*255, 0)
       // row 3: time
       row(3, Math.round((u_time%1000)/1000*255), 0, 0)
       // row 4: border
@@ -98,9 +108,8 @@ Item {
       row(9, cPeaks*255, Math.round(falloff*255), 0)
       // row 10: alpha (0..1)
       row(10, Math.round(Math.min(1, Math.max(0, alpha))*255), 0, 0)
-        // row 11: reserved for scope params (R=style(0 line/1 dot), G=colorMode(0 solid), B=grid(0/1))
-      // defaults: line style, solid color, no grid
-      row(11, 0, 0, 0)
+      // row 11: R = density/256 (NB passed to shader), G = barGap (0..1)
+      row(11, Math.round(root.density / 256.0 * 255), Math.round(Math.min(1, Math.max(0, root.barGap)) * 255), 0)
     }
     Component.onCompleted: requestPaint()
   }
@@ -108,6 +117,7 @@ Item {
   Connections {
     target: root
     function onBandsChanged() { updatePeaks(); specCanvas.requestPaint() }
+    function onDensityChanged() { peakArr = (function () { var z = []; for (var i = 0; i < root.density; i++) z.push(0); return z })(); specCanvas.requestPaint() }
     function onCFireChanged() { specCanvas.requestPaint() }
     function onCPeaksChanged() { specCanvas.requestPaint() }
     function onFalloffChanged() { updatePeaks(); specCanvas.requestPaint() }
@@ -118,6 +128,8 @@ Item {
     function onU_timeChanged() { specCanvas.requestPaint() }
     function onAlphaChanged() { specCanvas.requestPaint() }
     function onCBorderChanged() { specCanvas.requestPaint() }
+    function onVisualChanged() { specCanvas.requestPaint() }
+    function onBarGapChanged() { specCanvas.requestPaint() }
   }
 
   ShaderEffectSource {
@@ -125,7 +137,14 @@ Item {
     sourceItem: specCanvas
     live: true
     hideSource: true
-    textureSize: Qt.size(32, 12)
+    textureSize: Qt.size(root.density, 12)
+    // NEAREST filtering is REQUIRED: the control texture packs discrete codes
+    // (visual 0/1/2 in row 2 R, toggles in rows 8/9, density in row 11) as
+    // exact 8-bit values. With the default LINEAR filtering, sampling a row
+    // averages it with its vertical neighbours (e.g. the animated time row 3),
+    // so visual-code 2 (R=2/255) reads as ~1 -> wave silently renders as the
+    // oscilloscope branch. Nearest keeps each control cell exact.
+    filtering: ShaderEffectSource.Nearest
   }
 
   ShaderEffect {

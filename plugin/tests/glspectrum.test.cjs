@@ -121,5 +121,85 @@ test("theme palette defaults derive from THEME_PALETTE.md (Matte Black)", () => 
 })
 
 console.log(`\nℹ tests ${passed}`)
-console.log(`ℹ pass ${passed}`)
+
+test("density generalization: packBands length follows density (dense > mini's 32)", () => {
+  const dense = 64
+  const out = GL.packBands([0.5, 0.25, 0.75], dense)
+  assert.strictEqual(out.length, dense, "packBands produces a density-wide array")
+  assert.ok(dense > 32, "desktop density is denser than the 32-band mini feed")
+  assert.ok(out.every(v => v >= 0 && v <= 1), "all packed values normalized 0..1")
+})
+
+test("density generalization: shader NB rides in control row 11 (R=density/256)", () => {
+  // VisualCanvasGL.qml must paint density into row 11 R (no free-standing uniform).
+  assert.ok(GLQML.includes("Math.round(root.density / 256.0 * 255)"),
+    "QML paints density into control-texture row 11")
+  assert.ok(frag.includes("nbVal()"),
+    "shader derives bar count from control-texture row 11 (nbVal)")
+  assert.ok(!frag.includes("uniform float u_nb"),
+    "no free-standing uniform (qsb Vulkan rejects it)")
+})
+
+test("barGap packs into control-texture row 11 G (0 = contiguous dense)", () => {
+  // glspectrum.js exposes packGap, mirroring the QML paint (clamp 0..1 *255).
+  assert.strictEqual(GL.packGap(0.0), 0.0, "0 gap stays 0 (immersive desktop)")
+  assert.strictEqual(GL.packGap(0.10), 0.10, "default mini gap preserved")
+  assert.strictEqual(GL.packGap(-1), 0.0, "negative clamped to 0")
+  assert.strictEqual(GL.packGap(2), 1.0, "over-range clamped to 1")
+  assert.strictEqual(GL.packGap(NaN), 0.0, "NaN -> 0")
+  // QML paints barGap into row 11 G.
+  assert.ok(GLQML.includes("root.barGap"),
+    "VisualCanvasGL.qml references the barGap property in packing")
+  assert.ok(/row\(11, Math\.round\(root\.density \/ 256\.0 \* 255\), Math\.round\(Math\.min\(1, Math\.max\(0, root\.barGap\)\) \* 255\)/.test(GLQML),
+    "QML packs density (R) and barGap (G) into row 11")
+  // Shader reads gap from the same row 11 G channel.
+  assert.ok(frag.includes("scopeRow().g"),
+    "shader reads barGap from control-texture row 11 G")
+})
+
+test("visual decode rides raw 0/1/2 in ctrl().r (no *2 collision with Wave)", () => {
+  // VisualCanvasGL.qml must write cVisual RAW (0 analyzer /1 scope /2 wave).
+  assert.ok(/row\(2, cVisual, cColorSrc\*255, 0\)/.test(GLQML),
+    "QML paints cVisual raw into row 2 R (not *255)")
+  assert.ok(/cVisual: \(visual === "Wave"\) \? 2 : \(visual === "Oscilloscope"\) \? 1 : 0/.test(GLQML),
+    "cVisual maps Wave->2, Oscilloscope->1, Bars->0")
+  // Shader decodes with *255 so 0/1/2 survive (was *2 -> 2 collided).
+  assert.ok(frag.includes("int(ctrl().r * 255.0 + 0.5)"),
+    "shader decodes visual as int(ctrl().r*255+0.5) (distinct 0/1/2)")
+  assert.ok(frag.includes("else if (visual == 2)"),
+    "shader has a dedicated WAVE branch (visual == 2)")
+  // WAVE ribbon loop must be bounded (no unbounded dynamic loop in GLSL ES).
+  assert.ok(frag.includes("const int NW = 24"),
+    "WAVE ribbon loop is bounded (const int NW = 24)")
+})
+
+test("control-texture source uses NEAREST filtering (decode-race guard)", () => {
+  // The control texture packs discrete 8-bit codes (visual 0/1/2 in row 2 R,
+  // toggles in rows 8/9, density in row 11). The default LINEAR filtering
+  // averages a row with its vertical neighbours (e.g. the animated time row),
+  // so a packed value 2 (R=2/255) reads back as ~1 -> wave silently renders
+  // as the oscilloscope branch. Nearest keeps each control cell exact. This
+  // regression bit Wave/Oscilloscope (they rendered only the background).
+  assert.ok(/ShaderEffectSource\s*\{[\s\S]*?id:\s*specTex[\s\S]*?filtering:\s*ShaderEffectSource\.Nearest/.test(GLQML),
+    "specTex (control texture) must set filtering: ShaderEffectSource.Nearest")
+})
+
+test("WAVE is audio-reactive: continuous carrier modulated by bandAt envelope", () => {
+  assert.ok(frag.includes("else if (visual == 2)"), "WAVE branch exists")
+  // Continuous line carrier (sin) so ribbons are ALWAYS woven, never scattered dots.
+  assert.ok(/float carrier = sin\(uv\.x \* freq \+ phase\)/.test(frag), "ribbon is a continuous sine carrier")
+  // Spectrum MODULATES the line as an ADDITIVE swing on top of the always-visible
+  // carrier (env * react), so the line never scales to ~0 and collapses to dots.
+  assert.ok(frag.includes("+ env * 0.55 * react"), "spectrum adds an audio swing on top of the carrier")
+  // Carrier is added at a FIXED always-on amplitude (carrier * 0.13) — it is NOT
+  // multiplied by a silence-floor, so ribbons stay continuous even on a quiet feed.
+  assert.ok(frag.includes("carrier * 0.13"), "carrier always-visible (no loud-floor multiply)")
+  // Old broken pattern removed: line positioned directly from multiplied amp that
+  // collapsed to points on a sparse/sweep feed.
+  assert.ok(!frag.includes("float amp = (0.05 + 0.55 * (1.0 - depth)) * (0.55 + 0.9 * env) * loud"),
+    "old multiplied-amp (dashes) removed")
+  assert.ok(!frag.includes("float loud  = 0.35 + 1.10 * drive"), "old loud-floor baseline removed")
+})
+
+console.log(`\nℹ pass ${passed}`)
 console.log(`ℹ fail 0`)

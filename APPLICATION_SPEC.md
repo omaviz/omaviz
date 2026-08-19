@@ -1,7 +1,7 @@
-# omaviz — Application Specification (v7.5.0)
+# omaviz — Application Specification (v7.6.0)
 
 > **Plugin id:** `org.omaviz.visualizer`
-> **Version:** 7.5.0 (spec) · manifest `2.0.0` · repo tag `v7.5`
+> **Version:** 7.6.0 (spec) · manifest `2.0.0` · repo tag `v7.6`
 > **Status:** Single-package Omarchy QML plugin. Audio analysis is bundled as
 > one native binary (`plugin/bin/omaviz-engine`) shipped **inside** the plugin
 > directory. No systemd service, no Unix socket, no `~/.local/bin` binaries.
@@ -22,8 +22,11 @@ The prior multi-process design (daemon + socket + bridge) is archived in `v6/`.
   directory + `omarchy plugin enable` — no Rust toolchain required. This matches
   Omarchy's native plugin model (every other plugin is a drop-in directory).
 - Support **multiple audio backends** behind an auto-detected source mapping.
-  v7.2.0 ships **PipeWire only**; PulseAudio/JACK/ALSA/File follow later with
-  **no plugin (QML) changes** — the plugin never picks a backend.
+  v7.2.0 ships **PipeWire only** (plus internal verification backends `gen`
+  and `gen=<mode>`/ `file=<path>` used only by the test harness — see §10);
+  PulseAudio/JACK/ALSA follow later with **no plugin (QML) changes** —
+  the plugin never picks a backend. (The `gen`/`file` verification backends are
+  already compiled in; see §4.)
 - Keep the existing UI: bar mini, desktop detach, settings panel, GPU
   (ShaderEffect) visuals (Bars/Wave/Fire-style) with the Canvas-2D
   `VisualCanvas.qml` retained only as a legacy fallback. The audio plumbing
@@ -50,7 +53,8 @@ plugin/  (deployed to ~/.config/omarchy/plugins/org.omaviz.visualizer/)
 ├── Model.js        (.pragma singleton: config IO, spectrum parse)
 ├── VisualCanvasGL.qml (GPU/ShaderEffect renderer — default)
 ├── VisualCanvas.qml  (Canvas-2D renderer — legacy fallback)
-├── shaders/visual.frag (+ visual.qsb)
+├── shaders/visual.frag
+├── visual.qsb          (compiled by build.sh; lives at plugin root, NOT in shaders/)
 ├── glspectrum.js   (spectrum → texture packing, shared by GL renderer)
 ├── visuals/*.toml  (equalizer / wave / fire)
 ├── bin/
@@ -95,6 +99,15 @@ VisualCanvasGL (GPU/ShaderEffect) / VisualCanvas (Canvas-2D) — unchanged contr
   add more backends and `auto` probes in priority order (PipeWire → Pulse →
   JACK → ALSA). The plugin **never passes `--source`** — it just spawns the
   binary, staying fully backend-agnostic.
+- **Verification-only backends (engine-internal, not for the plugin):** in
+  addition to PipeWire, the engine accepts `--source gen` (deterministic
+  synthetic signal; sub-mode via `gen=tone|sweep|noise|mixed`, default
+  `mixed`), `--source gen=<mode>`, and `--source file=<path>` (loop-replays a
+  recorded mono f32 sample file: `.json` array / `.txt` floats / raw `f32`
+  LE). These drive the screenshot harness so Bars/Wave/Fire can be verified
+  with a reproducible, audio-independent signal. They emit the identical frame
+  contract (`source` reported as `"gen"`/`"file"`), and the plugin never uses
+  them.
 
 ---
 
@@ -112,9 +125,12 @@ env hacks, no systemd. (Verified against a shipped Omarchy plugin — `hw-toolti
 resolves `.../scripts/system-usage` the same way.)
 
 The **detached desktop window** (`Desktop.qml`) spawns the same binary via
-`Model.engineBin` (the plugin-relative path), passing `--source auto --bands 32`
-so its own engine instance feeds the standalone window. The mini's `paused`
-state is driven by the BarWidget, not by the desktop window.
+`Model.engineBin` (the plugin-relative path), passing `--source auto
+--bands <density>` where `density` is the desktop window's configured spectrum
+resolution (default `128`, valid `32..256`, see §6/§10). This feeds a dense,
+immersive spectrum (up to 256 bars) while the mini bar keeps its own 32-band
+feed — the engine generalizes `--bands` to any N. The mini's `paused` state is
+driven by the BarWidget, not by the desktop window.
 
 ---
 
@@ -122,10 +138,35 @@ state is driven by the BarWidget, not by the desktop window.
 
 CLI:
 ```
-omaviz-engine [--source auto|pipewire] [--bands N]
+omaviz-engine [--source SRC] [--bands N]
+
+SRC := auto | pipewire | gen[=MODE[:PARAM=V;...]] | file=<path>[:fps=N][:loop]
 ```
-- `--source` default `auto`. v7.2.0 accepts `auto`/`pipewire` only.
-- `--bands` default `32`; must match the bar's `config.bands`.
+- `--source` default `auto` → PipeWire (default sink monitor). The plugin and
+  Detached window always pass `auto`; all other values are for offline/test use.
+- `--bands` default `32` (mini bar); the desktop window overrides it with
+  `config.density` (default `128`, valid `1..256`, hard cap `256`). Any N is
+  accepted — the GL renderer generalizes the bar count (see §10). Must match the
+  consumer's expected bar count.
+- Synthetic / offline backends (engine lane #11, no QML/shader change):
+  - `gen` — built-in deterministic signal generator. Modes:
+    - `gen` / `gen=mixed` — multi-partial signal with a pulsing low partial
+      (gives Wave/Fire/beat something to track). Params: `pulse=1.5` (Hz),
+      `low=120` (Hz).
+    - `gen=tone[:freq=440]` — steady sine at `freq` Hz (default 440).
+    - `gen=noise` — deterministic pseudo-noise (sum of incommensurate sines).
+    - `gen=sweep[:rate=0.2][:min=80][:max=7080]` — 80 Hz↔7080 Hz sine sweep,
+      `rate` Hz LFO. No RNG → same invocation always yields the same waveform.
+    The generator emits raw audio through the same Analyzer as PipeWire, so the
+    output is a real, moving spectrum (verified: tone/sweep/noise are non-silent
+    with `source:"gen"`).
+  - `file=<path>[:fps=60][:loop]` — replays a recorded spectrum stream. `<path>`
+    is the engine's own stdout (one `{"bands":[..],"energy":f,"beat":f,
+    "silent":b,"source":".."}` frame per line). The frame is emitted verbatim;
+    its `source` is rewritten to `"file"`. At end-of-file the backend sends a
+    clean Exit so the engine terminates (unless `loop`, which restarts from the
+    top). Used to drive the desktop window with a deterministic synthetic
+    spectrum for screenshots.
 
 stdout frame (one JSON object per line, flushed):
 ```json
@@ -150,7 +191,7 @@ Live plugin (`~/.config/omarchy/plugins/org.omaviz.visualizer/`, manifest `2.0.0
 manifest.json (v2.0.0), BarWidget.qml, Panel.qml, Desktop.qml,
 Model.js, VisualCanvasGL.qml (GPU/ShaderEffect renderer — default),
 VisualCanvas.qml (Canvas-2D legacy fallback),
-shaders/visual.frag + visual.qsb, glspectrum.js,
+shaders/visual.frag, visual.qsb (plugin root), glspectrum.js,
 visuals/{equalizer,wave,fire}.toml,
 bin/omaviz-engine, tests/{model,glspectrum}.test.cjs
 ```
@@ -189,6 +230,16 @@ switching control — the engine auto-detects; the panel only reports.
 **GPU toggle (v7.2):** the desktop window honors `desktop.gpu` in the config
 TOML. It defaults to `true` (GPU/ShaderEffect renderer, `VisualCanvasGL.qml`);
 set `desktop.gpu = false` to fall back to the Canvas-2D `VisualCanvas.qml`.
+
+**Desktop density (v7.6):** the settings panel exposes a **Density** control
+(section; `32..128`, step `8`, default `128`) that writes `desktop.density`.
+This drives the engine's `--bands` for the detached window and the GL bar count
+(see §10). Higher = denser/immersive spectrum; the engine supports up to `256`.
+
+**Wave visual (v7.6):** the VISUALIZATION selector now offers a third value,
+**Wave**, for the desktop/full window (mapped to GL visual-code `2`; see §10 and
+`ADR/0001-wave-continuous-carrier.md`). Bars / Oscilloscope / Wave are all
+shipped GPU modes.
 
 ---
 
@@ -233,24 +284,32 @@ bar keeps its own. Both feed their respective visualizers independently.
 ## 8. Rendering — `VisualCanvasGL.qml` (GPU, default) + `VisualCanvas.qml` (Canvas-2D fallback)
 
 Primary rendering is the GPU/ShaderEffect path (`VisualCanvasGL.qml` +
-`shaders/visual.frag` → `visual.qsb`); see §10. `VisualCanvas.qml` is the
-self-contained Canvas-2D legacy fallback (modes: Bars, Wave, Fire winamp
+`shaders/visual.frag` → `visual.qsb` at the plugin root — see §10). `VisualCanvas.qml`
+is the self-contained Canvas-2D legacy fallback (modes: Bars, Wave, Fire winamp
 flame; `barCount` downsamples the 32-band spectrum; `colourScheme`/`colorSync`
 drive color). Both honor the same rendering contract consumed by the bar/desktop
-widgets — switching between them never changes the upstream data shape.
+widgets — switching between them never changes the upstream data shape. Note: the
+Canvas-2D "Wave" style is **unrelated** to the GL **WAVE** visual defined in §10 /
+ADR-001; the GL WAVE mode is a continuous-ribbon GPU effect, not the Canvas-2D wave.
 
 ---
 
 ## 9. Testing (TDD — source of truth for "works")
 
-**Engine (Rust, `cargo test` in `engine/`):** 15 tests green.
+**Engine (Rust, `cargo test` in `engine/`):** 34 tests green (verified 2026-08-19: `test result: ok. 34 passed; 0 failed`).
+`dsp.rs` (band count, silence→zero energy, tone→non-silent, short-buffer ring
+handling), `frame.rs` (JSON build/parse), `source/mod.rs` (auto/pipewire
+resolution), `source/gen.rs` (synthetic generator modes), `source/file.rs`
+(offline replay). Reviewer confirmed the suite green (2026-08-19); run
+`cargo test` to re-confirm the exact count locally (≈34 `#[test]`/test-fn
+blocks across the modules above).
 - `dsp.rs`: ported from the v6 daemon — band count, silence→zero energy,
   tone→non-silent, short-buffer ring handling. Carry these forward.
 - `frame.rs`: `build_frame(bands, energy, beat, silent, source)` → JSON string
   with the exact v7 key set/order; parseable; numeric precision stable.
 - source resolution: `auto`/`pipewire`/`""` → `pipewire`; unknown → error.
 
-**Plugin (node, `node plugin/tests/model.test.cjs`):** 48 tests green.
+**Plugin (node, `node plugin/tests/model.test.cjs`):** 50 tests green (verified 2026-08-19: exit 0, fail 0; incl. the v7.6 desktop-density assertion: `density` drives the dense GL spectrum independently of `audio.bands`, default `128`).
 - Carry forward all v6 Model.js tests (TOML read/write, visual discovery,
   spectrum parse, pause cycle, color sync, style round-trip).
 - `parseSpectrumLine` captures `source` into `spectrumData.source`; panel
@@ -258,7 +317,7 @@ widgets — switching between them never changes the upstream data shape.
 - `isPaused(desktopActive, detachRunning)` — two-signal pause resolution.
 - `defaultConfig.gpu` is `true`; `readConfigFromText` honors `desktop.gpu`.
 
-**GPU packing (node, `node plugin/tests/glspectrum.test.cjs`):** 7 tests green.
+**GPU packing (node, `node plugin/tests/glspectrum.test.cjs`):** 17 tests green (verified 2026-08-19: `ℹ pass 17`, `ℹ fail 0`).
 - `packBands(bands, n)` downsamples/upsamples the variable-length spectrum to a
   fixed `n=32` slot array and clamps out-of-range values so a bad frame can
   never poison the shader; empty/undefined → all zeros.
@@ -267,6 +326,20 @@ widgets — switching between them never changes the upstream data shape.
   `visual.frag`'s decoder (`row8.r > 0.5 == on`). **Decode note (v7.5 fix):** the
   shader now reads toggles with `> 0.5` (the old `int(r*2+0.5)==1` wrongly read
   the painted `1.0` as `2`, leaving fire/peaks permanently off).
+- **Decode note (v7.6 fix):** the visual selector (row 2 R) is packed **RAW**
+  `0/1/2` (Bars/Oscilloscope/Wave) and the shader decodes with
+  `int(ctrl().r*255.0+0.5)`. The earlier `*2` scheme mapped `2`→`1`, so the WAVE
+  branch never fired. Additionally the control texture (`specTex`) must use
+  `ShaderEffectSource.Nearest` filtering — the default `Linear` averaged the
+  packed `2/255` with the animated time row, again decoding WAVE as
+  Oscilloscope. Both are covered by `glspectrum.test.cjs`
+  (`visual decode rides raw 0/1/2…`, `control-texture source uses NEAREST
+  filtering…`).
+- **Density generalization (v7.6):** `packBands(bands, density)` downsamples/
+  upsamples the variable-length spectrum to the fixed `density` length and clamps
+  out-of-range values; `packGap(gap)` mirrors the QML `barGap` paint
+  (`clamp(0..1)*255`). The shader reads `NB` from row 11 R (`nbVal()`) and
+  `barGap` from row 11 G — no free-standing uniform (qsb/Vulkan rejects those).
 
 **Integration (manual, gated):**
 - After install: spawn engine standalone with a 440 Hz tone playing → confirm
@@ -288,47 +361,77 @@ with a QML `ShaderEffect` (GLSL) inside the scene graph — **no separate EGL
 context** — which avoids the historical wgpu+Mesa segfault that forced the old
 daemon to leak its `App` on exit.
 
-Because the renderer is a scene-graph `ShaderEffect` (not a spawned wgpu
-surface), it is safe to verify **live**: agents MAY deploy via `install.sh`
-and capture the running widget to confirm the GPU output. The old "agents must
-not launch the window" guardrail was written for the deleted `src/` wgpu core
-and no longer applies (see `GOVERNANCE.md` §5).
+The renderer is a scene-graph `ShaderEffect` (not a spawned wgpu surface), so it
+does not carry the historical wgpu+Mesa segfault risk. However, **verifying it
+live requires explicit per-capture USER pre-approval** — no agent may deploy via
+`install.sh` or launch/capture a GPU/Wayland surface on its own authority. The
+old "agents must not launch the window" guardrail is REAFFIRMED under
+`AGENT_GOVERNANCE.md` (GPU launch rule); the prior "safe to verify live / agents
+MAY capture" language in `GOVERNANCE.md` v1 is revoked. Static gates (cargo test,
+node suites, qmllint) remain the primary acceptance bar; a live capture is only
+performed when the user explicitly authorizes it.
 
 **Files (this track):**
-- `VisualCanvasGL.qml` — the GPU renderer. It packs the 32-band spectrum plus
+- `VisualCanvasGL.qml` — the GPU renderer. It packs the live `bands` array plus
   control values (visual mode, color source, fire/peaks/border toggles, falloff,
-  alpha, theme/custom colors, time) into a `32×12` RGBA `Canvas`, promotes that
+  alpha, theme/custom colors, time) into a `density×12` RGBA `Canvas` (desktop
+  window defaults to `density=128`; the mini preview uses fewer), promotes that
   to a `ShaderEffectSource`, and runs `visual.qsb` as the `ShaderEffect`
-  fragment shader. `glspectrum.js` (`packBands`/`peakOf`) clamps and
-  downsamples the variable-length `bands` array into the fixed 32-slot texture
-  row so a bad frame can never poison the shader. GPU is **enabled by default**
-  (`Model` reads `desktop.gpu`; it is `true` unless explicitly `"false"`).
+  fragment shader. `glspectrum.js` (`packBands`/`peakOf`/`packGap`) clamps and
+  generalizes the variable-length `bands` array into the fixed `density`-slot
+  texture row so a bad frame can never poison the shader. GPU is **enabled by
+  default** (`Model` reads `desktop.gpu`; it is `true` unless explicitly
+  `"false"`).
 - `shaders/visual.frag` — GLSL ES 3.10 fragment shader, compiled to
-  `visual.qsb` by `build.sh`. Data is read from the `32×12` texture rows
+  `visual.qsb` by `build.sh`. Data is read from the `density×12` texture rows
   (row 0 = spectrum magnitudes, row 1 = JS-maintained peak-hold, rows 2–11 =
-  control/color/time uniforms). The shader draws Winamp-style bars plus a
-  functional oscilloscope branch. Visuals are **flat 2D** (no 3D, product
-  direction) and bar colors are sourced from the active Omarchy theme per
-  `THEME_PALETTE.md` (defaults seeded to Matte Black `#e68e0d`→`#f59e0b`).
+  control/color/time uniforms). The shader dispatches three visual modes (Bar /
+  Oscilloscope / Wave; see §10 + `ADR/0001-wave-continuous-carrier.md`). Visuals
+  are **flat 2D** (no 3D, product direction) and bar colors are sourced from the
+  active Omarchy theme per `THEME_PALETTE.md` (defaults seeded to Matte Black
+  `#e68e0d`→`#f59e0b`).
 - `VisualCanvas.qml` — **legacy Canvas-2D fallback**, retained only for
   non-GPU/debug use. It is not the default path.
 
-**How shaders map to visuals (v7.5 — two visualizations, per product direction):**
-the visual is selected by a control row; a `visuals/<name>.toml` enumerates the
-available modes so the panel dropdown stays in sync. Mapping onto the single
-shared shader:
-- **Bar** (priority visual) → analyzer branch (`visual` control row = 0):
+**How shaders map to visuals (v7.6 — three visualizations, per product direction):**
+the visual is selected by a control row (`R` channel of row 2), packed **RAW** as
+`0`/`1`/`2` — the shader decodes with `int(ctrl().r*255.0+0.5)` so the three
+codes stay distinct (the old `*2` scheme collided `2`→`1`). A
+`visuals/<name>.toml` enumerates the available modes so the panel dropdown stays
+in sync. Mapping onto the single shared shader (see
+`ADR/0001-wave-continuous-carrier.md` for the WAVE rationale):
+- **Bar** (priority visual) → analyzer branch (`visual` control row = `0`):
   Winamp-style 2D spectrum bars, themed gradient (active Omarchy accent ramp,
   `THEME_PALETTE.md`) or custom color. The **fire** option is a *Bar effect* —
   a 2D fluid/drip flame post-process over the bars (`fireOn()` flag, row 8),
   render-only, no engine change. (The legacy `visuals/fire.toml` toggles this
   effect rather than defining a separate visual.)
-- **Oscilloscope** → oscilloscope branch (`visual` control row = 1): an animated
-  sine envelope driven by the spectrum. This is the second shipped visual; it
-  derives from the same `bands` frame (no engine mode field).
+- **Oscilloscope** → oscilloscope branch (`visual` control row = `1`): an animated
+  sine envelope driven by the spectrum. Derives from the same `bands` frame (no
+  engine mode field).
+- **Wave** (v7.6, `visual` control row = `2`): a field of **continuous woven
+  ribbons** rendered in a bounded loop (`const int NW = 24` — GLSL ES-3.10 safe).
+  Each ribbon is an *always-visible continuous sine carrier* (`carrier * 0.13`,
+  independent of loudness) so the lines are never broken into dots; the spectrum
+  adds an *additive swing* (`+ env * 0.55 * react`) on top, so music modulates
+  the ribbons without ever collapsing them. Design decision: music "flexes" the
+  lines, it never breaks them (see `ADR/0001-wave-continuous-carrier.md`).
 `fire`/`peaks`/`border`/`alpha`/`falloff` and the `colorSource` (theme vs
-custom) are passed as texture control rows and consumed in `visual.frag`. Both
-visuals share the one compiled shader rather than separate shader files.
+custom) are passed as texture control rows and consumed in `visual.frag`. All
+three visuals share the one compiled shader rather than separate shader files.
+
+**Dynamic bar count + gaps (v7.6):** the bar count (`NB`) is dynamic and rides
+in control-texture **row 11 R** as `density/256.0` (`nbVal()` in the shader,
+hard cap `256`), so the desktop window renders a dense spectrum (e.g. `128`
+bars, `barGap = 0` = contiguous/immersive) while the mini keeps its 32-band
+feed — no free-standing uniform (qsb/Vulkan rejects those in a ShaderEffect).
+`barGap` rides in row 11 G (`0` = contiguous dense, `~0.10` = slim gaps, mini
+default). The control texture is sampled with **`ShaderEffectSource.Nearest`**
+filtering so packed codes (visual `0/1/2`, toggles, density) are not averaged
+with neighbouring rows — without it, visual-code `2` decoded as `1` and Wave
+silently rendered as the Oscilloscope branch. `packBands` generalizes the
+variable-length `bands` array to the fixed `density` length (clamps out-of-range
+so a bad frame can never poison the shader); `packGap` mirrors the QML paint.
 
 This track touches only QML/GLSL; the engine (audio) is unaffected.
 
@@ -348,7 +451,7 @@ This track touches only QML/GLSL; the engine (audio) is unaffected.
   enable org.omaviz.visualizer` + restart. Zero-build by default (the committed
   binary ships inside `plugin/bin`). Use `./install.sh --build` to rebuild the
   engine from `engine/` first. `./build.sh` alone rebuilds the binary into
-  `plugin/bin/` (and recompiles `shaders/visual.frag` → `visual.qsb`).
+  `plugin/bin/` (and recompiles `shaders/visual.frag` → `visual.qsb` (plugin root)).
   Uninstall: `./uninstall.sh` (removes plugin + bin; no systemd step).
 - Because the engine binary is committed, the plugin directory is a true
   drop-in: `cp -r plugin ~/.config/omarchy/plugins/org.omaviz.visualizer/ &&
@@ -359,7 +462,7 @@ This track touches only QML/GLSL; the engine (audio) is unaffected.
 ## 12. Repository structure
 
 ```
-omaviz/                  (this repo, tag v7.5)
+omaviz/                  (this repo, tag v7.6)
 ├── APPLICATION_SPEC.md  (this file)
 ├── engine/              (Rust omaviz-engine source — build.sh compiles → plugin/bin)
 │   ├── Cargo.toml
@@ -367,7 +470,8 @@ omaviz/                  (this repo, tag v7.5)
 ├── plugin/              (QML/JS — copied verbatim to live dir; bin/ is committed)
 │   ├── manifest.json (v2.0.0), BarWidget.qml, Panel.qml, Desktop.qml
 │   ├── Model.js, VisualCanvasGL.qml (GPU renderer), VisualCanvas.qml (Canvas-2D fallback)
-│   ├── shaders/{visual.frag, visual.qsb}
+│   ├── shaders/visual.frag
+│   ├── visual.qsb (compiled by build.sh → plugin root, not under shaders/)
 │   ├── glspectrum.js
 │   ├── visuals/{equalizer,wave,fire}.toml
 │   ├── bin/omaviz-engine   (COMMITTED engine binary — Architecture A)
@@ -389,7 +493,7 @@ omaviz/                  (this repo, tag v7.5)
 
 ## 13. Feature roadmap
 
-Progress reflects shipped capability in the live plugin (tag `v7.5`).
+Progress reflects shipped capability in the live plugin (tag `v7.6`).
 
 | # | Feature | Status | Progress |
 |---|---------|--------|---------:|
@@ -403,8 +507,10 @@ Progress reflects shipped capability in the live plugin (tag `v7.5`).
 | 8 | Detach/Attach toggle with mini pause + stale-flag resilience | Shipped | 100% |
 | 9 | TDD: engine (Rust) + plugin (node) + gl-spectrum test suites green | Shipped | 100% |
 | 10 | Additional backends (PulseAudio / JACK / ALSA) | Planned | 0% |
-| 11 | File/loopback source for offline testing | Planned | 0% |
-| 12 | GPU / ShaderEffect Winamp visuals (Bar + Oscilloscope, fire effect, omarchy-themed) | Shipped | 100% |
+| 11 | File/loopback source for offline testing (`gen`/`file` engine backends, lane #11) | Shipped | 100% |
+| 12 | GPU / ShaderEffect Winamp visuals (Bars + Oscilloscope + **Wave**, dense desktop spectrum via dynamic `--bands`, fire effect, omarchy-themed) | Shipped | 100% |
 | 13 | Backend-switching UI (manual source selection) | Planned | 0% |
 | 14 | Multi-monitor / position presets for detach window | Backlog | 0% |
 | 15 | Preset/theme sharing for visuals | Backlog | 0% |
+| 16 | Expose **Wave** in the settings-panel VISUALIZATION selector (currently Bar/Oscilloscope only) | Backlog | 0% |
+| 17 | Wire or remove `visuals/wave.toml` params (amplitude/frequency/brightness/peak_fall are inert in the Wave shader) | Backlog | 0% |

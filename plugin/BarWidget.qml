@@ -135,13 +135,17 @@ BarWidget {
   // ---- Detached desktop-window launcher (lives on the persistent BarWidget) ----
   // Kept on the BarWidget (not the panel) so the window survives the panel
   // closing. detach()/attach() are methods here; the panel button just calls
-  // root.hostWidget.detach(). Uses the `environment` property (not an `env`
-  // wrapper) so setting running=false terminates the child quickshell
-  // directly — that is what makes Attach reliable.
+  // root.hostWidget.detach(). NOTE: we deliberately do NOT set `environment`
+  // here — Quickshell's Process.environment REPLACES (not merges) the child's
+  // env, which would wipe PATH/WAYLAND_DISPLAY/HOME and make the bare
+  // `quickshell` command fail to exec/connect (window never opens). The child
+  // inherits the parent Quickshell env, which is correct, and setting
+  // running=false terminates it directly (that is what makes Attach reliable).
+  // Desktop.qml imports no qs.* modules, so no custom QML2_IMPORT_PATH is
+  // needed either.
   Process {
     id: detachProc
     running: false
-    environment: { "QML2_IMPORT_PATH": "/usr/share/omarchy/shell" }
     stdout: StdioCollector { onDataChanged: function() {} }
     onExited: function(code, status) {
       // Window closed (or launch failed). Resume the mini so it is never
@@ -239,8 +243,15 @@ BarWidget {
     text: ""
     hasVisualContent: true
 
+    // Left-click opens the SETTINGS PANEL (user's explicit final intent:
+    // "it should open the settings panel" — correcting an earlier misstatement
+    // that left-click should open the desktop window). Right-click opens the
+    // detached desktop visualization window. detach()/attach() live on BarWidget
+    // (not the panel) so the window survives the panel closing — and the viz is
+    // reachable directly without the panel having to mount first.
     onPressed: function(b) {
       if (b === Qt.LeftButton) root.toggle()
+      else if (b === Qt.RightButton) root.detach()
     }
 
     Item {

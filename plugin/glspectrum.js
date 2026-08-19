@@ -36,6 +36,17 @@ function peakOf(packed) {
 function packFire(fire) { return fire ? 1.0 : 0.0 }
 function fireOn(packed) { return packed > 0.5 }
 
+// Bar-gap control -> control-texture row 11 G value (0..1 of one bar slot),
+// mirroring VisualCanvasGL.qml (Math.round(clamp(barGap,0,1)*255)) and
+// visual.frag (gap() = clamp(scopeRow().g, 0.0, 0.9)). 0 = contiguous.
+function packGap(gap) {
+  if (typeof gap !== "number" || isNaN(gap)) gap = 0
+  if (gap < 0) gap = 0
+  if (gap > 1) gap = 1
+  return gap
+}
+function gapOf(packed) { return packed > 0.5 ? 1.0 : packed }
+
 if (typeof module !== "undefined" && module.exports) {
-  module.exports = { packBands: packBands, peakOf: peakOf, packFire: packFire, fireOn: fireOn }
+  module.exports = { packBands: packBands, peakOf: peakOf, packFire: packFire, fireOn: fireOn, packGap: packGap, gapOf: gapOf }
 }

@@ -82,6 +82,10 @@ function readConfigFromText(tomlText) {
   d.sensitivity = readTomlFloat(tomlText, "audio", "sensitivity") ?? d.sensitivity
   d.smoothing = readTomlFloat(tomlText, "audio", "smoothing") ?? d.smoothing
   d.bands = readTomlInt(tomlText, "audio", "bands") ?? d.bands
+  // v7.6 desktop window bar density (spectrum resolution). The engine accepts
+  // any N; the GL renderer's bar count is generalized by the GL track. The
+  // Canvas-2D desktop fallback + bar preview already render bands.length.
+  d.density = readTomlInt(tomlText, "desktop", "density") ?? d.density
   d.visualMini = readTomlValue(tomlText, "mini", "visual") ?? d.visualMini
   d.visualDesktop = readTomlValue(tomlText, "desktop", "visual") ?? d.visualDesktop
   d.visualFull = readTomlValue(tomlText, "full", "visual") ?? d.visualFull
@@ -124,6 +128,7 @@ function defaultConfig() {
     sensitivity: 1.0,
     smoothing: 0.5,
     bands: 32,
+    density: 128,       // desktop window spectrum resolution (dense/immersive default)
     visualMini: "equalizer",
     visualDesktop: "equalizer",
     visualFull: "wave",
@@ -147,7 +152,7 @@ function defaultConfig() {
 // Conservative: updates in place, appends section/key if missing.
 function writeConfigKey(tomlText, section, key, value) {
   if (!tomlText) {
-    tomlText = "[audio]\nsensitivity = 1.0\nsmoothing = 0.5\nbands = 32\n\n[mini]\nvisual = \"equalizer\"\n\n[desktop]\nvisual = \"equalizer\"\n\n[full]\nvisual = \"wave\"\n"
+    tomlText = "[audio]\nsensitivity = 1.0\nsmoothing = 0.5\nbands = 32\n\n[mini]\nvisual = \"equalizer\"\nstyle = \"classic\"\ncolor_sync = false\n\n[desktop]\nvisual = \"equalizer\"\ndensity = 128\n\n[full]\nvisual = \"wave\"\n"
   }
   var lines = tomlText.split("\n")
   var header = "[" + section + "]"
