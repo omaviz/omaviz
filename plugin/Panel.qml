@@ -77,7 +77,10 @@ Panel {
 
   // ---- Live preview of the selected mini visual (Canvas-2D, GPU-free) ----
   function currentViz() {
-    return (root.readCfg("visual", "mini") || "equalizer") === "oscilloscope" ? "Wave" : "Bars"
+    var v = root.readCfg("visual", "mini") || "equalizer"
+    if (v === "oscilloscope") return "Wave"
+    if (v === "wave") return "Wave"
+    return "Bars"
   }
   function currentStyle() {
     return (root.readCfg("style", "mini") || "classic") === "fire" ? "Fire" : "Classic"
@@ -176,15 +179,20 @@ Panel {
 
         PanelSeparator { }
 
-        // ---- VISUALIZATION (Bar vs Oscilloscope; Fire is a style, not a viz) ----
+        // ---- VISUALIZATION (Bar / Oscilloscope / Wave; Fire is a style, not a viz) ----
         PanelSectionHeader { text: "VISUALIZATION" }
         ButtonGroup {
           id: vizGroup
           width: parent.width
-          options: ["Bar", "Oscilloscope"]
-          value: (root.readCfg("visual", "mini") || "equalizer") === "oscilloscope" ? "Oscilloscope" : "Bar"
-          onChanged: function(v) {
-            var key = v === "Oscilloscope" ? "oscilloscope" : "equalizer"
+          options: ["Bar", "Oscilloscope", "Wave"]
+          property string cfgViz: (root.readCfg("visual", "mini") || "equalizer")
+          value: cfgViz === "oscilloscope" ? "Oscilloscope"
+                 : cfgViz === "wave" ? "Wave"
+                 : "Bar"
+          onchanged: function(v) {
+            var key = v === "Oscilloscope" ? "oscilloscope"
+                    : v === "Wave" ? "wave"
+                    : "equalizer"
             commit("visual", '"' + key + '"', "mini")
             commit("visual", '"' + key + '"', "desktop")
           }

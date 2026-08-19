@@ -13,7 +13,8 @@ precision highp float;
 //   row 7  theme top RGB
 //   row 8  R=fire(0/1, >0.5 == on) G=unused B=unused
 //   row 9  R=peaks(0/1, >0.5 == on) G=falloff(0..1) B=unused A=unused
-//   row 10 R=alpha(0..1) G=unused B=unused   (bar opacity)
+//   row 10 R=RESERVED/UNUSED G=RESERVED/UNUSED B=unused
+//         (formerly alpha; main() outputs alpha 1.0, so unused. ADR-0004)
 //   row 11 R=density/256 (NB bar count)  G=barGap(0..1)  B=unused
 // Qt6 ShaderEffect provides the default vertex shader + qt_TexCoord0.
 // NB (bar count) is DYNAMIC (density, 1..256) and rides in the control texture
@@ -188,7 +189,11 @@ void main() {
     float wave = sin(ph) * w + 0.15 * sin(ph * 3.0 + 1.0) * w;
     float wy = 0.5 + wave * 0.45;
     float d = abs(y - wy);
-    float lw = (alphaRow().g * 0.02) + 0.004;
+    // ADR-0004: oscilloscope line width is fixed; row 10 G is reserved/unused
+    // (VisualCanvasGL packs row 10 G = 0), so the former `(alphaRow().g*0.02)`
+    // term was dead. Use a fixed width.
+    const float OSC_LINE_W = 0.004;
+    float lw = OSC_LINE_W;
     vec3 sc = themeColor(y);
     float m;
     if (sStyle == 1) {
