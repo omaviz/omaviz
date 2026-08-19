@@ -201,5 +201,24 @@ test("WAVE is audio-reactive: continuous carrier modulated by bandAt envelope", 
   assert.ok(!frag.includes("float loud  = 0.35 + 1.10 * drive"), "old loud-floor baseline removed")
 })
 
+// T-012 (reviewer P3): T-009 / ADR-0004 removed the dead `alphaRow().g*0.02`
+// term from the oscilloscope line-width. Guard it so a regression can't
+// silently revive the dead input (control-texture row 10 G is reserved/unused,
+// always 0 — VisualCanvasGL never paints it).
+function stripComments(src) {
+  return src
+    .replace(/\/\/[^\n]*/g, "")        // line comments
+    .replace(/\/\*[\s\S]*?\*\//g, "")  // block comments
+}
+const fragNoComments = stripComments(frag)
+test("T-009/ADR-0004: osc line width uses fixed OSC_LINE_W (dead alphaRow input gone)", () => {
+  assert.ok(frag.includes("const float OSC_LINE_W = 0.004;"),
+    "OSC_LINE_W const defined at 0.004")
+  assert.ok(fragNoComments.includes("lw = OSC_LINE_W"),
+    "osc line width derives from the fixed OSC_LINE_W const")
+  assert.ok(!fragNoComments.includes("alphaRow().g"),
+    "dead alphaRow().g term removed from live shader code (only the row-10 accessor def remains)")
+})
+
 console.log(`\nℹ pass ${passed}`)
 console.log(`ℹ fail 0`)
