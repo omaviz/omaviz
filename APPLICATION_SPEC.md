@@ -94,7 +94,7 @@ VisualCanvasGL (GPU/ShaderEffect) / VisualCanvas (Canvas-2D) — unchanged contr
   the old bridge across reboots).
 - **Lifecycle tradeoff (accepted):** capture stops when the Omarchy shell
   exits/restarts. This is the explicit cost of "no daemon."
-- **Backend auto-mapping:** the engine defaults to `--source auto`. In v7.2.0
+- **Backend auto-mapping:** the engine defaults to `--source auto`. In v7.6.0
   only PipeWire is compiled in, so `auto` resolves to PipeWire. Future builds
   add more backends and `auto` probes in priority order (PipeWire → Pulse →
   JACK → ALSA). The plugin **never passes `--source`** — it just spawns the
@@ -176,7 +176,7 @@ stdout frame (one JSON object per line, flushed):
   consumes via `Model.parseSpectrumLine`.
 - `energy`/`beat`: smoothed envelope + simple onset detection.
 - `silent`: `energy < 0.02`.
-- `source`: the resolved backend name (always `"pipewire"` in v7.2.0). Consumed
+- `source`: the resolved backend name (always `"pipewire"` in v7.6.0). Consumed
   by the panel's read-only source display.
 
 The frame is emitted at ~60 Hz regardless of audio chunk rate (the engine
