@@ -75,6 +75,13 @@ Item {
     id: specCanvas
     width: root.density; height: 12
     visible: true
+    // ADR-0005: force NEAREST on the control texture. A layer renders this
+    // Canvas through an FBO and inherits NEAREST when smoothing is disabled;
+    // the ShaderEffectSource (specTex) samples that layer texture. Qt6 exposes
+    // no `filtering` property on ShaderEffectSource, so this is the only
+    // QML-facing way to keep the discrete 8-bit control codes exact.
+    layer.enabled: true
+    layer.smooth: false
     onPaint: {
       var ctx = getContext("2d")
       var n = root.density
@@ -138,13 +145,15 @@ Item {
     live: true
     hideSource: true
     textureSize: Qt.size(root.density, 12)
-    // NEAREST filtering is REQUIRED: the control texture packs discrete codes
-    // (visual 0/1/2 in row 2 R, toggles in rows 8/9, density in row 11) as
-    // exact 8-bit values. With the default LINEAR filtering, sampling a row
-    // averages it with its vertical neighbours (e.g. the animated time row 3),
-    // so visual-code 2 (R=2/255) reads as ~1 -> wave silently renders as the
-    // oscilloscope branch. Nearest keeps each control cell exact.
-    filtering: ShaderEffectSource.Nearest
+    // NEAREST sampling is REQUIRED: the control texture packs discrete 8-bit
+    // codes (visual 0/1/2 in row 2 R, toggles in rows 8/9, density in row 11)
+    // as exact values. Qt6 has NO `filtering` property on ShaderEffectSource
+    // (a `filtering: ...` line is a silent no-op), so NEAREST is forced via the
+    // source item's layer: a layer is rendered through an FBO and inherits
+    // NEAREST when `smooth:false`. Without this the default LINEAR filtering
+    // averages a control row with its vertical neighbours (e.g. the animated
+    // time row 3), so a packed value 2 (R=2/255) reads back as ~1 -> wave
+    // silently renders as the oscilloscope branch. See ADR-0005.
   }
 
   ShaderEffect {

@@ -178,10 +178,16 @@ test("control-texture source uses NEAREST filtering (decode-race guard)", () => 
   // toggles in rows 8/9, density in row 11). The default LINEAR filtering
   // averages a row with its vertical neighbours (e.g. the animated time row),
   // so a packed value 2 (R=2/255) reads back as ~1 -> wave silently renders
-  // as the oscilloscope branch. Nearest keeps each control cell exact. This
-  // regression bit Wave/Oscilloscope (they rendered only the background).
-  assert.ok(/ShaderEffectSource\s*\{[\s\S]*?id:\s*specTex[\s\S]*?filtering:\s*ShaderEffectSource\.Nearest/.test(GLQML),
-    "specTex (control texture) must set filtering: ShaderEffectSource.Nearest")
+  // as the oscilloscope branch. Qt6 exposes NO `filtering` property on
+  // ShaderEffectSource (a `filtering: ...` line is a silent no-op), so NEAREST
+  // is forced by routing specCanvas through a layer FBO with smoothing
+  // disabled. See ADR-0005.
+  assert.ok(/id:\s*specCanvas[\s\S]*?layer\.enabled:\s*true/.test(GLQML),
+    "specCanvas must enable a layer (NEAREST control texture, ADR-0005)")
+  assert.ok(/id:\s*specCanvas[\s\S]*?layer\.smooth:\s*false/.test(GLQML),
+    "specCanvas layer must disable smoothing so the control texture samples NEAREST")
+  assert.ok(!/filtering:\s*ShaderEffectSource\.Nearest/.test(GLQML),
+    "no-op ShaderEffectSource.filtering line must be removed (ADR-0005)")
 })
 
 test("WAVE is audio-reactive: continuous carrier modulated by bandAt envelope", () => {
