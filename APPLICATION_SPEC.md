@@ -22,7 +22,7 @@ The prior multi-process design (daemon + socket + bridge) is archived in `v6/`.
   directory + `omarchy plugin enable` — no Rust toolchain required. This matches
   Omarchy's native plugin model (every other plugin is a drop-in directory).
 - Support **multiple audio backends** behind an auto-detected source mapping.
-  v7.2.0 ships **PipeWire only** (plus internal verification backends `gen`
+  v7.6.0 ships **PipeWire only** (plus internal verification backends `gen`
   and `gen=<mode>`/ `file=<path>` used only by the test harness — see §10);
   PulseAudio/JACK/ALSA follow later with **no plugin (QML) changes** —
   the plugin never picks a backend. (The `gen`/`file` verification backends are
@@ -33,7 +33,7 @@ The prior multi-process design (daemon + socket + bridge) is archived in `v6/`.
   changes; the product does not.
 - Show the active audio source in the settings panel (read-only).
 
-**Non-Goals (v7.2.0)**
+**Non-Goals (v7.6.0)**
 - No microphone monitoring.
 - No backend switching UI (source is auto + displayed, not chosen).
 - No separate EGL/wgpu context — rendering uses the QML scene-graph
@@ -309,7 +309,7 @@ blocks across the modules above).
   with the exact v7 key set/order; parseable; numeric precision stable.
 - source resolution: `auto`/`pipewire`/`""` → `pipewire`; unknown → error.
 
-**Plugin (node, `node plugin/tests/model.test.cjs`):** 50 tests green (verified 2026-08-19: exit 0, fail 0; incl. the v7.6 desktop-density assertion: `density` drives the dense GL spectrum independently of `audio.bands`, default `128`).
+**Plugin (node, `node plugin/tests/model.test.cjs`):** 55 tests green (verified 2026-08-19: exit 0, fail 0; incl. the v7.6 desktop-density assertion: `density` drives the dense GL spectrum independently of `audio.bands`, default `128`).
 - Carry forward all v6 Model.js tests (TOML read/write, visual discovery,
   spectrum parse, pause cycle, color sync, style round-trip).
 - `parseSpectrumLine` captures `source` into `spectrumData.source`; panel
