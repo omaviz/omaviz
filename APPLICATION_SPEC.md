@@ -241,6 +241,18 @@ This drives the engine's `--bands` for the detached window and the GL bar count
 `ADR/0001-wave-continuous-carrier.md`). Bars / Oscilloscope / Wave are all
 shipped GPU modes.
 
+**Wave in the panel selector (T-007 / ADR-0002):** the settings-panel
+VISUALIZATION ButtonGroup (`Panel.qml`) now lists **`["Bar", "Oscilloscope",
+"Wave"]** (was `["Bar", "Oscilloscope"]`). Exact UI label is **`Wave`** — text
+only, no icon, matching `Bar`/`Oscilloscope` (all three are text ButtonGroups; no
+iconography is used elsewhere in this group). Selecting `Wave` commits
+`visual = "wave"` to **both** `[mini]` and `[desktop]` sections (same commit
+pattern as the existing Bar/Oscilloscope handler), so the change applies to the
+mini and the detached window. The hand-edited `config.toml` override
+(`[desktop] visual = "wave"`) remains valid and is now the same value the panel
+writes; `Desktop.qml` already maps `equalizer → Bars`, `oscilloscope →
+Oscilloscope`, `wave → Wave` (GL code 2). No engine change — GUI-exposure only.
+
 ---
 
 ## 7. Detach / desktop window lifecycle (v7.2)
@@ -408,9 +420,22 @@ in sync. Mapping onto the single shared shader (see
   effect rather than defining a separate visual.)
 - **Oscilloscope** → oscilloscope branch (`visual` control row = `1`): an animated
   sine envelope driven by the spectrum. Derives from the same `bands` frame (no
-  engine mode field).
+  engine mode field). **Line width (T-009 / ADR-0004):** the branch historically
+  read `alphaRow().g * 0.02` to set stroke width, but row 10 G is **never packed**
+  (VisualCanvasGL.qml packs `row(10, alpha*255, 0, 0)` — G/B/A are `0`), so the
+  term reduced to a constant `0.004` floor and the input was dead. Per ADR-0004 the
+  `*0.02` dead term is removed: oscilloscope line width is the fixed `0.004`
+  constant. `width` is intentionally not a user knob (the spectrum `density` and
+  `peaks` already control line detail). Row 10 is now **reserved** (only `R` =
+  `alpha` is used; G/B/A are reserved, not "unused-and-read").
 - **Wave** (v7.6, `visual` control row = `2`): a field of **continuous woven
   ribbons** rendered in a bounded loop (`const int NW = 24` — GLSL ES-3.10 safe).
+  The ribbon geometry (per-ribbon `freq = 4.0 + depth*9.0`, `phase` from
+  `meta().r`, carrier amplitude `0.13`, envelope swing `env*0.55*react`) is
+  **computed in-shader from `depth` + the time uniform `meta().r`, not from
+  `visuals/wave.toml` params** — see ADR-0001 (continuous-carrier decision) and
+  ADR-0003 (wave.toml params are deliberate no-ops, trimmed from the panel). This
+  keeps every ribbon a continuous line at all loudness levels.
   Each ribbon is an *always-visible continuous sine carrier* (`carrier * 0.13`,
   independent of loudness) so the lines are never broken into dots; the spectrum
   adds an *additive swing* (`+ env * 0.55 * react`) on top, so music modulates
@@ -419,6 +444,9 @@ in sync. Mapping onto the single shared shader (see
 `fire`/`peaks`/`border`/`alpha`/`falloff` and the `colorSource` (theme vs
 custom) are passed as texture control rows and consumed in `visual.frag`. All
 three visuals share the one compiled shader rather than separate shader files.
+Open follow-ups are tracked as ADRs: ADR-0002 (expose Wave in the panel
+selector), ADR-0003 (trim inert `visuals/wave.toml` params), ADR-0004
+(oscilloscope line-width dead input + reserved alpha row 10).
 
 **Dynamic bar count + gaps (v7.6):** the bar count (`NB`) is dynamic and rides
 in control-texture **row 11 R** as `density/256.0` (`nbVal()` in the shader,
@@ -512,5 +540,6 @@ Progress reflects shipped capability in the live plugin (tag `v7.6`).
 | 13 | Backend-switching UI (manual source selection) | Planned | 0% |
 | 14 | Multi-monitor / position presets for detach window | Backlog | 0% |
 | 15 | Preset/theme sharing for visuals | Backlog | 0% |
-| 16 | Expose **Wave** in the settings-panel VISUALIZATION selector (currently Bar/Oscilloscope only) | Backlog | 0% |
-| 17 | Wire or remove `visuals/wave.toml` params (amplitude/frequency/brightness/peak_fall are inert in the Wave shader) | Backlog | 0% |
+| 16 | Expose **Wave** in the settings-panel VISUALIZATION selector (was Bar/Oscilloscope only) — UI label "Wave", commits `visual="wave"` to `[mini]`+`[desktop]` | Shipped | 100% | (spec: ADR-0002) |
+| 17 | `visuals/wave.toml` params (amplitude/frequency/brightness/peak_fall) trimmed — inert in the continuous-carrier WAVE shader (decision: trim, not wire) | Shipped | 100% | (spec: ADR-0003) |
+| 18 | Oscilloscope line-width dead input removed; control-texture row 10 G/B/A marked reserved (was falsely documented "unused") (P3) | Shipped | 100% | (spec: ADR-0004) |
