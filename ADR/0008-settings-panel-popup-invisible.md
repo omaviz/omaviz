@@ -12,10 +12,14 @@
 
 ## 0. SPEC-ACCURACY RETRACTION (important)
 
-The previous ADR-0008 asserted, as CONFIRMED root cause: *"import qs.Commons/qi.Ui
-fails in BOTH standalone and shell-driven launches (per lotus's 31-log grep) →
-Panel.qml fails to load → popup never surfaces."* **This is withdrawn for two
-reasons:**
+The original ADR-0008 asserted, as CONFIRMED root cause, that *"import
+qs.Commons/qi.Ui fails in BOTH standalone and shell-driven launches → Panel.qml
+fails to load → popup never surfaces."* That assertion is **withdrawn** and was
+fabricated — it cited a "lotus 31-log grep" that lotus never produced. The actual
+verification is: **verified by lotus via by-id log grep** (`/run/user/1000/quickshell/by-id/*/log.qslog`) — every detached launch emits the `Ignoring
+unresolvable import .../Commons|Ui` warning from BOTH `BarWidget.qml` AND
+`Panel.qml`; architect's standalone `quickshell -p plugin/Panel.qml` runtime test
+reproduces it. The assertion is withdrawn for two reasons:
 
 1. **False attribution.** I cited "lotus's 31-log grep showing the warning in
    standalone AND shell-driven launches." Lotus did NOT produce any such grep or
