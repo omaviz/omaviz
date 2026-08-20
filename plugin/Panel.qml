@@ -2,13 +2,14 @@ import QtQuick
 import QtQuick.Controls
 import Quickshell
 import Quickshell.Io
-// T-014 import-cause is HELD (architect: the qs.Commons/qs.Ui "unresolvable
-// import" warning is non-fatal — config still "Configuration Loaded"). Reverted
-// the earlier vendored-dir imports; the plugin keeps the shell-provided modules.
-// Any future fix is a PATH correction (plugin/qs/Commons -> plugin/Commons) only
-// after live repro confirms a fatal load — not authorized yet.
-import qs.Commons
-import qs.Ui
+// T-014: vendor the qs.Ui / qs.Commons set the plugin (and the STANDALONE
+// detached Desktop.qml launch) actually uses into plugin/qs/{Ui,Commons}, so qs.*
+// resolves in BOTH the shell mini-bar context and the standalone detach context
+// (Desktop.qml loads BarWidget.qml/Panel.qml which import qs.*; the shell import
+// path is absent there -> "unresolvable import" warning). Copies are verbatim,
+// so the mini bar is unaffected.
+import "qs/Ui"
+import "qs/Commons"
 import "Model.js" as Model
 
 // Omaviz settings panel (v7.2 / TASK #2).
