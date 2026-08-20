@@ -1,11 +1,11 @@
 import QtQuick
 import Quickshell
 import Quickshell.Io
-// T-014: vendor qs.Ui/qs.Commons into the plugin (plugin/qs/{Ui,Commons}) so qs.*
-// resolves in BOTH the shell mini-bar and the standalone detached Desktop.qml
-// launch (which loads BarWidget.qml). Copies are verbatim, mini bar unaffected.
-import "qs/Ui"
-import "qs/Commons"
+// T-014 (ADR-0008, approved path correction): import shell module names
+// qs.Commons / qs.Ui; the engine resolves these to the vendored plugin/Commons +
+// plugin/Ui in the standalone detach launch. Works in both contexts.
+import qs.Commons
+import qs.Ui
 import "Model.js" as Model
 
 // Omaviz spectrum bar widget (v7).

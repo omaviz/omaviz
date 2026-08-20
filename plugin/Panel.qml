@@ -2,14 +2,14 @@ import QtQuick
 import QtQuick.Controls
 import Quickshell
 import Quickshell.Io
-// T-014: vendor the qs.Ui / qs.Commons set the plugin (and the STANDALONE
-// detached Desktop.qml launch) actually uses into plugin/qs/{Ui,Commons}, so qs.*
-// resolves in BOTH the shell mini-bar context and the standalone detach context
-// (Desktop.qml loads BarWidget.qml/Panel.qml which import qs.*; the shell import
-// path is absent there -> "unresolvable import" warning). Copies are verbatim,
-// so the mini bar is unaffected.
-import "qs/Ui"
-import "qs/Commons"
+// T-014 (ADR-0008, approved path correction): the plugin imports the SHELL
+// module names qs.Commons / qs.Ui. In the detached launch the engine resolves
+// these to plugin/Commons + plugin/Ui (the vendored copies, relocated up one
+// level from the earlier mis-placed plugin/qs/). Module-name imports work in
+// BOTH the shell mini-bar and the standalone detach context. Do NOT use the
+// relative "qs/Ui" form.
+import qs.Commons
+import qs.Ui
 import "Model.js" as Model
 
 // Omaviz settings panel (v7.2 / TASK #2).

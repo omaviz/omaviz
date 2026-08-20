@@ -26,52 +26,46 @@ function ok(name, cond) {
 }
 
 // =====================================================================
-// T-014 — GO (correction): vendor qs.Ui/qs.Commons into plugin/qs/{Ui,Commons}
-// so the STANDALONE detached Desktop.qml launch resolves qs.* (it loads
-// BarWidget.qml/Panel.qml which import qs.*). The mini bar resolves qs.* fine
-// in the shell; vendoring does not break it (copies are verbatim). Plugin files
-// must import the vendored relative dirs, NOT the shell-provided qs.*.
+// T-014 — APPROVED (path correction, ADR-0008 detach-path): the plugin
+// imports `qs.Commons` / `qs.Ui` (module form). In detached launches the engine
+// resolves those module names to plugin/Commons + plugin/Ui (one level up from
+// the earlier mis-placed plugin/qs/). So the vendored tree must live at
+// plugin/Commons + plugin/Ui (NOT plugin/qs/), and the plugin files use the
+// module-name imports. This is a PATH correction, not a re-vendor — the module
+// set is unchanged. Resolves the "unresolvable import .../Commons" warning.
 // =====================================================================
 {
-  const vendoredUi = fs.existsSync(path.join(ROOT, 'qs', 'Ui', 'KeyboardPanel.qml'))
-    && fs.existsSync(path.join(ROOT, 'qs', 'Ui', 'Panel.qml'))
-    && fs.existsSync(path.join(ROOT, 'qs', 'Ui', 'ButtonGroup.qml'))
-    && fs.existsSync(path.join(ROOT, 'qs', 'Ui', 'ToggleSwitch.qml'))
-    && fs.existsSync(path.join(ROOT, 'qs', 'Ui', 'PanelSlider.qml'))
-    && fs.existsSync(path.join(ROOT, 'qs', 'Ui', 'PanelSectionHeader.qml'))
-    && fs.existsSync(path.join(ROOT, 'qs', 'Ui', 'PanelSeparator.qml'))
-    && fs.existsSync(path.join(ROOT, 'qs', 'Ui', 'WidgetButton.qml'))
-    && fs.existsSync(path.join(ROOT, 'qs', 'Ui', 'BorderSurface.qml'))
-    && fs.existsSync(path.join(ROOT, 'qs', 'Ui', 'BorderOverlay.qml'))
-    && fs.existsSync(path.join(ROOT, 'qs', 'Ui', 'Button.qml'))
-    && fs.existsSync(path.join(ROOT, 'qs', 'Ui', 'PanelKeyCatcher.qml'))
-    && fs.existsSync(path.join(ROOT, 'qs', 'Ui', 'PanelController.qml'))
-  const vendoredCommons = fs.existsSync(path.join(ROOT, 'qs', 'Commons', 'Color.qml'))
-    && fs.existsSync(path.join(ROOT, 'qs', 'Commons', 'Style.qml'))
-    && fs.existsSync(path.join(ROOT, 'qs', 'Commons', 'Util.qml'))
-    && fs.existsSync(path.join(ROOT, 'qs', 'Commons', 'Border.qml'))
-    && fs.existsSync(path.join(ROOT, 'qs', 'Commons', 'BorderGeometry.js'))
-  ok('T-014: qs.Ui types vendored into plugin/qs/Ui', vendoredUi)
-  ok('T-014: qs.Commons singletons vendored into plugin/qs/Commons', vendoredCommons)
+  // Plugin uses the module-name imports (resolvable by the engine in BOTH the
+  // shell mini-bar context and the detached context).
+  ok('T-014: Panel.qml imports module qs.Commons / qs.Ui',
+     /^import qs\.Commons$/m.test(PANEL) && /^import qs\.Ui$/m.test(PANEL))
+  ok('T-014: BarWidget.qml imports module qs.Commons / qs.Ui',
+     /^import qs\.Commons$/m.test(BARW) && /^import qs\.Ui$/m.test(BARW))
+  ok('T-014: Panel.qml does NOT use the mis-placed relative "qs/Ui"/"qs/Commons" import',
+     !/import "qs\/(Ui|Commons)"/.test(PANEL))
+  ok('T-014: BarWidget.qml does NOT use the mis-placed relative "qs/Ui"/"qs/Commons" import',
+     !/import "qs\/(Ui|Commons)"/.test(BARW))
 
-  ok('T-014: Panel.qml does NOT import shell qs.Commons / qs.Ui',
-     !/^import qs\.(Commons|Ui)$/m.test(PANEL))
-  ok('T-014: BarWidget.qml does NOT import shell qs.Commons / qs.Ui',
-     !/^import qs\.(Commons|Ui)$/m.test(BARW))
-  ok('T-014: Panel.qml imports vendored qs/Ui + qs/Commons',
-     /import "qs\/Ui"/.test(PANEL) && /import "qs\/Commons"/.test(PANEL))
-  ok('T-014: BarWidget.qml imports vendored qs/Ui + qs/Commons',
-     /import "qs\/Ui"/.test(BARW) && /import "qs\/Commons"/.test(BARW))
+  // Vendored modules live at the CORRECTED depth: plugin/Commons + plugin/Ui.
+  ok('T-014: vendored qs.Commons at corrected path plugin/Commons',
+     fs.existsSync(path.join(ROOT, 'Commons', 'qmldir')) &&
+     fs.existsSync(path.join(ROOT, 'Commons', 'Color.qml')))
+  ok('T-014: vendored qs.Ui at corrected path plugin/Ui',
+     fs.existsSync(path.join(ROOT, 'Ui', 'qmldir')) &&
+     fs.existsSync(path.join(ROOT, 'Ui', 'KeyboardPanel.qml')))
+  // The mis-placed plugin/qs/ tree must be GONE (relocated up one level).
+  ok('T-014: mis-placed plugin/qs/ tree removed (relocated to plugin/Commons + plugin/Ui)',
+     !fs.existsSync(path.join(ROOT, 'qs')))
 
-  // Vendored Ui files must not reach back to the shell module either.
-  const uiDir = path.join(ROOT, 'qs', 'Ui')
+  // Vendored Ui files must reference only "../Commons" (no shell qs.*).
+  const uiDir = path.join(ROOT, 'Ui')
   const uiFiles = fs.readdirSync(uiDir).filter(f => f.endsWith('.qml'))
   let anyShellImport = false
   for (const f of uiFiles) {
     const s = fs.readFileSync(path.join(uiDir, f), 'utf8')
     if (/import qs\./.test(s)) anyShellImport = true
   }
-  ok('T-014: vendored qs/Ui files reference only "../Commons" (no shell qs.*)', !anyShellImport)
+  ok('T-014: vendored Ui files reference only "../Commons" (no shell qs.*)', !anyShellImport)
 }
 
 // =====================================================================
