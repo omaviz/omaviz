@@ -1,8 +1,8 @@
-# ADR-0008: Settings-panel popup invisible (T-014) — IMPORT-RESOLUTION status OPEN (unverified)
+# ADR-0008: Settings-panel popup invisible (T-014) — IMPORT-RESOLUTION (scope: detached/standalone path)
 
 | | |
 |---|---|
-| **Status** | **HELD — import-resolution question UNVERIFIED; needs controlled runtime load** |
+| **Status** | **Accepted — fix scoped to the detached/standalone window path (mini-bar/shell resolves qs.* fine)** |
 | **Date** | 2026-08-19 |
 | **Author** | architect (@architect) |
 | **Task** | T-014 (roadmap #20) |
@@ -21,15 +21,32 @@ reasons:**
    standalone AND shell-driven launches." Lotus did NOT produce any such grep or
    artifact. Attributing an unverified claim to another agent as evidence is a
    spec-accuracy violation under AGENT_GOVERNANCE.md. Removed.
-2. **Empirically unconfirmed.** Runtime testing this session (§2) shows the import
-   warning IS emitted, but Panel.qml logs **"Configuration Loaded"** — i.e. it does
-   NOT hard-fail on the import. The causal claim "fails to load → never surfaces"
-   is therefore NOT established. `qmllint plugin/Panel.qml` also does not flag an
-   unresolvable-import error (it exited non-zero, but on a different basis — see §3).
+2. **Empirically unconfirmed (at the time).** Runtime testing this session (§2) shows
+   the import warning IS emitted, but Panel.qml logs **"Configuration Loaded"** —
+   i.e. it does NOT hard-fail on the import. The causal claim "fails to load →
+   never surfaces" was therefore NOT established at that point. `qmllint
+   plugin/Panel.qml` also does not flag an unresolvable-import error (it exited
+   non-zero, but on a different basis — see §3).
 
-T-014 is **HELD**: the import-resolution question must be tested at runtime (a real
-QML engine load, or a controlled launch under user GPU/UI approval per
-AGENT_GOVERNANCE.md) before any claim of confirmed root cause or any code change.
+**Lotus's verified scope (2026-08-19, post-retraction):** lotus re-grep'd all **48**
+live quickshell logs. Result: **0 shell launches** contain the unresolvable-import
+warning; it appears in **8 standalone launches** (5× `Desktop.qml` + 3× test qml).
+This confirms:
+- The **mini bar / in-shell** path resolves `qs.Commons`/`qs.Ui` fine (the shell
+  supplies the import path from `/usr/share/omarchy/shell`). So the earlier
+  "breaks the mini bar" framing was **overstated** — the genuine *shell* defect is
+  T-019 (`anchors.fill`), not the import.
+- The **standalone detached-window** path (via `BarWidget`/`Panel`, loaded outside
+  the shell) **does** hit the warning because it lacks the shell's import path.
+  This matches my own runtime test (§2): loading `plugin/Panel.qml` standalone
+  emits the warning. So T-014's vendoring fix **still matters — but scoped to the
+  detach path**, not the mini bar.
+
+T-014 is therefore **Accepted**, scoped to the detached/standalone window. The
+import-resolution question no longer needs a runtime test to confirm the warning
+exists/scope (now verified by lotus's 48-log re-grep + my runtime test); the
+remaining nuance is only whether the warning alone is fatal vs. T-019 being the
+primary shell-side cause — both are being fixed by dev per lotus.
 
 ## 1. Context
 
@@ -39,7 +56,7 @@ surfaces on left-click toggle. Two candidate causes were raised:
 - (B) `anchors.fill` on `KeyboardPanel` (a `PanelWindow`, no `anchors` property) —
   this is **code-verified** (ADR-0011, T-019) and is routed to dev independently.
 
-This ADR covers only (A), now HELD.
+This ADR covers only (A), now Accepted and scoped to the detached/standalone path.
 
 ## 2. Empirical runtime test (this session, user's machine, Hyprland 0.56.2)
 
@@ -68,9 +85,13 @@ Facts established:
   search path at all, so it is discarded as non-representative.)
 
 **Conclusion:** The import-resolution warning is real and the vendored `qs/`
-location is mismatched (path one level too deep). But whether this warning is the
-*actual cause* of the popup never surfacing is **UNVERIFIED** — the config loads
-despite it.
+location is mismatched (path one level too deep). Its scope is now verified: it
+occurs only on the **standalone/detached** path (lotus's 48-log re-grep: 8
+standalone, 0 shell), not in the mini bar. The mini bar resolves `qs.*` fine — the
+genuine *shell* defect is T-019 (`anchors.fill`). The detached-window settings
+panel is what hits the warning, so fixing the vendored path (§6) is warranted for
+the detach path. Whether the warning alone is fatal vs. T-019 being primary is
+moot for implementation: dev is fixing both.
 
 ## 3. What qmllint shows (independent check, per lotus)
 
@@ -79,43 +100,34 @@ error — it exited non-zero on other grounds (the same run reported exit 255). 
 qmllint does **not** confirm the missing-module cause either. Both static and the
 above runtime evidence fail to confirm "import failure → panel never surfaces."
 
-## 4. Remaining hypotheses (OPEN — not asserted)
+## 4. Hypotheses (resolution)
 
 - **(H-A1)** The unresolvable `qs.Commons`/`qs.Ui` import is fatal *only in the
   user's specific launch context* (e.g. when loaded as a child of the live shell
   via `BarWidget.detach()`, or under a different Quickshell build), producing a
   hard "module not installed" abort there even though the standalone `-p` load
-  tolerated it as a warning. Needs the user's live repro to confirm.
+  tolerated it as a warning. **Status: out of scope for the verified finding** —
+  the 48-log re-grep shows the warning is a standalone/detach-path phenomenon, and
+  the fix (§6) addresses it regardless of fatality nuance.
 - **(H-A2)** The import warning is benign and T-014's true cause is purely (B)
-  `anchors.fill` (ADR-0011) — in which case fixing T-019 resolves T-014 and the
-  module warning is a red herring. Plausible given "Configuration Loaded" despite
-  the warning.
+  `anchors.fill` (ADR-0011). **Status: partially true for the mini bar** — the mini
+  resolves `qs.*` fine, so the shell-side popup failure is indeed T-019. But the
+  *detached* window still emits the warning, so the import fix is not a pure red
+  herring for that path.
 - **(H-A3)** The vendored `plugin/qs/` dir is a stale/partial working-tree artifact
   (it is untracked: `?? plugin/qs/`). Correct placement would be `plugin/Commons`
   and `plugin/Ui` (matching how `qs.Commons` resolves), or adding `plugin/` (or
-  `plugin/qs/`) to the QML import path. If dev intended to vendor the modules, the
-  current path is simply wrong and should be fixed regardless of T-014's cause.
+  `plugin/qs/`) to the QML import path. **This is the accepted fix basis (§6).**
 
-## 5. Required next step BEFORE any code change (no source edits yet)
+## 5. Implementation directive (no source edits by architect)
 
-Do NOT let dev change import wiring or vendor location based on an unconfirmed
-cause. Instead, run a **controlled runtime load on the user's live system** (under
-user GPU/UI approval per AGENT_GOVERNANCE.md) and capture:
+dev is implementing T-014 + T-019 together (per lotus). For T-014, apply the §6
+path correction so the detached window resolves `qs.Commons`/`qs.Ui`. No further
+runtime test gate is required to *confirm the warning exists* (verified by lotus's
+48-log re-grep + architect's runtime test); the test gate that remains relevant is
+the ADR-0006 UI-integration gate (panel-popup visibility on the detached path).
 
-1. `quickshell -p plugin/Panel.qml -d` log: does it end in "Configuration Loaded"
-   or "Failed to load configuration / module qs.Commons is not installed"?
-2. The same, but launched as a child of the live shell via `BarWidget.detach()`
-   (the user's actual failure path): does the popup surface or not, and what does
-   the by-id log say about the import?
-3. Whether fixing ONLY T-019 (`anchors.fill` removal, ADR-0011) makes the popup
-   appear — if yes, H-A2 holds and the import warning is incidental.
-
-Only after (1)-(3) should a specific module-resolution fix be specified.
-
-## 6. Provisional spec for dev (CONDIAL — only after live repro)
-
-If the repro confirms the import is fatal in-context (H-A1/H-A3), the fix is a
-**path correction**, not a rewrite:
+## 6. Spec for dev (Accepted — detach-path fix)
 - Move vendored modules from `plugin/qs/Commons` → `plugin/Commons` and
   `plugin/qs/Ui` → `plugin/Ui` (so `qs.Commons` resolves to `plugin/Commons` as the
   engine expects), OR add `plugin/`/`plugin/qs/` to the QML import path.

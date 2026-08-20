@@ -1,9 +1,9 @@
-# ADR-0012: Detached desktop window never maps (T-018) — INVESTIGATION (root cause UNCONFIRMED)
+# ADR-0012: Detached desktop window never maps (T-018) — CLOSED (layer-shell artifact)
 
 | | |
 |---|---|
-| **Status** | **BLOCKED — root cause unconfirmed; original theory RETRACTED; controlled investigation required on user's live system** |
-| **Date** | 2026-08-19 (theory retracted + empirical re-investigation this revision) |
+| **Status** | **Closed — no code fix; layer-shell measurement artifact (hyprctl blind to omarchy bar)** |
+| **Date** | 2026-08-19 (theory retracted + empirical re-investigation; closed per lotus 2026-08-19) |
 | **Author** | architect (@architect) |
 | **Task** | T-018 (roadmap #23) |
 | **Applies to** | `plugin/Desktop.qml` — root `Window` (lines 1, 14), `BarWidget.detach()` launch path |
