@@ -84,15 +84,18 @@ function ok(name, cond) {
 }
 
 // =====================================================================
-// T-018 — Detached window root resolves to Quickshell.Window (QsWindow)
+// T-018 — WITHDRAWN: architect empirically proved a bare `Window {` DOES map
+// under Hyprland/Quickshell (the "Window shadows Quickshell" theory was
+// FALSE). T-018 root cause is UNCONFIRMED and BLOCKED pending live repro, so
+// NO window-type change is applied. Desktop.qml root MUST remain the original
+// bare `Window {` (do NOT qualify as Quickshell.Window).
 // =====================================================================
 {
-  // Root must be Quickshell.Window (unambiguous), not bare Window (QtQuick).
-  ok('T-018: Desktop.qml root is Quickshell.Window (QsWindow), not bare Window',
-     /^Quickshell\.Window\s*\{/m.test(DESK))
-  ok('T-018: Desktop.qml has no ambiguous bare "Window {" root',
-     !/^\s*Window\s*\{/m.test(DESK))
-  ok('T-018: Desktop.qml imports Quickshell (provides Window)',
+  ok('T-018(WITHDRAWN): Desktop.qml root is bare Window { (no window-type change applied)',
+     /^Window\s*\{/m.test(DESK))
+  ok('T-018(WITHDRAWN): Desktop.qml does NOT use Quickshell.Window (change withdrawn)',
+     !/Quickshell\.Window\s*\{/m.test(DESK))
+  ok('T-018(WITHDRAWN): Desktop.qml still imports Quickshell (for Process/engine spawn)',
      /import Quickshell(\n|\r|\s)/.test(DESK))
 }
 
