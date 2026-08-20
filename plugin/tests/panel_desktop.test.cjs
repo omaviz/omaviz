@@ -58,6 +58,30 @@ function ok(name, cond) {
      /stderr:/.test(DESKTOP))
 }
 
+// =====================================================================
+// T-022 — Panel.qml runtime errors (live log a8niw3n2kt): no-op forceLayout
+// call + undefined resetBtn reference. These are RUNTIME QML errors the unit
+// suites cannot catch, so we assert the source-level invariants instead.
+// =====================================================================
+{
+  // The shared KeyboardPanel takes `anchorItem` as a `required property` and
+  // re-derives its geometry from it via bindings (KeyboardPanel.qml:136/146-150/
+  // 195) — it exposes NO `forceLayout()` method. Calling panel.forceLayout in a
+  // Qt.callLater (bare or wrapped in a closure) dereferences `undefined` and
+  // emits "Qt.callLater: first argument not a function or signal". The late-anchor
+  // relayout is already handled by the binding re-evaluation, so the calls must
+  // NOT exist. REGRESSION GUARD (was introduced at 7fcde5c and still errors).
+  ok('T-022: Panel.qml contains NO panel.forceLayout call (KeyboardPanel has no such method)',
+     !/panel\.forceLayout/.test(PANEL))
+
+  // The footer Reset button is referenced by id at the spacer expression
+  // (resetBtn.width); it must carry `id: resetBtn` or the panel throws
+  // "ReferenceError: resetBtn is not defined" on construction.
+  ok('T-022: Reset Button declares id: resetBtn (referenced by footer spacer)',
+     /text:\s*"Reset"[\s\S]{0,120}id:\s*resetBtn/.test(PANEL) ||
+     /id:\s*resetBtn/.test(PANEL))
+}
+
 console.log('\nℹ panel_desktop tests ' + passed)
 console.log('ℹ pass ' + passed)
 console.log('ℹ fail 0')
