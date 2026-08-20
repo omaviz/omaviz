@@ -197,9 +197,10 @@ test("WAVE is audio-reactive: continuous carrier modulated by bandAt envelope", 
   // Spectrum MODULATES the line as an ADDITIVE swing on top of the always-visible
   // carrier (env * react), so the line never scales to ~0 and collapses to dots.
   assert.ok(frag.includes("+ env * 0.55 * react"), "spectrum adds an audio swing on top of the carrier")
-  // Carrier is added at a FIXED always-on amplitude (carrier * 0.13) — it is NOT
-  // multiplied by a silence-floor, so ribbons stay continuous even on a quiet feed.
-  assert.ok(frag.includes("carrier * 0.13"), "carrier always-visible (no loud-floor multiply)")
+  // Carrier is added at a FIXED always-on amplitude (carrier * 0.18, raised in
+  // T-023 for low-amplitude visibility) — it is NOT multiplied by a silence-floor,
+  // so ribbons stay continuous even on a quiet feed.
+  assert.ok(frag.includes("carrier * 0.18"), "carrier always-visible (no loud-floor multiply, brightened in T-023)")
   // Old broken pattern removed: line positioned directly from multiplied amp that
   // collapsed to points on a sparse/sweep feed.
   assert.ok(!frag.includes("float amp = (0.05 + 0.55 * (1.0 - depth)) * (0.55 + 0.9 * env) * loud"),
@@ -218,8 +219,8 @@ function stripComments(src) {
 }
 const fragNoComments = stripComments(frag)
 test("T-009/ADR-0004: osc line width uses fixed OSC_LINE_W (dead alphaRow input gone)", () => {
-  assert.ok(frag.includes("const float OSC_LINE_W = 0.004;"),
-    "OSC_LINE_W const defined at 0.004")
+  assert.ok(frag.includes("const float OSC_LINE_W = 0.007;"),
+    "OSC_LINE_W const defined at 0.007 (raised from 0.004 in T-023 for low-amp visibility)")
   assert.ok(fragNoComments.includes("lw = OSC_LINE_W"),
     "osc line width derives from the fixed OSC_LINE_W const")
   assert.ok(!fragNoComments.includes("alphaRow().g"),
@@ -244,16 +245,16 @@ test("T-009/ADR-0004: osc line width uses fixed OSC_LINE_W (dead alphaRow input 
 // decode (avg of row2.R and row3.R) still yields the exact code. We also show
 // the OLD layout (row3 = time) would have collapsed Wave -> ~1.
 
-// Mimic visual.frag: int(ctrl().r * 255.0 + 0.5). Under LINEAR, ctrl().r is the
-// blend of row 2 R and row 3 R (the two texels surrounding 2.5/H).
+// Mimic visual.frag: int(ctrl().r * 255.0 + 0.5). GLSL int() TRUNCATES
+// (Math.round(2.5)==3 but int(2.5)==2), so use Math.trunc to match exactly.
 function linDecodeVisual(rows) {
   const r2 = rows[2].r, r3 = rows[3].r
   const ctrlR = (r2 + r3) / 2.0            // linear blend of the two neighbors
-  return Math.round(ctrlR * 255.0 + 0.5)
+  return Math.trunc(ctrlR * 255.0 + 0.5)
 }
 // Under NEAREST, ctrl().r is exactly row 2 R.
 function nearDecodeVisual(rows) {
-  return Math.round(rows[2].r * 255.0 + 0.5)
+  return Math.trunc(rows[2].r * 255.0 + 0.5)
 }
 
 test("T-020: QML writes the visual code into BOTH row 2 and row 3 (code copy)", () => {
@@ -301,11 +302,51 @@ test("T-020: OLD layout would have collapsed Wave (regression guard)", () => {
   const oldWave = { r: 0, g: 0, b: 0 }
   const r2 = 2 / 255.0, r3 = 0.73       // row2 = code(2), row3 = time(high)
   const blended = (r2 + r3) / 2.0
-  const decoded = Math.round(blended * 255.0 + 0.5)
+  const decoded = Math.trunc(blended * 255.0 + 0.5)
   assert.notStrictEqual(decoded, 2, "OLD: blended value is NOT 2 (this is the bug we fixed)")
   // NEW layout makes row3 = code too, so it can never collapse:
   const newWave = (2 / 255.0 + 2 / 255.0) / 2.0
-  assert.strictEqual(Math.round(newWave * 255.0 + 0.5), 2, "NEW: row3=code copy -> stays 2")
+  assert.strictEqual(Math.trunc(newWave * 255.0 + 0.5), 2, "NEW: row3=code copy -> stays 2")
+})
+
+// T-023 (low-amplitude visibility): WAVE + OSC must be visible near silence,
+// not just when loud. VERIFIED upstream: the T-020 wave=ribbons (not bars)
+// collapse bug is dead (pipewire capture). The remaining issue is brightness —
+// WAVE's always-on carrier (0.13) + dim bg read as low-contrast; OSC's
+// OSC_LINE_W=0.004 is sub-pixel with no always-on baseline so it vanishes at
+// low amp. Fixes raise WAVE brightness and give OSC a visible line at silence.
+test("T-023: WAVE always-on carrier amplitude raised (ribbons visible at silence)", () => {
+  assert.ok(frag.includes("carrier * 0.18"),
+    "WAVE carrier amplitude raised 0.13 -> 0.18 (always-on, not scaled by react)")
+  assert.ok(!frag.includes("carrier * 0.13"),
+    "old 0.13 carrier (too dim at silence) gone")
+  // The carrier is added directly (NOT multiplied by react) so it shows at silence.
+  assert.ok(frag.includes("carrier * 0.18"),
+    "always-on carrier present (added outside the react term)")
+  assert.ok(frag.includes("+ env * 0.55 * react"),
+    "audio swing added on top of the always-on carrier")
+})
+test("T-023: WAVE ribbon + background brightness raised", () => {
+  assert.ok(frag.includes("mix(cBot()*0.55, cTop()*0.95, uv.y)"),
+    "WAVE background gradient brightened (0.32/0.64 -> 0.55/0.95)")
+  assert.ok(frag.includes("rc * halo * 0.95"),
+    "WAVE halo intensity raised 0.70 -> 0.95")
+  assert.ok(frag.includes("rc * core * 3.0"),
+    "WAVE core intensity raised 2.4 -> 3.0")
+})
+test("T-023: OSC line width raised above sub-pixel", () => {
+  assert.ok(frag.includes("const float OSC_LINE_W = 0.007;"),
+    "OSC line width raised 0.004 -> 0.007 (visible at low amp)")
+  assert.ok(!frag.includes("const float OSC_LINE_W = 0.004;"),
+    "old sub-pixel 0.004 width gone")
+})
+test("T-023: OSC has always-on faint baseline at silence (y=0.5)", () => {
+  // At silence env=0 -> wy=0.5; a baseline mask at abs(y-0.5) keeps the line
+  // visible even when w (audio swing) is ~0, so OSC never collapses to nothing.
+  assert.ok(/float dBase = abs\(y - 0\.5\)/.test(frag),
+    "OSC baseline distance from silence center computed")
+  assert.ok(/mb = step\(dBase, lw\)/.test(frag) || /mb \* 0\.\d+/.test(frag),
+    "OSC always-on baseline mask applied (faint) so line shows at silence")
 })
 
 console.log(`\nℹ pass ${passed}`)

@@ -143,7 +143,7 @@ void main() {
     // Warm vertical gradient background + vignette, then a woven field of
     // CONTINUOUS flowing ribbons (ref 06: always-present sine lines, music
     // only flexes their amplitude, never breaks them). Audio-reactive.
-    vec3  wbg = mix(cBot()*0.32, cTop()*0.64, uv.y);
+    vec3  wbg = mix(cBot()*0.55, cTop()*0.95, uv.y);
     float vig = 1.0 - 0.42 * length(uv - vec2(0.5, 0.5));
     col = wbg * vig;
     // Overall loudness from mean spectrum energy -> silence = gentle, loud = big swings.
@@ -165,15 +165,15 @@ void main() {
       float px = uv.x * 0.5 + depth * 0.20;
       float env = bandAt(px) + bandAt(fract(px + 0.03)) + bandAt(fract(px - 0.03));
       env /= 3.0;                                // 3-tap smooth envelope
-      float yw = baseY + carrier * 0.13            // always-on line (~0.13 amplitude)
+      float yw = baseY + carrier * 0.18            // always-on line (~0.18 amplitude, visible at silence)
                        + env * 0.55 * react;        // extra audio swing when loud
       // Glowing core + soft halo for a luminous, woven ribbon (ref 06).
       // Wide radii so ribbons read as continuous lines (not points) at ~700px width.
       float core = smoothstep(0.045, 0.0, abs(uv.y - yw));
       float halo = smoothstep(0.140, 0.0, abs(uv.y - yw));
       vec3  rc   = mix(vec3(1.0, 0.97, 0.90), mix(cTop(), cBot()*0.5, depth), depth);
-      col += rc * halo * 0.70 * (1.0 - depth * 0.45);
-      col += rc * core * (2.4 - depth * 0.45);
+      col += rc * halo * 0.95 * (1.0 - depth * 0.45);
+      col += rc * core * 3.0;
     }
   } else {
     // ===================== OSCILLOSCOPE =====================
@@ -195,7 +195,7 @@ void main() {
     // ADR-0004: oscilloscope line width is fixed; row 10 G is reserved/unused
     // (VisualCanvasGL packs row 10 G = 0), so the former `(alphaRow().g*0.02)`
     // term was dead. Use a fixed width.
-    const float OSC_LINE_W = 0.004;
+    const float OSC_LINE_W = 0.007;
     float lw = OSC_LINE_W;
     vec3 sc = themeColor(y);
     float m;
@@ -205,7 +205,13 @@ void main() {
     } else {
       m = step(d, lw);
     }
-    col = mix(col, sc, m);
+    // T-023: always-on faint baseline at the silence center (y = 0.5) so the
+    // oscilloscope reads as a continuous line even at near-silence (when env/w
+    // collapse the audio swing to ~0). The baseline is faint (0.4 weight) so it
+    // doesn't overpower the live waveform when audio is present.
+    float dBase = abs(y - 0.5);
+    float mb = step(dBase, lw);
+    col = mix(col, sc, max(m, mb * 0.4));
   }
 
   fragColor = vec4(col, 1.0);
