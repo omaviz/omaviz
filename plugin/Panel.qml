@@ -2,12 +2,13 @@ import QtQuick
 import QtQuick.Controls
 import Quickshell
 import Quickshell.Io
-// T-014: vendor the small qs.Ui / qs.Commons set the panel actually uses
-// into the plugin (plugin/qs/{Ui,Commons}) so the panel no longer depends on
-// the shell process providing those modules at runtime. Self-contained, like
-// Desktop.qml.
-import "qs/Ui"
-import "qs/Commons"
+// T-014 import-cause is HELD (architect: the qs.Commons/qs.Ui "unresolvable
+// import" warning is non-fatal — config still "Configuration Loaded"). Reverted
+// the earlier vendored-dir imports; the plugin keeps the shell-provided modules.
+// Any future fix is a PATH correction (plugin/qs/Commons -> plugin/Commons) only
+// after live repro confirms a fatal load — not authorized yet.
+import qs.Commons
+import qs.Ui
 import "Model.js" as Model
 
 // Omaviz settings panel (v7.2 / TASK #2).

@@ -1,10 +1,10 @@
 import QtQuick
 import Quickshell
 import Quickshell.Io
-// T-014: vendor qs.Ui/qs.Commons into the plugin (plugin/qs/{Ui,Commons})
-// so the widget no longer depends on the shell process providing them.
-import "qs/Ui"
-import "qs/Commons"
+// T-014 import-cause is HELD (architect: qs.Commons/qs.Ui warning is non-fatal).
+// Reverted vendored-dir imports; the widget keeps shell-provided modules.
+import qs.Commons
+import qs.Ui
 import "Model.js" as Model
 
 // Omaviz spectrum bar widget (v7).
