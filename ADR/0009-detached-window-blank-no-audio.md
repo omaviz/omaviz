@@ -5,7 +5,7 @@
 | **Status** | Accepted (to implement in v7.6.x) |
 | **Date** | 2026-08-19 |
 | **Author** | architect (@architect) |
-| **Task** | T-015 (roadmap #20) |
+| **Task** | T-015 (roadmap #21) |
 | **Applies to** | `plugin/Desktop.qml` (engine spawn + bands Binding), `engine/src/source/pipewire.rs` (node name / autoconnect), `engine/src/main.rs` (per-instance source) |
 | **Supersedes** | none |
 | **Superseded by** | none |
@@ -28,7 +28,12 @@ Process {
 
 The mini's shared engine (BarWidget.spectrumProc) works, so the question is
 whether the *second* engine captures system audio, and whether the bands it
-produces reach the GL renderer.
+produces reach the GL renderer. **This is the leading hypothesis for T-015 and
+must be confirmed on the live shell (per ADR-0006 §3).** The blank canvas could
+also be the bands→GL binding (§2.2); both are covered by the ADR-0006
+integration test gate. Note: T-018 ("window never maps") is reclassified as a
+layer-shell measurement artifact (user sees the window) — the real defect is
+this content/audio one.
 
 ## 2. Root cause
 

@@ -5,7 +5,7 @@
 | **Status** | **OPEN — awaiting user decision** (architect flags; does NOT unilaterally decide UX) |
 | **Date** | 2026-08-19 |
 | **Author** | architect (@architect) |
-| **Task** | T-016 (roadmap #21) |
+| **Task** | T-016 (roadmap #22) |
 | **Applies to** | `plugin/BarWidget.qml` (WidgetButton `onPressed`, lines 252-255) |
 | **Supersedes** | none |
 | **Superseded by** | none |

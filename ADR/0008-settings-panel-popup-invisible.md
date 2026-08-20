@@ -5,7 +5,7 @@
 | **Status** | Accepted (to implement in v7.6.x) |
 | **Date** | 2026-08-19 |
 | **Author** | architect (@architect) |
-| **Task** | T-014 (roadmap #19) |
+| **Task** | T-014 (roadmap #20) |
 | **Applies to** | `plugin/Panel.qml` (KeyboardPanel surface), `qs.Ui/Panel.qml` (base `panelController`), `plugin/BarWidget.qml` (`injectPanel`, `panelLoader`) |
 | **Supersedes** | none |
 | **Superseded by** | none |
@@ -35,6 +35,16 @@ KeyboardPanel {
 ```
 
 ## 2. Root cause
+
+**CONFIRMED ROOT CAUSE (2026-08-19, live omarchy-shell log):** the live log
+shows `Panel.qml[120:13]: Cannot assign to non-existent property "fill"`.
+`KeyboardPanel` (from `qs.Ui`) does not expose `anchors.fill` in this Quickshell
+build, so QML raises the error and **aborts Panel construction** → the settings
+popup never surfaces. This is the smoking gun for T-014 and is consistent with
+the mini working (the mini does not use `KeyboardPanel.anchors.fill`); since the
+mini loads, `qs.*` resolves in the shell, so this is **NOT** a missing-module
+issue. The anchor/owner timing theory below is now **secondary** (it may still
+contribute, but the `fill` error is what actually halts construction).
 
 The popup surface is **entirely owned by the shared `qs.Ui Panel` base
 `panelController`**, but two shell-layer defects break it:
