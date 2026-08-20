@@ -22,13 +22,17 @@ onPressed: function(b) {
 ```
 i.e. **left-click = settings panel, right-click = detach desktop window.**
 
-lotus reports the **user expects left-click = desktop (detach)**. However, the
-in-file code comment at BarWidget.qml:246-251 states the *opposite* was already a
-deliberate "user's explicit final intent: it should open the settings panel,"
-explicitly correcting an earlier misstatement that left-click should open the
-desktop window. **There is a direct contradiction between the code comment's stated
-intent and lotus's current message.** This must be resolved by the *user*, not the
-architect.
+lotus relayed (second-hand, **unverified** — there is no direct user message
+confirming it) that the user expects left-click = desktop (detach). The in-file
+code comment at BarWidget.qml:246-251 records a *prior* explicit user intent that
+left = settings panel, explicitly correcting an earlier misstatement that
+left-click should open the desktop window. Per the spec-accuracy governance rule,
+a sub-agent's relayed claim about user intent must be framed as **"needs
+confirmation,"** not asserted as fact. There is a contradiction between the
+recorded prior intent and the unverified relayed expectation; this must be
+resolved by an **explicit user statement**, not assumed. Until the user answers,
+the **current mapping (left = settings / right = detach) stands as the default** —
+no UX change.
 
 ## 2. The two options
 
@@ -48,17 +52,21 @@ architect.
 
 ## 3. Architect recommendation
 
-**Recommend Option A (keep left=settings / right=detach)** as the *default*, for
-two reasons: (1) it matches the prevailing bar-widget convention and the most
-frequent task (configuration), and (2) the code comment records a prior explicit
-user intent to that effect — so flipping it should require a *fresh, explicit*
-user confirmation, not a relayed summary. If the user confirms they now want
-left=detach, adopt Option B.
+**Recommend Option A (keep left=settings / right=detach)** as the *standing
+default*, for two reasons: (1) it matches the prevailing bar-widget convention and
+the most frequent task (configuration), and (2) the code comment records a prior
+explicit user intent to that effect — so flipping it should require a *fresh,
+explicit* user confirmation, not a relayed summary. If the user confirms they now
+want left=detach, adopt Option B.
 
 **This is a flag, not a decision.** The architect lane owns specs/architecture,
 not unilateral UX calls that contradict recorded user intent. lotus must surface
 the contradiction to the user and return the confirmed mapping before dev
 implements.
+
+**Spec-accuracy note (per governance):** this ADR states the "user expects
+left=detach" expectation as *reported, unverified*, and keeps the current mapping
+as the default until the user answers. No assertion of user intent is made as fact.
 
 ## 4. Spec for dev (CONDIAL — only after user decides)
 
