@@ -150,8 +150,8 @@ Panel {
     // T-014: once the bar injects anchorItem/hostWidget (post-load), re-layout
     // the surface so a late anchor resolves to a visible popup instead of a
     // stale zero-size/offset surface.
-    onAnchorItemChanged: Qt.callLater(panel.forceLayout)
-    onOwnerChanged: Qt.callLater(panel.forceLayout)
+    onAnchorItemChanged: Qt.callLater(function(){ panel.forceLayout() })
+    onOwnerChanged: Qt.callLater(function(){ panel.forceLayout() })
 
     PanelKeyCatcher {
       id: keyCatcher
@@ -192,9 +192,6 @@ Panel {
           }
         }
         // v7.2 window options reflected live in the preview
-        Binding { when: previewViz.item; target: previewViz.item; property: "border"; value: (root.config.border !== false) }
-        Binding { when: previewViz.item; target: previewViz.item; property: "colorSource"; value: (root.config.colorSource || "theme") }
-        Binding { when: previewViz.item; target: previewViz.item; property: "customColor"; value: (root.config.customColor || "#5ec8ff") }
         Binding { when: previewViz.item; target: previewViz.item; property: "themeBottom"; value: (root.config.themeBottom || "#e68e0d") }
         Binding { when: previewViz.item; target: previewViz.item; property: "themeTop"; value: (root.config.themeTop || "#f59e0b") }
         // TASK #2: fire toggle drives the winamp-flame preview too
@@ -458,6 +455,7 @@ Panel {
           width: parent.width
           spacing: Style.space(8)
           Button {
+            id: resetBtn
             text: "Reset"
             onClicked: root.resetAll()
           }
