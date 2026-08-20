@@ -726,3 +726,35 @@ test('defaultConfig theme gradient is DERIVED from THEME_PALETTE.md (not a tauto
   assert.strictEqual(d.themeBottom, accent, 'themeBottom must equal palette accent')
   assert.strictEqual(d.themeTop, brightBlue, 'themeTop must equal palette bright_blue')
 })
+
+// T-023 (TOML corruption): Panel.qml commit() passed PRE-QUOTED string values
+// ('"' + key + '"') into Model.writeConfigKey, which ALSO quotes strings
+// (Model.js:168-170) -> `visual = ""wave""`. The omaviz daemon reads that back
+// as the literal `"wave"` (with quotes), so currentViz() comparing to `wave`
+// (unquoted) falls back to Bars. Fix: commit() passes the RAW value and lets
+// writeConfigKey do the quoting.
+test('T-023: writeConfigKey quotes a RAW string value exactly once', () => {
+  const out = M.writeConfigKey('[desktop]\nvisual = "bars"\n', 'desktop', 'visual', 'wave')
+  // Single set of quotes = valid TOML; read back strips to `wave` (matches currentViz).
+  assert.ok(/visual = "wave"\s*$/m.test(out), 'raw value -> `visual = "wave"` (single quote)')
+  assert.ok(!/visual = ""wave""/.test(out), 'no double-quoting')
+  const readBack = M.readTomlValue(out, 'desktop', 'visual')
+  assert.strictEqual(readBack, 'wave', 'read-back equals unquoted `wave` (currentViz matches)')
+})
+test('T-023: pre-quoted value reproduces the OLD corruption bug (regression guard)', () => {
+  // Documents the exact bug: passing "'\"'+v+'\"" into writeConfigKey double-quotes.
+  const out = M.writeConfigKey('[desktop]\nvisual = "bars"\n', 'desktop', 'visual', '"wave"')
+  assert.ok(/visual = ""wave""/.test(out),
+    'proof: pre-quoted value -> `visual = ""wave""` (currentViz never matches)')
+})
+test('T-023: Panel.qml commit() passes RAW values (no pre-quoting wrapper)', () => {
+  const panel = fs.readFileSync(path.resolve(__dirname, '..', 'Panel.qml'), 'utf8')
+  // The fix removes the '"' + value + '"' wrappers from the commit() string writes
+  // (visual/style/color/mode/color_source). Assert none remain.
+  const preQuoteWrappers = panel.match(/"'\s*\+/g)
+  assert.strictEqual(preQuoteWrappers, null,
+    'no `\'"\' + ...` pre-quote wrapper left in Panel.qml string writes')
+  // And commit() still routes through Model.writeConfigKey (which quotes once).
+  assert.ok(/function commit\(key, value, section\)\s*\{\s*cfgText = Model\.writeConfigKey\(/.test(panel),
+    'commit() still delegates quoting to Model.writeConfigKey')
+})

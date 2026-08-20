@@ -214,8 +214,8 @@ Panel {
             var key = v === "Oscilloscope" ? "oscilloscope"
                     : v === "Wave" ? "wave"
                     : "equalizer"
-            commit("visual", '"' + key + '"', "mini")
-            commit("visual", '"' + key + '"', "desktop")
+            commit("visual", key, "mini")
+            commit("visual", key, "desktop")
           }
         }
 
@@ -235,8 +235,8 @@ Panel {
           value: (root.readCfg("style", "mini") || "classic") === "fire" ? "Fire (Canvas)" : "Classic"
           onChanged: function(v) {
             var key = v === "Fire (Canvas)" ? "fire" : "classic"
-            commit("style", '"' + key + '"', "mini")
-            commit("style", '"' + key + '"', "desktop")
+            commit("style", key, "mini")
+            commit("style", key, "desktop")
           }
         }
         Text {
@@ -285,7 +285,7 @@ Panel {
             options: ["Bars", "Lines"]
             value: (root.readCfg("mode", "visual.equalizer") || "bars") === "lines" ? "Lines" : "Bars"
             onChanged: function(v) {
-              commit("mode", '"' + (v === "Lines" ? "lines" : "bars") + '"', "visual.equalizer")
+              commit("mode", (v === "Lines" ? "lines" : "bars"), "visual.equalizer")
             }
           }
         }
@@ -308,7 +308,7 @@ Panel {
             })()
             onChanged: function(v) {
               var key = v === "Solid" ? "solid" : v === "Line" ? "line" : v === "Fade" ? "fade" : "fire"
-              commit("color", '"' + key + '"', "visual.equalizer")
+              commit("color", key, "visual.equalizer")
             }
           }
         }
@@ -368,7 +368,7 @@ Panel {
             options: ["Theme", "Custom"]
             value: (root.readCfg("color_source", "desktop") || "theme") === "custom" ? "Custom" : "Theme"
             onChanged: function(v) {
-              commit("color_source", '"' + (v === "Custom" ? "custom" : "theme") + '"', "desktop")
+              commit("color_source", (v === "Custom" ? "custom" : "theme"), "desktop")
             }
           }
         }
