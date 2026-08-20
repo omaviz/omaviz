@@ -21,6 +21,9 @@ Window {
 
   property var spectrumBands: Model.spectrumData.bands
   property bool spectrumSilent: Model.spectrumData.silent
+  // T-015: last engine diagnostic line (stderr/exit), surfaced in the window so
+  // a capture failure is visible instead of a silent blank canvas.
+  property string engineLog: ""
   // Active visual: equalizer -> Bars, oscilloscope -> Oscilloscope,
   // wave -> Wave (GL mode 2). Fire is a color mode, not a visual.
   readonly property string visualName: (win.config.visualDesktop || "equalizer") === "oscilloscope" ? "Oscilloscope"
@@ -41,13 +44,32 @@ Window {
           if (obj && Array.isArray(obj.bands)) {
             win.spectrumBands = obj.bands
             win.spectrumSilent = obj.silent === true
+            // T-015: push live bands/silent to the GL item on EVERY frame, not
+            // only via the one-shot Binding. Guarantees the renderer always has
+            // the latest frame even if the Loader reloaded the item (gpu toggle).
+            if (desktopViz.item) {
+              desktopViz.item.bands = win.spectrumBands
+              desktopViz.item.silent = win.spectrumSilent
+            }
           }
         } catch (e) {}
+      }
+    }
+    // T-015: surface engine diagnostics instead of discarding stderr. A capture
+    // failure (e.g. node-name collision, no monitor) only printed to stderr; the
+    // desktop window dropped it, making silence invisible. Forward to a visible
+    // line so the user sees "no audio source" rather than a blank canvas.
+    stderr: SplitParser {
+      splitMarker: "\n"
+      onRead: function(data) {
+        var msg = String(data).trim()
+        if (msg) win.engineLog = msg
       }
     }
     // Resilience: if the engine exits, try once to respawn it so the window
     // does not get stuck on a static frame (mirrors the bar widget's retry).
     onExited: function(code, status) {
+      win.engineLog = "engine exited (code " + code + ")"
       if (win.visible) Qt.callLater(function() { bridge.running = true })
     }
   }
@@ -70,6 +92,15 @@ Window {
         width: 22; height: 18; text: "×"
         onClicked: win.close()
       }
+    }
+    // T-015: visible engine-diagnostics line so a capture failure (blank canvas)
+    // is diagnosable instead of silent.
+    Text {
+      width: parent.width; height: 16
+      anchors.left: parent.left; anchors.leftMargin: 10
+      text: win.engineLog
+      color: "#9aa0b5"; font.pixelSize: 10; font.family: "monospace"
+      elide: Text.ElideRight
     }
 
     Rectangle {

@@ -27,7 +27,7 @@ fn run_loop(tx: Sender<AudioChunk>) -> Result<()> {
         *pw::keys::MEDIA_TYPE => "Audio",
         *pw::keys::MEDIA_CATEGORY => "Capture",
         *pw::keys::MEDIA_ROLE => "Music",
-        *pw::keys::NODE_NAME => "omaviz-engine",
+        *pw::keys::NODE_NAME => build_node_name(),
     };
     // Capture what the default sink is playing, whatever app produced it.
     props.insert(*pw::keys::STREAM_CAPTURE_SINK, "true");
@@ -142,4 +142,37 @@ pub fn spawn() -> Result<std::sync::mpsc::Receiver<AudioChunk>> {
         }
     });
     Ok(rx)
+}
+
+/// Build the per-instance PipeWire node name.
+///
+/// Every engine instance must register a UNIQUE `NODE_NAME`. The mini bar and
+/// the detached desktop window each spawn their own `omaviz-engine` process; a
+/// shared hard-coded name makes the session-manager fail to autoconnect the
+/// second capture (silence). Suffixing with the PID gives each instance a
+/// distinct identity so both can capture the same monitor concurrently (T-015).
+pub fn build_node_name() -> String {
+    format!("omaviz-engine-{}", std::process::id())
+}
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn node_name_is_unique_per_instance() {
+        let n = build_node_name();
+        // Must NOT be the old shared name that caused the dual-capture collision.
+        assert_ne!(n, "omaviz-engine", "node name must be per-instance");
+        // Must carry a per-instance suffix (pid), e.g. "omaviz-engine-12345".
+        assert!(
+            n.starts_with("omaviz-engine-"),
+            "node name must be prefixed with omaviz-engine-: {n}"
+        );
+        let suffix = n.trim_start_matches("omaviz-engine-");
+        assert!(!suffix.is_empty(), "node name suffix must be non-empty");
+        assert!(
+            suffix.chars().all(|c| c.is_ascii_digit()),
+            "node name suffix must be the numeric pid: {n}"
+        );
+    }
 }

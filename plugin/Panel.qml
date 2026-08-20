@@ -63,6 +63,13 @@ Panel {
     return readCfg(key, section) === "true"
   }
 
+  // ---- Forwarded controller-open (T-014) ----
+  // The popup surface reads `panelController.open` from the shared qs.Ui Panel
+  // base. Bind it locally so the change signal is unambiguously local and the
+  // KeyboardPanel never silently binds to an unresolved inherited property.
+  readonly property bool _ctrlOpen: (typeof panelController !== "undefined" && panelController)
+    ? panelController.open : false
+
   // ---- Popup lifecycle ----
   // IMPORTANT: do NOT override opened/open/close/toggle here. The `Panel`
   // base (qs.Ui/Panel.qml) owns a PanelController and drives the popup surface
@@ -118,14 +125,23 @@ Panel {
   KeyboardPanel {
     id: panel
     anchors.fill: parent
-    anchorItem: root.anchorItem
-    owner: root.hostWidget || root
+    // T-014: fallback anchor chain so the popup always has a valid anchor even
+    // if injectPanel() has not yet set anchorItem/hostWidget (null on first
+    // show -> off-screen/invisible). Fallback to bar, then root, mirrors the
+    // existing `bar: root.bar` strategy.
+    anchorItem: root.anchorItem || root.bar || root
+    owner: root.hostWidget || root.bar || root
     bar: root.bar
-    open: root.opened
+    open: root._ctrlOpen
     centerOnBar: false
     focusTarget: keyCatcher
     contentWidth: panel.fittedContentWidth(Style.space(460))
     contentHeight: panel.fittedContentHeight(column.implicitHeight, Style.space(720))
+    // T-014: once the bar injects anchorItem/hostWidget (post-load), re-layout
+    // the surface so a late anchor resolves to a visible popup instead of a
+    // stale zero-size/offset surface.
+    onAnchorItemChanged: Qt.callLater(panel.forceLayout)
+    onOwnerChanged: Qt.callLater(panel.forceLayout)
 
     PanelKeyCatcher {
       id: keyCatcher
