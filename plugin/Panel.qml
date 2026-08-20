@@ -215,7 +215,7 @@ Panel {
           value: cfgViz === "oscilloscope" ? "Oscilloscope"
                  : cfgViz === "wave" ? "Wave"
                  : "Bar"
-          onchanged: function(v) {
+          onChanged: function(v) {
             var key = v === "Oscilloscope" ? "oscilloscope"
                     : v === "Wave" ? "wave"
                     : "equalizer"
