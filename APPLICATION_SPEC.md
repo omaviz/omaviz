@@ -549,3 +549,6 @@ Progress reflects shipped capability in the live plugin (tag `v7.6`).
 | 17 | `visuals/wave.toml` params (amplitude/frequency/brightness/peak_fall) trimmed — inert in the continuous-carrier WAVE shader (decision: trim, not wire) | Shipped | 100% | (spec: ADR-0003) |
 | 18 | Oscilloscope line-width dead input removed; control-texture row 10 G/B/A marked reserved (was falsely documented "unused") (P3) | Shipped | 100% | (spec: ADR-0004) |
 | 19 | Control-texture NEAREST filtering (T-013): `ShaderEffectSource.Nearest` is invalid in Qt 6; force NEAREST via `sourceItem.layer.smooth:false`. Fixes WAVE decoding to Oscilloscope under LINEAR. | In Progress | 0% | (spec: ADR-0005) |
+| 20 | Settings-panel popup invisible (T-014): surface anchored to injected `anchorItem`/`owner`; `open` re-emitted from base `panelController`; re-anchor on injection. Shell-layer (not GPU). | Backlog | 0% | (spec: ADR-0008) |
+| 21 | Detached desktop window blank + no audio (T-015): per-instance PipeWire node name so the 2nd engine captures; surface engine stderr; push bands per-frame (not one-shot Binding). | Backlog | 0% | (spec: ADR-0009) |
+| 22 | Click mapping left vs right (T-016): **FLAGGED for user** — current left=settings/right=detach; user expects left=detach. Awaiting user decision before impl. | Backlog | 0% | (spec: ADR-0010) |
