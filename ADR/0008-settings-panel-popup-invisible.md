@@ -1,137 +1,126 @@
-# ADR-0008: Settings-panel popup invisible (T-014) — popup surface / lifecycle correction
+# ADR-0008: Settings-panel popup invisible (T-014) — module resolution (CONFIRMED root cause)
 
 | | |
 |---|---|
 | **Status** | Accepted (to implement in v7.6.x) |
-| **Date** | 2026-08-19 |
+| **Date** | 2026-08-19 (root cause re-confirmed this revision) |
 | **Author** | architect (@architect) |
 | **Task** | T-014 (roadmap #20) |
-| **Applies to** | `plugin/Panel.qml` (KeyboardPanel surface), `qs.Ui/Panel.qml` (base `panelController`), `plugin/BarWidget.qml` (`injectPanel`, `panelLoader`) |
-| **Supersedes** | none |
+| **Applies to** | `plugin/Panel.qml` (imports `qs.Commons`/`qs.Ui`), `plugin/BarWidget.qml`, plugin packaging / QML import path, `qs.Ui`/`qs.Commons` provision |
+| **Supersedes** | earlier ADR-0008 draft that (incorrectly, per retracted T-017) denied the missing-module cause |
 | **Superseded by** | none |
 
 ## 1. Context
 
-The mini bar renders fine (BarWidget loads, `qs.Commons`/`qs.Ui` resolve at
-runtime). The settings **popup never surfaces** on left-click toggle. The mini and
-the popup live in the same Quickshell process: `BarWidget.qml` loads
-`Panel.qml` via a `Loader` (`panelLoader`, BarWidget:307-313) and injects
-`anchorItem`/`hostWidget`/`bar` via `injectPanel()`.
-
-The intended show path (documented in Panel.qml:66-76):
-```
-BarWidget.toggle() → panelLoader.item.toggle() → Panel base toggle()
-  → panelController.show() → panelController.open = true → KeyboardPanel shows
-```
-`Panel.qml` builds on the shared `qs.Ui/Panel.qml` base, which owns a
-`PanelController`. The `KeyboardPanel` (Panel.qml:118-135) binds:
+`plugin/Panel.qml` (and `BarWidget.qml`) begin with:
 ```qml
-KeyboardPanel {
-  anchorItem: root.anchorItem          // injected by BarWidget.injectPanel()
-  owner:      root.hostWidget || root
-  open:       root.opened              // = panelController.open (base)
-  ...
-}
+import qs.Commons
+import qs.Ui
 ```
+`qs.Commons` and `qs.Ui` are QML *modules* registered by the omarchy shell via
+`/usr/share/omarchy/shell/Commons/qmldir` (`module qs.Commons`) and
+`/usr/share/omarchy/shell/Ui/qmldir` (`module qs.Ui`). For Quickshell to resolve
+`import qs.Commons`/`import qs.Ui`, those module directories must be on the QML
+import path of the *plugin's* QML engine.
 
-## 2. Root cause
+## 2. Root cause — CONFIRMED (re-corrected this revision)
 
-**CONFIRMED ROOT CAUSE (2026-08-19, live omarchy-shell log):** the live log
-shows `Panel.qml[120:13]: Cannot assign to non-existent property "fill"`.
-`KeyboardPanel` (from `qs.Ui`) does not expose `anchors.fill` in this Quickshell
-build, so QML raises the error and **aborts Panel construction** → the settings
-popup never surfaces. This is the smoking gun for T-014 and is consistent with
-the mini working (the mini does not use `KeyboardPanel.anchors.fill`); since the
-mini loads, `qs.*` resolves in the shell, so this is **NOT** a missing-module
-issue. The anchor/owner timing theory below is now **secondary** (it may still
-contribute, but the `fill` error is what actually halts construction).
+An earlier draft of this ADR (based on the retracted T-017 tester report) claimed
+the mini loading proved `qs.*` resolves and that the cause was instead an
+`anchors.fill` error. That was **wrong**. lotus grep'd **all 31 live quickshell
+logs**: the `qs.Commons`/`qs.Ui` **"unresolvable import" warning appears in BOTH
+standalone launches (rn794o1kt) AND shell-driven launches (oc7s3o1kt, pi754o1kt,
+z27d3o1kt, byyxn1kt, …).** Therefore:
 
-The popup surface is **entirely owned by the shared `qs.Ui Panel` base
-`panelController`**, but two shell-layer defects break it:
+> **The plugin's QML engine does NOT have `/usr/share/omarchy/shell` on its
+> import path in either launch context, so `import qs.Commons` / `import qs.Ui`
+> fails, Panel.qml fails to instantiate, and the settings popup never surfaces.**
 
-1. **`anchorItem` / `owner` injection timing.** `root.anchorItem` is `null`
-   until `BarWidget.injectPanel()` runs (BarWidget:75-82, called on
-   `panelLoader.onLoaded`). `KeyboardPanel` anchors to `root.anchorItem`. If the
-   controller's `show()` fires (or is attempted) before `injectPanel()` has set
-   `anchorItem`, the popup anchors to a `null`/unresolved item and renders
-   **off-screen / zero-size** — invisible, with no error. `injectPanel()` is
-   invoked twice (`onLoaded` + a `Qt.callLater`), which helps, but the binding to
-   `anchorItem` is established at `KeyboardPanel` construction time and does not
-   re-resolve if the underlying value was `null` when first evaluated.
+This is the **primary, confirmed** root cause of T-014. The mini bar works only
+because `BarWidget.qml` itself is loaded *by the shell* and the shell's own
+components happen to resolve — but the *plugin's* resolution of `qs.*` does not
+propagate to the standalone/child engine context. (Note: Desktop.qml deliberately
+avoids `qs.*`, which is why the detached window launches at all — see ADR-0009/
+ADR-0012 — but the settings panel cannot avoid `qs.Ui` because it builds on
+`qs.Ui/Panel.qml` + `KeyboardPanel`.)
 
-2. **`open` bound to an inherited, never re-emitted property.** `Panel.qml` does
-   NOT re-declare `opened`/`open`/`close`/`toggle` (it relies on the base,
-   per the comment at Panel.qml:67-76). `root.opened` therefore resolves to the
-   `Panel` base controller state — but `BarWidget` *also* defines
-   `readonly property bool opened: panelLoader.item ? panelLoader.item.opened :
-   false` (BarWidget:63-64). This double indirection is fine for the *bar's*
-   read of `opened`, yet the `KeyboardPanel.open: root.opened` inside Panel.qml
-   reads the **base** `opened`, whose change signal must propagate through the
-   `panelController` to trigger the surface. When the controller is instantiated
-   in the *plugin* (not shell) context, the `qs.Ui Panel` base controller can
-   fail to attach its surface to the bar's window, so `open=true` flips but the
-   popup is never composited.
+## 3. Decision — how `qs.Commons`/`qs.Ui` are provided to the plugin
 
-**Conclusion:** this is a **popup-surface / lifecycle** defect, *not* a shader or
-GPU issue. The fix is in the panel surface wiring (anchor/owner resolution +
-explicit controller forwarding), consistent with lotus's hypothesis.
+**RECOMMENDATION: vendor the minimal required subset of `qs.Commons` and `qs.Ui`
+into the plugin** so `import qs.Commons`/`import qs.Ui` resolve from the plugin's
+*own* import path, independent of how the shell configures its engine.
 
-## 3. Decision — the fix (spec for dev)
+Rationale:
+- Matches the project's Architecture A (single-package, drop-in, no system
+  dependency) and the existing self-contained philosophy already applied to
+  `Desktop.qml` ("avoids shell-only modules").
+- Fixes the failure in **both** contexts (standalone `quickshell -p` and
+  shell-driven), because the modules travel *with* the plugin.
+- Removes the silent dependency on shell import-path configuration, which the
+  logs prove is not reliably provided.
 
-1. **Guarantee `anchorItem` is non-null before the surface can show.** In
-   `Panel.qml`, replace the bare `anchorItem: root.anchorItem` with a
-   **fallback chain** so the popup always has a valid anchor even if injection is
-   late:
-   ```qml
-   anchorItem: root.anchorItem || root.bar || root
-   owner:      root.hostWidget || root.bar || root
-   ```
-   (The fallback to `root.bar`/`root` is the same strategy `KeyboardPanel` already
-   uses for `bar: root.bar`.)
+**What to vendor (minimal subset actually used by the plugin):**
+- `qs.Commons`: `Border.qml`, `Color.qml`, `Style.qml`, `Util.qml` (all
+  singletons, per `Commons/qmldir`) + a local `qmldir` with `module qs.Commons`.
+- `qs.Ui` (only the types Panel.qml/BarWidget.qml reference): `Panel.qml`,
+  `PanelController.qml`, `KeyboardPanel.qml`, `PanelKeyCatcher.qml`,
+  `PanelSectionHeader.qml`, `PanelSeparator.qml`, `ButtonGroup.qml`, `Button.qml`,
+  `ToggleSwitch.qml` (and any transitive deps those pull in, e.g. `BorderSurface`,
+  `PopupCard` only if used) + a local `qmldir` with `module qs.Ui`.
+- Lay them out under `plugin/qs/Commons/` and `plugin/qs/Ui/` so QML resolves
+  `qs/Commons/qmldir` and `qs/Ui/qmldir` relative to the plugin directory.
 
-2. **Re-emit the controller state from Panel.qml** instead of relying solely on
-   the inherited base property, so the change signal is unambiguously local:
-   ```qml
-   // forward the base controller's open state to the surface
-   readonly property bool _ctrlOpen: panelController ? panelController.open : false
-   // ... and bind KeyboardPanel.open: root._ctrlOpen
-   ```
-   If `panelController` is not exposed by the base, expose `open`/`close`/`toggle`
-   explicitly in Panel.qml that call the base controller's `show()`/`hide()`
-   (the comment at Panel.qml:67-76 warns the *old* broken version overrode these
-   to set `panel.open` directly — the correct form is to call
-   `panelController.show()/hide()`).
+**Sync / drift control (required):** the vendored copy is a *pinned snapshot*. Add
+a release step (script or CI check) that copies the modules from
+`/usr/share/omarchy/shell` at plugin tag time and fails CI if the plugin's local
+copy diverges from the shell's API surface it depends on. Document the dependency
+explicitly so a future shell API change is caught.
 
-3. **Force a re-anchor on injection.** In `injectPanel()` (BarWidget side, or a
-   Panel-side `onAnchorItemChanged`), call `panel.forceLayout()` /
-   re-evaluate the `KeyboardPanel` anchor once `anchorItem` is set, so a late
-   injection still produces a visible surface.
+**Rejected alternative — shell bridges the import path:** have the omarchy shell
+pass its `QML2_IMPORT_PATH` / import-path list to the plugin's Quickshell engine.
+Rejected as primary because (a) it still fails for the standalone
+`quickshell -p Desktop.qml`-style launch where no shell is present to bridge, and
+(b) it depends on shell cooperation outside the plugin's control, whereas the
+plugin's single-package contract says it must be self-sufficient. Acceptable only
+as a *temporary* mitigation while vendoring lands.
 
-4. **Do NOT touch shaders/GPU.** The popup uses the Canvas-2D `VisualCanvas`
-   preview and `qs.Ui` chrome; this is a pure QML/popup-lifecycle correction.
+## 4. Secondary / compounding fixes (kept, necessary-but-insufficient)
 
-## 4. Consequences
+dev's anchor fix (commit **85cde08**) added a fallback anchor chain
+(`anchorItem: root.anchorItem || root.bar || root`) and `forceLayout()` re-anchor
+on injection. **This is necessary but NOT sufficient** — it only helps once the
+QML actually loads, which it cannot until §3 (module provision) is done. Keep it.
+Additionally, a *separate* genuine QML error in the same file must be removed —
+see **ADR-0011 (T-019)**: `KeyboardPanel` is a `PanelWindow`/Quickshell window and
+has no `anchors` property, yet Panel.qml:127 assigns `anchors.fill: parent`, which
+raises `Cannot assign to non-existent property "fill"` and aborts construction.
+Both §3 and ADR-0011 must land for the panel to surface.
 
-- **Positive:** the settings popup becomes visible on left-click, matching the
-  bar's contract (`panelLoader.item.open()`). No change to the visual content.
-- **Negative / cost:** minor — adds explicit forwarding/binding. Low risk.
-- **Test gate (tester, on live shell — needs user GPU/UI approval per
-  AGENT_GOVERNANCE):** left-click the bar → settings panel appears, is
-  interactive, and closes on `Esc`/outside-click. Must be verified on the user's
-  running Omarchy shell (a standalone harness cannot surface the shell-layer
-  popup). Regression: the panel must NOT require a second click to appear.
+## 5. Consequences
 
-## 5. Rejected alternatives
+- **Positive:** settings popup loads and surfaces in both standalone and
+  shell-driven launches; removes the silent module dependency.
+- **Negative / cost:** vendored modules must be kept in sync with the shell
+  (mitigated by the CI/sync step in §3). Some duplication of shell QML.
+- **Test gate (tester, live shell — needs user GPU/UI approval per
+  AGENT_GOVERNANCE):** left-click bar → settings panel appears, interactive,
+  closes on Esc/outside-click. Regression: must not require a second click; must
+  work whether launched standalone or by the shell.
 
-- **Assume it's a GPU issue and rebuild shaders:** rejected — the popup is
-  QML/`qs.Ui`, unrelated to `visual.frag`/`VisualCanvasGL`.
-- **Move the panel into the bar widget directly (drop the Loader):** rejected —
-  larger refactor; the Loader+injectPanel contract is sound, only the surface
-  anchor/forwarding is broken.
+## 6. Rejected alternatives
 
-## 6. References
-- `plugin/Panel.qml` — KeyboardPanel (118-135), popup lifecycle comment (66-76),
-  `injectPanel` contract (11-20).
-- `plugin/BarWidget.qml` — `panelLoader` (307-313), `injectPanel` (75-82),
-  `opened` (63-64).
-- APPLICATION_SPEC.md §6 (settings panel), §13 (#19).
+- **Assume the panel is a GPU/shader issue:** rejected — purely a QML import /
+  module-resolution failure.
+- **Rely on shell import-path bridging alone:** rejected (see §3).
+- **Just delete the `qs.*` imports from Panel.qml:** rejected — the panel is built
+  on `qs.Ui/Panel.qml` + `KeyboardPanel`; those types cannot be removed without
+  rewriting the entire surface.
+
+## 7. References
+- `plugin/Panel.qml` — `import qs.Commons`/`qs.Ui` (5-6), `KeyboardPanel` surface
+  (125-145), `anchors.fill` (127, see ADR-0011).
+- `plugin/BarWidget.qml` — `import qs.Commons`/`qs.Ui` (4-5), `injectPanel` (75-82).
+- `/usr/share/omarchy/shell/Commons/qmldir` (`module qs.Commons`, 4 singletons),
+  `/usr/share/omarchy/shell/Ui/qmldir` (`module qs.Ui`, Panel/KeyboardPanel/…).
+- `plugin/Desktop.qml` — deliberately avoids `qs.*` (comment line 9).
+- APPLICATION_SPEC.md §2 (Architecture A), §6 (settings panel), §13 (#20).
