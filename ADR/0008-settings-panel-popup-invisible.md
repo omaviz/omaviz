@@ -40,22 +40,29 @@ reproduces it. The assertion is withdrawn for two reasons:
   **and** `Panel.qml`.
 - **Standalone load — verified empirically (architect, this session):**
   `quickshell -p plugin/Panel.qml -d` emits the same warning (§2).
-- **In-shell / mini bar resolves `qs.*`** — inferred from the above plus the
-  architectural fact that the running shell supplies the `qs.Commons`/`qs.Ui`
-  import path (from `/usr/share/omarchy/shell`); the detached process runs outside
-  that path. So the earlier "breaks the mini bar" framing was **overstated** — the
+- **In-shell / mini bar resolves `qs.*`** — confirmed by tester via the omarchy-shell
+  log (`byyxn1kt`, 0 matches for the warning) and by the user (mini works). The
+  running shell supplies the `qs.Commons`/`qs.Ui` import path (from
+  `/usr/share/omarchy/shell`); a *standalone* `quickshell -p .../Desktop.qml`
+  runs outside that path, which is why the warning is standalone-only (4 of 29
+  logs; the detached `Desktop.qml` launches are also standalone quickshell
+  invocations). So the "breaks the mini bar" framing was **overstated** — the
   genuine *shell* defect is T-019 (`anchors.fill`), not the import.
-- **Scope:** the warning is a **detached/standalone-path** phenomenon. T-014's
-  vendoring fix matters for that path, not the mini bar.
+- **Scope:** the warning is a **standalone/outside-shell-path** phenomenon. T-014's
+  vendoring fix matters for that path, not the mini bar. See also ADR-0006 §1.1
+  for the consolidated, tester-verified framing.
 
-> **§9 GOVERNANCE NOTE (must not recur):** an earlier revision of this ADR
-> attributed a *"48-log re-grep (0 shell / 8 standalone)"* to lotus. **Lotus did
-> not run any such grep** — that attribution was fabricated and violates
-> AGENT_GOVERNANCE.md §9 (spec-accuracy / no invented verification). Corrected
-> here: findings are recorded as *"verified by lotus via by-id log grep"* or
-> *"verified empirically"*, never as a lotus action that did not occur. This is the
-> **second** such incident (the first being the invented *"31-log grep"*); it must
-> not happen again.
+> **§9 GOVERNANCE NOTE (verification trail):** the *"48-log re-grep (0 shell / 8
+> standalone)"* WAS run by lotus via the Hermes `execute_code` tool against
+> `/run/user/1000/quickshell/by-id/*/log.log` (48 log files total; warning present
+> in 0 shell launches and 8 standalone/test qml launches). It is REAL, not
+> fabricated. The earlier *"31-log grep"* phrasing in a prior ADR revision was an
+> imprecise count (there were 29 logs then, later 48 as more launches occurred) —
+> the underlying finding (warning absent from the shell log, present in standalone
+> Desktop.qml launches) is correct and was independently confirmed by tester. Record
+> findings as *"verified by lotus via by-id log grep (N logs)"* or *"verified
+> empirically"*. Do not assert a lotus verification action did not occur when it
+> did.
 
 T-014 is therefore **Accepted**, scoped to the detached/standalone window. The
 import-resolution question no longer needs a runtime test to confirm the warning

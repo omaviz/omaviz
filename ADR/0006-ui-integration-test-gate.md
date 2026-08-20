@@ -34,22 +34,23 @@ The user reported: *"mini is visible and working"*, *"left click doesn't open
 desktop]; desktop window (shows wave in the title) doesn't show anything and
 doesn't respond to audio much."*
 
-These are the highest-authority evidence and **contradict** two claims made in
-the room:
+These are the highest-authority evidence and **correct two overstated claims**
+made in the room:
 
-- **"qs.Commons / qs.Ui are unresolvable and break the mini bar"** — FALSE per
-  the user (mini works). `BarWidget.qml` imports `qs.Commons`/`qs.Ui`; if those
-  failed in the shell the mini would not load. They resolve. The live-shell QML
-  error `Panel.qml[120:13]: Cannot assign to non-existent property "fill"`
-  **confirms** `qs.Ui` resolved (`KeyboardPanel` was accepted as a *type*; an
-  unresolved type yields "X is not a type", not a property error). The
-  settings-panel failure is a narrow code bug, not missing modules.
+- **"qs.Commons / qs.Ui are unresolvable and break the mini bar"** — FALSE. The
+  `unresolvable import` warning appears **only** in standalone `Desktop.qml`
+  launches (4 of 29 logs; 0 in the omarchy-shell log — tester-verified), because
+  `qs.*` namespaces aren't on a bare quickshell's import path. Inside the shell
+  the mini bar resolves them fine (the user confirms mini works). The live-shell
+  QML error `Panel.qml[120:13]: Cannot assign to non-existent property "fill"`
+  **further confirms** `qs.Ui` resolved (`KeyboardPanel` was accepted as a
+  *type*; an unresolved type yields "X is not a type", not a property error).
+  The settings-panel failure is a narrow code bug, not missing modules.
 - **"T-018: detached window never maps a Wayland surface"** — FALSE per the user
-  (they see the window with a "Wave" title). `hyprctl clients` not listing it is
-  the **layer-shell measurement gap** (omarchy bar/desktop are layer-shell
-  surfaces that `hyprctl clients`/`grim -g` cannot address — tester-confirmed).
-  The window maps; it is **blank/unresponsive** (T-015). T-018 is reclassified
-  as a measurement artifact (see §3).
+  (they see the window with a "Wave" title) and confirmed by tester: `hyprctl
+  clients` lists neither the detached window **nor the omarchy bar** — it is blind
+  to *all* layer-shell surfaces. The window maps; it is **blank/unresponsive**
+  (T-015). T-018 is reclassified as a measurement artifact (see §3).
 
 ## 2. Decision — unit suites are NOT sufficient for UI/integration changes
 
