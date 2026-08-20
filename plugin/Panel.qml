@@ -147,14 +147,10 @@ Panel {
     focusTarget: keyCatcher
     contentWidth: panel.fittedContentWidth(Style.space(460))
     contentHeight: panel.fittedContentHeight(column.implicitHeight, Style.space(720))
-    // T-014: once the bar injects anchorItem/hostWidget (post-load), the popup
-    // must resolve to a visible surface instead of a stale zero-size/offset one.
-    // The shared KeyboardPanel takes `anchorItem` as a `required property` and
-    // re-derives its geometry from it via bindings (KeyboardPanel.qml:136/146-150/
-    // 195) — it exposes NO `forceLayout()` method, so calling one would emit
-    // "Qt.callLater: first argument not a function or signal". The late-anchor
-    // relayout is therefore already handled by those binding re-evaluations;
-    // no manual call is needed (T-022).
+    // T-014: the shared KeyboardPanel takes `anchorItem` as a required property and
+    // re-derives its geometry from it via bindings, so a late anchor resolves to a
+    // visible popup automatically — no manual forceLayout() call is needed (the
+    // KeyboardPanel exposes no such method, T-022).
 
     PanelKeyCatcher {
       id: keyCatcher
@@ -194,17 +190,13 @@ Panel {
             colourScheme: 0
           }
         }
-        // v7.2 window options reflected live in the preview
-        Binding { when: previewViz.item; target: previewViz.item; property: "border"; value: (root.config.border !== false) }
-        Binding { when: previewViz.item; target: previewViz.item; property: "colorSource"; value: (root.config.colorSource || "theme") }
-        Binding { when: previewViz.item; target: previewViz.item; property: "customColor"; value: (root.config.customColor || "#5ec8ff") }
-        Binding { when: previewViz.item; target: previewViz.item; property: "themeBottom"; value: (root.config.themeBottom || "#e68e0d") }
-        Binding { when: previewViz.item; target: previewViz.item; property: "themeTop"; value: (root.config.themeTop || "#f59e0b") }
-        // TASK #2: fire toggle drives the winamp-flame preview too
-        Binding { when: previewViz.item; target: previewViz.item; property: "fire"; value: (root.config.fire === true) }
-        Binding { when: previewViz.item; target: previewViz.item; property: "peaks"; value: (root.config.peaks !== false) }
-        Binding { when: previewViz.item; target: previewViz.item; property: "falloff"; value: (root.config.falloff ?? 0.5) }
-        Binding { when: previewViz.item; target: previewViz.item; property: "alpha"; value: (root.config.alpha ?? 1.0) }
+        // The settings preview is the Canvas-2D VisualCanvas (Panel.qml:185), NOT
+        // a Loader, so `previewViz.item` is always undefined. Binding to it emits
+        // "Unable to assign [undefined]" warnings (live log 5jxiodn2kt, 18x) and
+        // does nothing. The GL-only style props (border/colorSource/customColor/
+        // themeBottom/themeTop/fire/peaks/falloff/alpha) also don't exist on the
+        // 2D canvas. The 2D preview already receives its valid props inline above
+        // (186-191); do NOT re-bind GL-only props here (T-022 regression guard).
 
         PanelSeparator { }
 
