@@ -80,6 +80,17 @@ function ok(name, cond) {
   ok('T-022: Reset Button declares id: resetBtn (referenced by footer spacer)',
      /text:\s*"Reset"[\s\S]{0,120}id:\s*resetBtn/.test(PANEL) ||
      /id:\s*resetBtn/.test(PANEL))
+
+  // T-022 (second cluster, live log 5jxiodn2kt): the settings preview is the
+  // Canvas-2D VisualCanvas, NOT a Loader, so `previewViz.item` is always
+  // `undefined`. Binding to `previewViz.item` emits "Unable to assign [undefined]
+  // to QObject*/bool" (18 warnings). GL-only style props (border/colorSource/
+  // customColor/themeBottom/themeTop/fire/peaks/falloff/alpha) also don't exist
+  // on the 2D canvas. REGRESSION GUARD: no live `Binding { ... previewViz.item ... }`
+  // or `target: previewViz.item` may exist (a comment mentioning it is fine).
+  ok('T-022: Panel.qml has NO dead `previewViz.item` Bindings (2D preview is not a Loader)',
+     !/Binding\s*\{[^}]*previewViz\.item/.test(PANEL) &&
+     !/target:\s*previewViz\.item/.test(PANEL))
 }
 
 console.log('\nℹ panel_desktop tests ' + passed)
