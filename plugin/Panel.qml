@@ -2,8 +2,12 @@ import QtQuick
 import QtQuick.Controls
 import Quickshell
 import Quickshell.Io
-import qs.Commons
-import qs.Ui
+// T-014: vendor the small qs.Ui / qs.Commons set the panel actually uses
+// into the plugin (plugin/qs/{Ui,Commons}) so the panel no longer depends on
+// the shell process providing those modules at runtime. Self-contained, like
+// Desktop.qml.
+import "qs/Ui"
+import "qs/Commons"
 import "Model.js" as Model
 
 // Omaviz settings panel (v7.2 / TASK #2).
@@ -124,7 +128,11 @@ Panel {
   // surface
   KeyboardPanel {
     id: panel
-    anchors.fill: parent
+    // T-019: removed the previous full-parent anchor assignment — KeyboardPanel
+    // is a PanelWindow (Quickshell window type) with NO anchors property; that
+    // line raised "Cannot assign to non-existent property fill" and aborted
+    // panel construction (ADR-0011). KeyboardPanel fills its layer-shell
+    // surface internally, so no replacement is needed.
     // T-014: fallback anchor chain so the popup always has a valid anchor even
     // if injectPanel() has not yet set anchorItem/hostWidget (null on first
     // show -> off-screen/invisible). Fallback to bar, then root, mirrors the

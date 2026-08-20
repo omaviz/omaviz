@@ -1,8 +1,10 @@
 import QtQuick
 import Quickshell
 import Quickshell.Io
-import qs.Commons
-import qs.Ui
+// T-014: vendor qs.Ui/qs.Commons into the plugin (plugin/qs/{Ui,Commons})
+// so the widget no longer depends on the shell process providing them.
+import "qs/Ui"
+import "qs/Commons"
 import "Model.js" as Model
 
 // Omaviz spectrum bar widget (v7).

@@ -11,7 +11,12 @@ import "Model.js" as Model
 // visualization (Bars / Wave / Fire) via the shared VisualCanvas.
 // Spawns the bundled engine (Model.engineBin) — same source the bar uses.
 
-Window {
+// T-018: root must be Quickshell's Window (QsWindow), NOT QtQuick.Window —
+// a bare `Window` inside `quickshell -p` resolves to QtQuick.Window, which
+// Quickshell never presents as an xdg-toplevel, so it never maps under
+// Hyprland (ADR-0012). Qualifying with `Quickshell.Window` makes the type
+// unambiguous.
+Quickshell.Window {
   id: win
   width: 600
   height: 200
