@@ -226,5 +226,87 @@ test("T-009/ADR-0004: osc line width uses fixed OSC_LINE_W (dead alphaRow input 
     "dead alphaRow().g term removed from live shader code (only the row-10 accessor def remains)")
 })
 
+// T-020 (ADR-0005): Wave visual-code collapse fix. The control texture packs
+// the visual code (0 Bars /1 Osc /2 Wave) into row 2 R as raw 2/255. Under
+// LINEAR sampling the ShaderEffectSource blends row 2 with its ONLY vertical
+// neighbor, row 3. Historically row 3 held the animated `time` (high-variance),
+// so a packed 2/255 blended down to ~1 -> the `visual==2` branch was never
+// taken and Wave silently rendered as the oscilloscope branch (tester captured
+// Wave as vertical bars — defect LIVE).
+//
+// Fix (sampling-independent): row 3 now ALSO carries the visual code (so the
+// row2<->row3 LINEAR blend yields the code exactly), and `time` is relocated to
+// the unused row 11 B channel. Decode logic (int(ctrl().r*255+0.5)) is unchanged.
+// This is robust whether or not NEAREST is actually applied.
+//
+// We assert the source invariants AND simulate the LINEAR round-trip: for each
+// visual, build the packed rows under the NEW layout and verify the LINEAR
+// decode (avg of row2.R and row3.R) still yields the exact code. We also show
+// the OLD layout (row3 = time) would have collapsed Wave -> ~1.
+
+// Mimic visual.frag: int(ctrl().r * 255.0 + 0.5). Under LINEAR, ctrl().r is the
+// blend of row 2 R and row 3 R (the two texels surrounding 2.5/H).
+function linDecodeVisual(rows) {
+  const r2 = rows[2].r, r3 = rows[3].r
+  const ctrlR = (r2 + r3) / 2.0            // linear blend of the two neighbors
+  return Math.round(ctrlR * 255.0 + 0.5)
+}
+// Under NEAREST, ctrl().r is exactly row 2 R.
+function nearDecodeVisual(rows) {
+  return Math.round(rows[2].r * 255.0 + 0.5)
+}
+
+test("T-020: QML writes the visual code into BOTH row 2 and row 3 (code copy)", () => {
+  // row 2 keeps the code; row 3 is now a copy of the code (neighbor used to be time)
+  assert.ok(/row\(2, cVisual, cColorSrc\*255, 0\)/.test(GLQML), "row 2 carries cVisual")
+  assert.ok(/row\(3, cVisual, 0, 0\)/.test(GLQML), "row 3 also carries cVisual (LINEAR-safe copy)")
+})
+
+test("T-020: QML relocated animated time into the unused row 11 B channel", () => {
+  // row 11 previously: row(11, density, barGap, 0). Now B carries time.
+  assert.ok(
+    /row\(11, Math\.round\(root\.density \/ 256\.0 \* 255\), Math\.round\(Math\.min\(1, Math\.max\(0, root\.barGap\)\) \* 255\), Math\.round\(\(u_time % 1000\) \/ 1000 \* 255\)\)/.test(GLQML),
+    "row 11 packs density (R), barGap (G), and time (B)")
+})
+
+test("T-020: shader reads time from row 11 (meta -> 11.5/H) using .b channel", () => {
+  assert.ok(/vec4\s+meta\(\)\s*\{\s*return texture\(u_tex, vec2\(0\.5, 11\.5\/H\)\)/.test(frag),
+    "meta() now reads row 11 (where time lives)")
+  assert.ok(!frag.includes("meta().r"), "no stale meta().r time reads remain")
+  assert.ok(frag.includes("meta().b"), "time is read from meta().b (row 11 B)")
+})
+
+function packedRows(cVisual, timeNorm) {
+  // normalized rows (0..1); only the channels the fix touches are set.
+  const z = () => ({ r: 0, g: 0, b: 0 })
+  const rows = [z(), z(), z(), z(), z(), z(), z(), z(), z(), z(), z(), z()]
+  rows[2].r = cVisual / 255.0          // row 2 R = visual code (raw)
+  rows[3].r = cVisual / 255.0          // row 3 R = code COPY (NEW)
+  rows[11].b = timeNorm                // row 11 B = time (NEW location)
+  return rows
+}
+
+test("T-020: LINEAR round-trip decodes Wave=2 exactly (was collapsing to ~1)", () => {
+  const wave = packedRows(2, 0.73)    // wave + arbitrary live time
+  assert.strictEqual(linDecodeVisual(wave), 2, "LINEAR blend of row2/row3 (both = code) -> 2")
+  assert.strictEqual(nearDecodeVisual(wave), 2, "NEAREST -> 2")
+  const osc = packedRows(1, 0.40)
+  assert.strictEqual(linDecodeVisual(osc), 1, "Oscilloscope stays 1")
+  const bars = packedRows(0, 0.10)
+  assert.strictEqual(linDecodeVisual(bars), 0, "Bars stays 0")
+})
+
+test("T-020: OLD layout would have collapsed Wave (regression guard)", () => {
+  // Old: row 3 R = time (high-variance), row 2 R = 2/255. LINEAR blend ~0.5 -> ~128.
+  const oldWave = { r: 0, g: 0, b: 0 }
+  const r2 = 2 / 255.0, r3 = 0.73       // row2 = code(2), row3 = time(high)
+  const blended = (r2 + r3) / 2.0
+  const decoded = Math.round(blended * 255.0 + 0.5)
+  assert.notStrictEqual(decoded, 2, "OLD: blended value is NOT 2 (this is the bug we fixed)")
+  // NEW layout makes row3 = code too, so it can never collapse:
+  const newWave = (2 / 255.0 + 2 / 255.0) / 2.0
+  assert.strictEqual(Math.round(newWave * 255.0 + 0.5), 2, "NEW: row3=code copy -> stays 2")
+})
+
 console.log(`\nℹ pass ${passed}`)
 console.log(`ℹ fail 0`)

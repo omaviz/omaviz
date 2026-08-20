@@ -33,7 +33,10 @@ float peakAt(float x) { return texture(u_tex, vec2(clamp(x,0.0,1.0), 1.5/H)).r; 
 // NB (bar count) rides in control-texture row 11 R as density/256 (set by QML).
 float nbVal() { return floor(texture(u_tex, vec2(0.5, 11.5/H)).r * 256.0 + 0.5); }
 vec4  ctrl() { return texture(u_tex, vec2(0.5, 2.5/H)); }
-vec4  meta() { return texture(u_tex, vec2(0.5, 3.5/H)); }
+// meta() now reads row 11 (T-020): R = density/256, G = barGap, B = time.
+// Time was relocated here from row 3 so the visual-code row 2 keeps a code-only
+// vertical neighbor (row 3 is now a code copy). See ADR-0005.
+vec4  meta() { return texture(u_tex, vec2(0.5, 11.5/H)); }
 vec4  opts() { return texture(u_tex, vec2(0.5, 4.5/H)); }
 vec3  cust() { return texture(u_tex, vec2(0.5, 5.5/H)).rgb; }
 vec3  cBot() { return texture(u_tex, vec2(0.5, 6.5/H)).rgb; }
@@ -87,7 +90,7 @@ void main() {
   if (visual == 0) {
     // ===================== ANALYZER (Bars) =====================
     // Dynamic background: dark base with subtle theme-tinted gradient.
-    float time = meta().r * 500.0;
+    float time = meta().b * 500.0;
     vec3 baseCol = mix(cBot()*0.15, cTop()*0.08, uv.y);
     float vig = 1.0 - 0.35 * length(uv - vec2(0.5, 0.5));
     col = clamp(baseCol + 0.02 * sin(uv.x * 6.0 + time * 0.01), 0.0, 1.0) * vig;
@@ -106,7 +109,7 @@ void main() {
     float v = bandAt(barCenter(bx));
     if (fire) {
       // ---- Winamp-style 2D fluid/drip fire (no 3D) ----
-      float t = meta().r * 6.2831;            // looping time phase (.r channel)
+      float t = meta().b * 6.2831;            // looping time phase (.r channel)
       float yy = 1.0 - y;                      // 0 at bottom, 1 at top
       float flick = 0.5*sin(bx*1.7 + t*1.7)
                   + 0.5*sin(bx*3.3 - t*1.1)
@@ -155,7 +158,7 @@ void main() {
       // (added directly, never scaled to ~0) so every ribbon is a clearly visible
       // CONTINUOUS wavy line even at silence (ref 06: always-present flowing lines).
       float freq  = 4.0 + depth * 9.0;
-      float phase = meta().r * (0.5 + depth * 0.7) * 6.2831 + depth * 2.5;
+      float phase = meta().b * (0.5 + depth * 0.7) * 6.2831 + depth * 2.5;
       float carrier = sin(uv.x * freq + phase);
       // Spectrum MODULATES the line (woven to music) but as an ADDITIVE swing on
       // top of the always-visible carrier, so it never collapses to sparse dots.
@@ -185,7 +188,7 @@ void main() {
     }
     env /= max(nbVal(), 1.0);
     float w = env * 0.9;
-    float ph = x * 12.0 + meta().r * 4.0;
+    float ph = x * 12.0 + meta().b * 4.0;
     float wave = sin(ph) * w + 0.15 * sin(ph * 3.0 + 1.0) * w;
     float wy = 0.5 + wave * 0.45;
     float d = abs(y - wy);

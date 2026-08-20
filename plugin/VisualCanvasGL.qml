@@ -99,8 +99,14 @@ Item {
       function row(y, r,g,b,a){ ctx.fillStyle="rgba("+r+","+g+","+b+","+(a!==undefined?a:255)+")"; ctx.fillRect(0,y,n,1) }
       // row 2: visual (raw 0/1/2) + colorSource
       row(2, cVisual, cColorSrc*255, 0)
-      // row 3: time
-      row(3, Math.round((u_time%1000)/1000*255), 0, 0)
+      // row 3: VISUAL CODE COPY (T-020/ADR-0005). The control texture packs a
+      // discrete 8-bit visual code (2/255 for Wave). Under LINEAR sampling the
+      // ShaderEffectSource blends row 2 with this, its only vertical neighbor.
+      // Making row 3 ALSO carry the code means the blend yields the code exactly
+      // regardless of NEAREST/LINEAR — so Wave=2 survives the round-trip. The
+      // animated `time` was here historically and caused the collapse; it moved
+      // to row 11 B.
+      row(3, cVisual, 0, 0)
       // row 4: border
       row(4, cBorder*255, 0, 0)
       // row 5: custom color RGB
@@ -115,8 +121,10 @@ Item {
       row(9, cPeaks*255, Math.round(falloff*255), 0)
       // row 10: alpha (0..1)
       row(10, Math.round(Math.min(1, Math.max(0, alpha))*255), 0, 0)
-      // row 11: R = density/256 (NB passed to shader), G = barGap (0..1)
-      row(11, Math.round(root.density / 256.0 * 255), Math.round(Math.min(1, Math.max(0, root.barGap)) * 255), 0)
+      // row 11: R = density/256 (NB passed to shader), G = barGap (0..1),
+      //          B = time (animated phase; relocated here from row 3 in T-020 so
+      //          the visual-code row 2 keeps a code-only vertical neighbor).
+      row(11, Math.round(root.density / 256.0 * 255), Math.round(Math.min(1, Math.max(0, root.barGap)) * 255), Math.round((u_time % 1000) / 1000 * 255))
     }
     Component.onCompleted: requestPaint()
   }
