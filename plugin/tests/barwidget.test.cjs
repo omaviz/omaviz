@@ -1,8 +1,8 @@
-// Behavioral regression tests for BarWidget.qml — the click→detach→window
-// chain that the prior logic-only suites (engine/model/glspectrum) never
-// exercised. These are GPU-FREE: they parse the QML source and assert the
-// structural + wiring invariants that, if broken, produce a total UI failure
-// ("nothing opens") even while every shader/engine test is green.
+// Behavioral regression tests for BarWidget.qml — the click contract that the
+// prior logic-only suites (engine/model/glspectrum) never exercised. These are
+// GPU-FREE: they parse the QML source and assert the structural + wiring
+// invariants that, if broken, produce a total UI failure ("nothing opens") even
+// while every shader/engine test is green.
 //
 // Run:  node tests/barwidget.test.cjs
 const assert = require('assert')
@@ -18,51 +18,50 @@ function ok(name, cond) {
   console.log('  ok - ' + name)
 }
 
-// --- 1. Click contract (USER'S FINAL INTENT): left→toggle (settings panel),
-//     right→detach (desktop viz) ---
+// --- 1. Click contract (USER'S EXPLICIT, REPEATED INSTRUCTION):
+//     1. left-click  -> open settings PANEL (root.toggle())
+//     2. NO right-click behavior of any kind.
+//   The right-click->detach desktop window was an off-contract invention that
+//   also violated "never start a second Quickshell process for a plugin"
+//   (omarchy spec) AND the user's stated preference. It is removed.
 {
   const m = SRC.match(/onPressed:\s*function\s*\([^)]*\)\s*\{([\s\S]*?)\n\s*\}/)
   assert.ok(m, 'onPressed handler found')
   const body = m[1]
-  // User's explicit final instruction: "it should open the settings panel."
-  // (They corrected an earlier misstatement that left-click should open the
-  //  desktop window.) So left-click MUST open the settings panel, not detach.
   ok('left-click -> root.toggle() (opens SETTINGS PANEL, the user\'s final intent)',
-     /Qt\.LeftButton\)\s*root\.toggle\(\)/.test(body))
-  ok('right-click -> root.detach() (desktop visualization window)',
-     /Qt\.RightButton\)\s*root\.detach\(\)/.test(body))
-  ok('left-click does NOT detach (would skip the settings panel the user wants)',
-     !/Qt\.LeftButton\)\s*root\.detach\(\)/.test(body))
-  ok('right-click does NOT open the settings panel (would skip the desktop viz)',
-     !/Qt\.RightButton\)\s*root\.toggle\(\)/.test(body))
+     /Qt\.LeftButton/.test(body) && /root\.toggle\(\)/.test(body))
+  ok('left-click does NOT detach',
+     !(/\bdetach\(\)/.test(body)))
+  // USER RULE: no right-click behavior at all.
+  ok('NO right-click detach() (user: "no right click"; off-contract 2nd-Quickshell launch removed)',
+     !(/\bQt\.RightButton\b/.test(body) && /\bdetach\(\)/.test(body)))
+  ok('NO right-click toggle() (single left-click-only contract)',
+     !(/\bQt\.RightButton\b/.test(body) && /root\.toggle\(\)/.test(body)))
+  // The whole right-button branch must be gone.
+  ok('onPressed body has no Qt.RightButton branch',
+     !/\bQt\.RightButton\b/.test(body))
 }
 
-// --- 2. detachProc must NOT wipe the child env (root cause of "nothing opens") ---
+// --- 2. The detached desktop window (2nd Quickshell) is removed entirely ---
+// (omarchy spec: "never start a second Quickshell process for a plugin")
 {
-  ok('detachProc does not set environment: (would wipe PATH/DISPLAY/Home)',
-     !/\bid:\s*detachProc\b[\s\S]*?\benvironment:/.test(SRC))
-  ok('detach() launches quickshell -p <plugin>/Desktop.qml',
-     /detachProc\.command\s*=\s*\[[^\]]*quickshell[^\]]*Desktop\.qml/.test(SRC))
-  ok('detach() sets desktop.active=true before launching',
-     /writeDesktopActive\(true\)/.test(SRC))
-  ok('detach() clears the active flag unconditionally on attach (no stuck state)',
-     /detachProc\.running\s*=\s*false[\s\S]*?writeDesktopActive\(false\)/.test(SRC))
+  ok('detachProc launcher "quickshell -p <plugin>/Desktop.qml" is REMOVED',
+     !/detachProc\.command\s*=\s*\[[^\]]*quickshell[^\]]*Desktop\.qml/.test(SRC))
+  ok('no detach() function (desktop-window feature retired per user)',
+     !/function detach\(\)/.test(SRC))
+  ok('no attach behavior referencing detachProc',
+     !/detachProc\.running/.test(SRC))
+  ok('no desktop.active flag writes (detach lifecycle retired)',
+     !/writeDesktopActive/.test(SRC))
 }
 
-// --- 3. The desktop viz is reachable WITHOUT the panel mounting ---
+// --- 3. The settings PANEL must still be reachable as the sole interaction ---
 {
-  ok('detachProc is declared directly under BarWidget root (not the panel)',
-     /Process\s*\{\s*\n\s*id:\s*detachProc/.test(SRC))
-  ok('detach()/attach() are root methods (reachable from left-click directly)',
-     /function detach\(\)/.test(SRC))
-  // Guard: the desktop viz must NOT depend on panelLoader.item being non-null;
-  // if the panel ever failed to mount, a panel-only click would silently no-op.
-  // Right-click routes directly to detach() (on BarWidget, not the panel), so the
-  // viz is still reachable even if the panel fails to mount.
-  ok('right-click detaches directly from BarWidget (viz reachable even if panel fails to mount)',
-     /Qt\.RightButton\)\s*root\.detach\(\)/.test(SRC))
+  ok('Panel is loaded via Loader (settings panel mountable on left-click)',
+     /Loader\s*\{[\s\S]*?id:\s*panelLoader[\s\S]*?source:\s*Qt\.resolvedUrl\("Panel\.qml"\)/.test(SRC))
+  ok('root.toggle() drives the panel open/close (sole click action)',
+     /function toggle\(\)/.test(SRC))
 }
 
-console.log('\nℹ barwidget tests ' + passed)
-console.log('ℹ pass ' + passed)
-console.log('ℹ fail 0')
+console.log('\nℹ pass ' + passed)
+

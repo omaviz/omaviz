@@ -1,9 +1,8 @@
 import QtQuick
 import Quickshell
 import Quickshell.Io
-// T-014 (ADR-0008, approved path correction): import shell module names
-// qs.Commons / qs.Ui; the engine resolves these to the vendored plugin/Commons +
-// plugin/Ui in the standalone detach launch. Works in both contexts.
+// qs.Commons provides the singleton Style/Util (used for Style.space,
+// Util.shellQuote); qs.Ui is used by the panel loaded via panelLoader.
 import qs.Commons
 import qs.Ui
 import "Model.js" as Model
@@ -23,14 +22,10 @@ BarWidget {
   property var visuals: []
   property var spectrumBands: []
   property bool spectrumSilent: true
-  // Mini player pauses (freezes + dims) while the detached desktop window is
-  // open. Derived from BOTH the config flag and the actual detach process
-  // state (set by the panel via root.detachedRunning) so a stale
-  // desktop.active=true (window killed without onClosing) can never freeze
-  // the mini forever. detachedRunning is intentionally writable (NOT readonly)
-  // because the Panel assigns it from detach()/detachProc.onExited.
-  property bool detachedRunning: false
-  readonly property bool paused: Model.isPaused(root.config.desktopActive === true, root.detachedRunning)
+  // The detached desktop window was removed (violated the omarchy spec's
+  // "never start a second Quickshell process for a plugin" rule and the user's
+  // explicit instruction). With no detach, the mini player is always live.
+  readonly property bool paused: false
   readonly property int barCount: Math.max(
     8, (root.config && root.config.bands !== undefined) ? root.config.bands : 32)
   // Explicit index model so each Repeater delegate gets its band index via
@@ -97,11 +92,6 @@ BarWidget {
   readonly property string engineBin:
     Quickshell.env("HOME") + "/.config/omarchy/plugins/"
     + root.moduleName + "/bin/omaviz-engine"
-  // Paths the detached desktop window needs (mirrors Panel's, kept here so the
-  // detach Process — which lives on the persistent BarWidget, not the panel —
-  // can launch Desktop.qml after the panel closes).
-  readonly property string pluginDir: String(Qt.resolvedUrl(".")).replace(/^file:\/\//, "")
-  readonly property string shellImportPath: "/usr/share/omarchy/shell"
   Process {
     id: spectrumProc
     running: true
@@ -135,52 +125,6 @@ BarWidget {
     onTriggered: { spectrumProc.running = true }
   }
 
-  // ---- Detached desktop-window launcher (lives on the persistent BarWidget) ----
-  // Kept on the BarWidget (not the panel) so the window survives the panel
-  // closing. detach()/attach() are methods here; the panel button just calls
-  // root.hostWidget.detach(). NOTE: we deliberately do NOT set `environment`
-  // here — Quickshell's Process.environment REPLACES (not merges) the child's
-  // env, which would wipe PATH/WAYLAND_DISPLAY/HOME and make the bare
-  // `quickshell` command fail to exec/connect (window never opens). The child
-  // inherits the parent Quickshell env, which is correct, and setting
-  // running=false terminates it directly (that is what makes Attach reliable).
-  // Desktop.qml imports no qs.* modules, so no custom QML2_IMPORT_PATH is
-  // needed either.
-  Process {
-    id: detachProc
-    running: false
-    stdout: StdioCollector { onDataChanged: function() {} }
-    onExited: function(code, status) {
-      // Window closed (or launch failed). Resume the mini so it is never
-      // left stuck-paused. Clear the in-memory detach flag FIRST (this is the
-      // authoritative unpause — it does not depend on the disk write), then
-      // reset desktop.active on disk.
-      root.detachedRunning = false
-      if (root.config.desktopActive === true) root.writeDesktopActive(false)
-    }
-  }
-
-  // Detach / Attach toggle.
-  function detach() {
-    if (root.config.desktopActive === true) {
-      // Attach: terminate the window if it is running. ALSO reset the flag
-      // unconditionally — if the window already died without clearing it
-      // (external kill, crash), onExited never fires and the flag would stay
-      // stuck as "true", leaving the button frozen on "Attach" with no
-      // window to close. Resetting here guarantees we can detach again.
-      detachProc.running = false
-      root.detachedRunning = false
-      root.writeDesktopActive(false)
-    } else {
-      // Detach: launch the standalone desktop window.
-      detachProc.command = ["quickshell", "-p", root.pluginDir + "/Desktop.qml"]
-      root.writeDesktopActive(true)
-      root.detachedRunning = true
-      detachProc.running = false
-      detachProc.running = true
-    }
-  }
-
   // ---- Config reader (daemon writes ~/.config/omaviz/config.toml) ----
   FileView {
     id: configFile
@@ -189,30 +133,9 @@ BarWidget {
     printErrors: false
     onLoaded: {
       root.config = Model.readConfigFromText(text())
-      // Self-heal: if the desktop flag is stuck true but no window is running
-      // (e.g. the detach window was killed externally), reset it so the
-      // button returns to "Detach" instead of being frozen on "Attach".
-      if (root.config.desktopActive === true && !detachProc.running) {
-        root.writeDesktopActive(false)
-      }
     }
     onFileChanged: root.config = Model.readConfigFromText(text())
     onLoadFailed: root.config = Model.defaultConfig()
-  }
-
-  // Writable config view (detach lifecycle writes desktop.active here so the
-  // reset does not depend on the panel being open). Same no-watch pattern as
-  // the panel's writer to avoid async reverts.
-  FileView {
-    id: detachConfigWrite
-    path: Model.configPath
-    watchChanges: false
-    printErrors: false
-  }
-  function writeDesktopActive(value) {
-    var txt = Model.writeConfigKey(detachConfigWrite.text(), "desktop", "active", value ? "true" : "false")
-    detachConfigWrite.setText(txt)
-    root.config = Model.readConfigFromText(txt)
   }
 
   // ---- Visual enumeration from ~/.config/omaviz/visuals/*.toml ----
@@ -241,20 +164,19 @@ BarWidget {
     id: button
     anchors.fill: parent
     bar: root.bar
-    tooltipText: root.paused ? "Omaviz — detached (paused)"
-                  : (root.spectrumSilent ? "Omaviz — no audio" : "Omaviz — click to configure")
+    tooltipText: root.spectrumSilent ? "Omaviz — no audio" : "Omaviz — click to configure"
     text: ""
     hasVisualContent: true
 
-    // Left-click opens the SETTINGS PANEL (user's explicit final intent:
-    // "it should open the settings panel" — correcting an earlier misstatement
-    // that left-click should open the desktop window). Right-click opens the
-    // detached desktop visualization window. detach()/attach() live on BarWidget
-    // (not the panel) so the window survives the panel closing — and the viz is
-    // reachable directly without the panel having to mount first.
+    // Click contract (user's explicit, repeated instruction):
+    //   1. left-click  -> open the SETTINGS PANEL (root.toggle())
+    //   2. NO right-click behavior of any kind.
+    // The detached desktop window (a 2nd Quickshell process) was removed:
+    // it violated both the user's stated preference and the omarchy spec
+    // ("never start a second Quickshell process for a plugin"). The only
+    // interaction is left-click -> settings panel.
     onPressed: function(b) {
       if (b === Qt.LeftButton) root.toggle()
-      else if (b === Qt.RightButton) root.detach()
     }
 
     Item {
