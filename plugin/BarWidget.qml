@@ -28,17 +28,18 @@ BarWidget {
   readonly property bool paused: false
   readonly property int barCount: Math.max(
     8, (root.config && root.config.bands !== undefined) ? root.config.bands : 32)
-  // T-028 (corrected): render the spectrum as a unicode block-char ticker in
-  // WidgetButton.text (WidgetButton ONLY paints `text` — a nested Item/Repeater
-  // is never rendered, and with text:'' the button is ~12px so the spectrum
-  // spills outside the clip and vanishes). Each of `barCount` columns maps its
-  // band energy (0..1, sensitivity-applied) to one of the 8 block glyphs
-  // ▁▂▃▄▅▆▇█. Called from the button text binding so it re-runs every frame as
-  // root.spectrumBands updates.
-  readonly property string BLOCKS: "▁▂▃▄▅▆▇█"
+  // T-028 (corrected, per omarchy WidgetButton contract): render the spectrum
+  // as a unicode block-char ticker in WidgetButton.text (WidgetButton ONLY paints
+  // `text` — a nested Item/Repeater is never rendered, and text:'' collapses the
+  // button to ~12px so the spectrum spills outside the clip and vanishes).
+  // BLOCKS has 9 glyphs: space + ▁▂▃▄▅▆▇█. Each of `barCount` columns maps its
+  // band energy (0..1, sensitivity-applied) to a glyph. Idle (no audio / no data)
+  // returns a music glyph ♪ so the widget is never blank. Called from the button
+  // text binding so it re-runs every frame as root.spectrumBands updates.
+  readonly property string BLOCKS: " ▁▂▃▄▅▆▇█"
   function spectrumText() {
     var bands = root.spectrumBands
-    if (!bands || bands.length === 0) return ""
+    if (!bands || bands.length === 0 || root.spectrumSilent) return "♪"
     var chars = root.BLOCKS
     var n = root.barCount
     var sens = (root.config && root.config.sensitivity !== undefined)
@@ -47,7 +48,7 @@ BarWidget {
     for (var i = 0; i < n; i++) {
       var bandIndex = Math.min(bands.length - 1, Math.floor(i * bands.length / n))
       var v = Math.min(1, bands[bandIndex] * sens)
-      var level = Math.round(v * 7)   // 0..7 -> ▁..█
+      var level = Math.round(v * 8)   // 0..8 -> space..█
       out += chars.charAt(level)
     }
     return out

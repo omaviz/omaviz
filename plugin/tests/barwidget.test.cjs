@@ -71,10 +71,11 @@ function ok(name, cond) {
   // a unicode block-char ticker in WidgetButton.text.
   ok('WidgetButton.text is bound to root.spectrumText() (unicode ticker)',
      /WidgetButton\s*\{[\s\S]*?text:\s*root\.spectrumText\(\)/.test(SRC))
-  ok('root.spectrumText() maps bands to block glyphs ▁▂▃▄▅▆▇█',
-     /readonly property string BLOCKS:\s*"▁▂▃▄▅▆▇█"/.test(SRC)
+  ok('root.spectrumText() maps bands to block glyphs [space,▁▂▃▄▅▆▇█] + idle ♪',
+     /readonly property string BLOCKS:\s*" ▁▂▃▄▅▆▇█"/.test(SRC)
        && /function spectrumText\(\)/.test(SRC)
-       && /chars\.charAt\(level\)/.test(SRC))
+       && /chars\.charAt\(level\)/.test(SRC)
+       && /return "♪"/.test(SRC))
   ok('nested Item/Repeater spectrum REMOVED (WidgetButton only paints text)',
      !/Repeater\s*\{/.test(SRC) && !/id:\s*bar\s*\n/.test(SRC))
   ok('WidgetButton does NOT anchors.fill:parent (text drives its own size)',
