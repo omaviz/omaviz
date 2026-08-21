@@ -124,13 +124,13 @@ The `Process.command` is `[root.engineBin]`. No absolute `~/.local/bin` path, no
 env hacks, no systemd. (Verified against a shipped Omarchy plugin — `hw-tooltip`
 resolves `.../scripts/system-usage` the same way.)
 
-The **detached desktop window** (`Desktop.qml`) spawns the same binary via
-`Model.engineBin` (the plugin-relative path), passing `--source auto
---bands <density>` where `density` is the desktop window's configured spectrum
-resolution (default `128`, valid `32..256`, see §6/§10). This feeds a dense,
-immersive spectrum (up to 256 bars) while the mini bar keeps its own 32-band
-feed — the engine generalizes `--bands` to any N. The mini's `paused` state is
-driven by the BarWidget, not by the desktop window.
+The plugin is a **single `bar-widget`** (`manifest.json` `kinds:["bar-widget"]`,
+`entryPoints.barWidget:"BarWidget.qml"`). The settings panel is loaded internally
+via `Loader` (clock-plugin pattern) — `BarWidget.qml` `Panel.qml` — and surfaces
+on **left-click** (`root.toggle()`). There is **no detached desktop window**:
+that feature was removed in `e0ec2a4` because it started a second Quickshell
+process (violating the omarchy spec) and contradicted the user's explicit
+instruction (no right-click / no desktop window). The mini bar is always live.
 
 ---
 
@@ -542,14 +542,14 @@ Progress reflects shipped capability in the live plugin (tag `v7.6`).
 | 4 | Mini bar visualizer (Bars / Wave / Fire) | Shipped | 100% |
 | 5 | Settings panel (visualization, style, audio, color sync, reset) | Shipped | 100% |
 | 6 | Read-only audio source indicator (PipeWire) | Shipped | 100% |
-| 7 | Desktop detach window (standalone spectrum window) | Shipped | 100% |
-| 8 | Detach/Attach toggle with mini pause + stale-flag resilience | Shipped | 100% |
+| 7 | Desktop detach window (standalone spectrum window) | Removed | 0% | (removed in e0ec2a4 — violates omarchy "no 2nd Quickshell" rule + user instruction; ADR-0014 §2.3) |
+| 8 | Detach/Attach toggle with mini pause + stale-flag resilience | Removed | 0% | (detach removed e0ec2a4; ADR-0014 §2.3) |
 | 9 | TDD: engine (Rust) + plugin (node) + gl-spectrum test suites green | Shipped | 100% |
 | 10 | Additional backends (PulseAudio / JACK / ALSA) | Planned | 0% |
 | 11 | File/loopback source for offline testing (`gen`/`file` engine backends, lane #11) | Shipped | 100% |
 | 12 | GPU / ShaderEffect Winamp visuals (Bars + Oscilloscope + **Wave**, dense desktop spectrum via dynamic `--bands`, fire effect, omarchy-themed) | Shipped | 100% |
 | 13 | Backend-switching UI (manual source selection) | Planned | 0% |
-| 14 | Multi-monitor / position presets for detach window | Backlog | 0% |
+| 14 | Multi-monitor / position presets for detach window | Removed | 0% | (detach window removed e0ec2a4; ADR-0014) |
 | 15 | Preset/theme sharing for visuals | Backlog | 0% |
 | 16 | Expose **Wave** in the settings-panel VISUALIZATION selector (was Bar/Oscilloscope only) — UI label "Wave", commits `visual="wave"` to `[mini]`+`[desktop]` | Shipped | 100% | (spec: ADR-0002) |
 | 17 | `visuals/wave.toml` params (amplitude/frequency/brightness/peak_fall) trimmed — inert in the continuous-carrier WAVE shader (decision: trim, not wire) | Shipped | 100% | (spec: ADR-0003) |
@@ -564,3 +564,4 @@ Progress reflects shipped capability in the live plugin (tag `v7.6`).
 | 26 | **T-019** `KeyboardPanel` `anchors.fill` QML error (`Cannot assign to non-existent property "fill"`) now split into its own ADR-0011 (distinct from T-014 module-resolution); remove `anchors.fill: parent` at Panel.qml:127. | In Progress | 0% | (spec: ADR-0011) |
 | 27 | **T-024 install.sh enable non-persistent** — FIXED at `9ced162` (`enable_and_verify()` runs `omarchy plugin enable`, restarts shell, verifies `omarchy plugin list` shows `enabled`, retries once, exits 1 if still disabled). Matches ADR-0013. Clean install now self-enables. | Shipped | 100% | (spec: ADR-0013) |
 | 28 | **T-025 capture recipe (NOT a toolchain bug):** `grim -o eDP-1` works; it only stalls when the display is DPMS-asleep/idle-blur. Reliable recipe: `wtype ' ' && sleep 1 && grim -o eDP-1`. cua-driver/hyprctl/computer-use **cannot** address the omaviz layer-shell surfaces (bar/detach), so the only working capture is full-output grim while the session is **awake + unlocked**. Remaining visual proofs (mini-bar render, panel-open) are blocked solely by the locked/idle session + **user's one left-click** on the bar widget — independent of omaviz code. | Open | 0% | (no ADR — harness/infra) |
+| 29 | **T-028 bar-widget realignment (ADR-0014):** plugin doesn't match the omarchy Quattro `bar-widget` contract — `WidgetButton` has `text:""` + near-zero width (spectrum invisible), and `Panel.qml` loads `KeyboardPanel` standalone instead of the spec's `Panel` base wrapping `KeyboardPanel` (panel never opened; T-019/T-022 were symptoms). Also residual Detach button references removed `hostWidget.detach`. Fix: real button width, wrap `KeyboardPanel` in `Panel` base, drop Detach UI. | In Progress | 0% | (spec: ADR-0014) |
