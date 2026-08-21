@@ -62,11 +62,31 @@ say "plugin -> $PLUGIN_DIR"
 # explicitly enabled or it stays `disabled` and never mounts (no mini, no
 # engine, no detach). Enable LAST (after files are in place) so there is no
 # race with the live shell reloading mid-copy, then restart so it mounts.
+#
+# T-024 (ADR-0013): the previous `enable ... || true` SWALLOWED all failure,
+# so a clean install could finish "successfully" while the plugin remained
+# `disabled` (bar never loads -> "nothing works" even though code is correct).
+# Now we enable, VERIFY via `omarchy plugin list`, retry once, and FAIL LOUD
+# if it still isn't enabled — so a broken install is never silently green.
 step "enabling plugin"
 if command -v omarchy >/dev/null; then
-  omarchy plugin enable "$PLUGIN_ID" 2>/dev/null || true
-  omarchy-restart-shell >/dev/null 2>&1 || true
-  say "plugin enabled: $PLUGIN_ID"
+  enable_and_verify() {
+    omarchy plugin enable "$PLUGIN_ID" >/dev/null 2>&1
+    omarchy-restart-shell >/dev/null 2>&1 || true
+    # give the shell a moment to re-read the registry
+    sleep 2
+    omarchy plugin list 2>/dev/null | grep -qE "$PLUGIN_ID[[:space:]]+enabled"
+  }
+  if enable_and_verify; then
+    say "plugin enabled + verified: $PLUGIN_ID"
+  elif enable_and_verify; then
+    say "plugin enabled + verified on retry: $PLUGIN_ID"
+  else
+    echo "ERROR: '$PLUGIN_ID' did not become enabled after install." >&2
+    echo "       Inspect: omarchy plugin list" >&2
+    echo "       Manual fix: omarchy plugin enable $PLUGIN_ID && omarchy-restart-shell" >&2
+    exit 1
+  fi
 fi
 
 step "done"
