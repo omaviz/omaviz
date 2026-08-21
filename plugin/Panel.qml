@@ -3,11 +3,8 @@ import QtQuick.Controls
 import Quickshell
 import Quickshell.Io
 // T-014 (ADR-0008, approved path correction): the plugin imports the SHELL
-// module names qs.Commons / qs.Ui. In the detached launch the engine resolves
-// these to plugin/Commons + plugin/Ui (the vendored copies, relocated up one
-// level from the earlier mis-placed plugin/qs/). Module-name imports work in
-// BOTH the shell mini-bar and the standalone detach context. Do NOT use the
-// relative "qs/Ui" form.
+// module names qs.Commons / qs.Ui. Module-name imports work in the shell
+// mini-bar context. Do NOT use the relative "qs/Ui" form.
 import qs.Commons
 import qs.Ui
 import "Model.js" as Model
@@ -102,15 +99,6 @@ Panel {
   // ---- Source (read-only, from the engine's stdout) ----
   readonly property string sourceLabelText:
     Model.sourceLabel(Model.spectrumData.source || "")
-
-  // ---- Detach/Attach label derived from desktop.active (source of truth) ----
-  readonly property bool detached: root.cfgBool("active", "desktop")
-  function toggleDetach() {
-    if (hostWidget && typeof hostWidget.detach === "function") hostWidget.detach()
-    // The flag flips in the config file (hostWidget writes desktop.active +
-    // reset); reload so our label follows immediately.
-    Qt.callLater(root.reloadCfg)
-  }
 
   function resetAll() {
     // Reset to defaults (Matte Black-aligned). Writes a clean audio+mini+desktop
@@ -448,7 +436,7 @@ Panel {
 
         PanelSeparator { }
 
-        // ---- Footer: Reset + Detach/Attach ----
+        // ---- Footer: Reset ----
         Row {
           width: parent.width
           spacing: Style.space(8)
@@ -456,12 +444,6 @@ Panel {
             id: resetBtn
             text: "Reset"
             onClicked: root.resetAll()
-          }
-          Item { width: parent.width - resetBtn.width - detachBtn.width - Style.space(8); height: 1 }
-          Button {
-            id: detachBtn
-            text: root.detached ? "Attach ↗" : "Detach ↗"
-            onClicked: root.toggleDetach()
           }
         }
       }

@@ -91,6 +91,16 @@ function ok(name, cond) {
   ok('T-022: Panel.qml has NO dead `previewViz.item` Bindings (2D preview is not a Loader)',
      !/Binding\s*\{[^}]*previewViz\.item/.test(PANEL) &&
      !/target:\s*previewViz\.item/.test(PANEL))
+
+  // T-028 / ADR-0014: the detached desktop window was removed (user: no
+  // right-click detach; omarchy spec: "never start a second Quickshell").
+  // The panel must NOT contain a Detach/Attach control or any detach() call.
+  ok('T-028: Panel.qml has NO Detach/Attach button (detached window retired per user)',
+     !/id:\s*detachBtn/.test(PANEL) &&
+     !/text:\s*"?(Detach|Attach)[^"]*"/.test(PANEL))
+  ok('T-028: Panel.qml has NO toggleDetach() / hostWidget.detach() calls',
+     !/toggleDetach/.test(PANEL) &&
+     !/hostWidget\.detach/.test(PANEL))
 }
 
 console.log('\nℹ panel_desktop tests ' + passed)
