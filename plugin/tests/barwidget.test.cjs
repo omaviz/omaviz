@@ -63,23 +63,27 @@ function ok(name, cond) {
      /function toggle\(\)/.test(SRC))
 }
 
-// --- 4. T-028: bar visualizer must be visible (no 0-width collapse) ---
+// --- 4. T-028 (corrected): bar visualizer must render via WidgetButton.text ---
 {
-  // The clock sizes WidgetButton via its OWN implicitWidth (a nested spectrum
-  // Item drives no implicit width). With text:'' the button collapses to 0 width
-  // and the bars render invisible. The fix gives the button a real size from the
-  // spectrum geometry and drops anchors.fill:parent so implicitWidth wins.
-  ok('WidgetButton sets explicit implicitWidth from spectrum geometry',
-     /WidgetButton\s*\{[\s\S]*?implicitWidth:\s*Style\.space\(2\)\s*\+\s*root\.barCount/.test(SRC))
-  ok('WidgetButton sets implicitHeight',
-     /WidgetButton\s*\{[\s\S]*?implicitHeight:\s*Style\.space\(28\)/.test(SRC))
-  ok('WidgetButton does NOT anchors.fill:parent (would override implicitWidth -> 0 width)',
+  // WidgetButton ONLY paints its `text` property — a nested Item/Repeater is
+  // never rendered (and text:'' collapses the button to ~12px so the spectrum
+  // spills outside the clip and vanishes). The fix renders the live spectrum as
+  // a unicode block-char ticker in WidgetButton.text.
+  ok('WidgetButton.text is bound to root.spectrumText() (unicode ticker)',
+     /WidgetButton\s*\{[\s\S]*?text:\s*root\.spectrumText\(\)/.test(SRC))
+  ok('root.spectrumText() maps bands to block glyphs ▁▂▃▄▅▆▇█',
+     /readonly property string BLOCKS:\s*"▁▂▃▄▅▆▇█"/.test(SRC)
+       && /function spectrumText\(\)/.test(SRC)
+       && /chars\.charAt\(level\)/.test(SRC))
+  ok('nested Item/Repeater spectrum REMOVED (WidgetButton only paints text)',
+     !/Repeater\s*\{/.test(SRC) && !/id:\s*bar\s*\n/.test(SRC))
+  ok('WidgetButton does NOT anchors.fill:parent (text drives its own size)',
      (() => {
        const header = SRC.match(/WidgetButton\s*\{[\s\S]*?id:\s*button[\s\S]*?bar:\s*root\.bar/)
        return header && !/anchors\.fill:\s*parent/.test(header[0])
      })())
-  ok('root still exposes slotW + barCount for the geometry formula',
-     /readonly property real slotW:\s*3/.test(SRC) && /property int barCount/.test(SRC))
+  ok('root still exposes barCount for the ticker column count',
+     /property int barCount/.test(SRC))
 }
 
 console.log('\nℹ pass ' + passed)

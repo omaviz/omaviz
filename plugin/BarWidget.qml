@@ -28,28 +28,29 @@ BarWidget {
   readonly property bool paused: false
   readonly property int barCount: Math.max(
     8, (root.config && root.config.bands !== undefined) ? root.config.bands : 32)
-  // Explicit index model so each Repeater delegate gets its band index via
-  // modelData (the shell's Repeater does not expose the implicit `index`
-  // context property the way stock QtQuick does). Regenerated when barCount
-  // changes (e.g. config reload).
-  property var barModel: buildBarModel(root.barCount)
-  function buildBarModel(n) {
-    var a = []
-    for (var i = 0; i < n; i++) a.push(i)
-    return a
-  }
-  onBarCountChanged: root.barModel = buildBarModel(root.barCount)
-
-  // Map a bar index to its spectrum value (root scope so the Repeater
-  // delegate can resolve it during initialization).
-  function getBarValue(index) {
+  // T-028 (corrected): render the spectrum as a unicode block-char ticker in
+  // WidgetButton.text (WidgetButton ONLY paints `text` — a nested Item/Repeater
+  // is never rendered, and with text:'' the button is ~12px so the spectrum
+  // spills outside the clip and vanishes). Each of `barCount` columns maps its
+  // band energy (0..1, sensitivity-applied) to one of the 8 block glyphs
+  // ▁▂▃▄▅▆▇█. Called from the button text binding so it re-runs every frame as
+  // root.spectrumBands updates.
+  readonly property string BLOCKS: "▁▂▃▄▅▆▇█"
+  function spectrumText() {
     var bands = root.spectrumBands
-    if (!bands || bands.length === 0) return 0
+    if (!bands || bands.length === 0) return ""
+    var chars = root.BLOCKS
+    var n = root.barCount
     var sens = (root.config && root.config.sensitivity !== undefined)
       ? root.config.sensitivity : 1.0
-    var bandIndex = Math.floor(index * bands.length / root.barCount)
-    bandIndex = Math.min(bandIndex, bands.length - 1)
-    return Math.min(1, bands[bandIndex] * sens)
+    var out = ""
+    for (var i = 0; i < n; i++) {
+      var bandIndex = Math.min(bands.length - 1, Math.floor(i * bands.length / n))
+      var v = Math.min(1, bands[bandIndex] * sens)
+      var level = Math.round(v * 7)   // 0..7 -> ▁..█
+      out += chars.charAt(level)
+    }
+    return out
   }
 
   // Allow the settings panel (loaded in the same QML process) to push a new
@@ -79,12 +80,11 @@ BarWidget {
     if ("settings" in t) t.settings = root.settings
   }
 
-  // ---- Geometry: claim a dedicated slot in the bar's Row from the
-  // spectrum bar count (the button has no text/icon, so it would otherwise
-  // collapse to zero and render behind neighbors). ----
-  readonly property real slotW: 3
-  implicitWidth: Style.space(2) + root.barCount * (root.slotW + Style.space(2))
-  implicitHeight: Style.space(28)
+  // ---- Sizing ----
+  // T-028 (corrected): WidgetButton only paints `text`, so we size from the
+  // unicode spectrum ticker in WidgetButton.text. The shell WidgetButton derives
+  // its implicitWidth from that text (Math.max(12, label.implicitWidth+...)), so
+  // the bar allocates a slot that fits the live spectrum — no manual geometry.
   onBarChanged: injectPanel()
   onSettingsChanged: injectPanel()
 
@@ -162,17 +162,12 @@ BarWidget {
 
   WidgetButton {
     id: button
-    // T-028: the omarchy clock sizes WidgetButton via its implicitWidth (it does
-    // NOT use the nested spectrum Item for layout — a nested Item drives no
-    // implicit width). With empty `text` the button collapses to 0 width and the
-    // bars render invisible. Give it a real size from the spectrum geometry so it
-    // is visible in the bar. We removed the parent-fill anchor so implicitWidth
-    // (not a zero-width parent) drives the button size.
-    implicitWidth: Style.space(2) + root.barCount * (root.slotW + Style.space(2))
-    implicitHeight: Style.space(28)
+    // T-028 (corrected): WidgetButton ONLY renders `text`. We feed it the live
+    // unicode block-char spectrum (root.spectrumText), rebuilt every frame as
+    // spectrumBands changes. The shell WidgetButton sizes itself from this text.
     bar: root.bar
     tooltipText: root.spectrumSilent ? "Omaviz — no audio" : "Omaviz — click to configure"
-    text: ""
+    text: root.spectrumText()
     hasVisualContent: true
 
     // Click contract (user's explicit, repeated instruction):
@@ -184,55 +179,6 @@ BarWidget {
     // interaction is left-click -> settings panel.
     onPressed: function(b) {
       if (b === Qt.LeftButton) root.toggle()
-    }
-
-    Item {
-      anchors.fill: parent
-      anchors.margins: Style.space(4)
-
-      readonly property real slotWidth: Math.max(2,
-        (width - Style.space(2) * (root.barCount + 1)) / root.barCount)
-
-      Repeater {
-        model: root.barModel
-
-        Rectangle {
-          id: bar
-          readonly property real value: getBarValue(modelData)
-
-          x: Style.space(2) + modelData * (parent.slotWidth + Style.space(2))
-          width: parent.slotWidth
-          height: parent.height * value
-          y: parent.height - height
-
-          radius: Math.min(width * 0.5, 3)
-          color: {
-            if (root.config.style === "fire") {
-              var v0 = Math.min(1, Math.max(0, value))
-              return "rgba(255," + Math.round(80 + v0 * 175) + "," + Math.round(20 + v0 * 60) + ",1)"
-            }
-            var v = Math.min(1, Math.max(0, value))
-            // Default: monochrome (bright, fully visible on dark bar bg).
-            if (!root.config.colorSync) {
-              // Bright white at FULL opacity - Qt.color() ensures proper parsing.
-              return Qt.rgba(0.92, 0.94, 0.98, 1.0)
-            }
-            // color-sync ON: theme-dominant bottom->top gradient
-            var botS = String(root.config.themeBottom || "")
-            var topS = String(root.config.themeTop || "")
-            if (botS === "undefined" || botS === "null" || botS === "") botS = "#e68e0d"
-            if (topS === "undefined" || topS === "null" || topS === "") topS = "#f59e0b"
-            var bot = Qt.color(botS)
-            var top = Qt.color(topS)
-            var r = Math.round((bot.r + (top.r - bot.r) * v) * 255)
-            var g = Math.round((bot.g + (top.g - bot.g) * v) * 255)
-            var bl = Math.round((bot.b + (top.b - bot.b) * v) * 255)
-            return "rgb(" + r + "," + g + "," + bl + ")"
-          }
-
-          Behavior on height { NumberAnimation { duration: 70; easing.type: Easing.OutCubic } }
-        }
-      }
     }
   }
 
