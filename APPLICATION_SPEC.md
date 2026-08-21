@@ -489,6 +489,12 @@ This track touches only QML/GLSL; the engine (audio) is unaffected.
 - Because the engine binary is committed, the plugin directory is a true
   drop-in: `cp -r plugin ~/.config/omarchy/plugins/org.omaviz.visualizer/ &&
   omarchy plugin enable org.omaviz.visualizer` is sufficient.
+- **Known gap (T-024 / ADR-0013):** `install.sh`'s `omarchy plugin enable` is
+  currently swallowed by `|| true` and has **not reliably persisted** — a clean
+  install can leave the plugin `disabled`, so the bar never loads (the app looks
+  dead even though the code is correct). Until ADR-0013 lands, always confirm
+  `omarchy plugin list` shows `enabled` after install, or run
+  `omarchy plugin enable org.omaviz.visualizer` manually + `omarchy-restart-shell`.
 
 ---
 
@@ -556,3 +562,4 @@ Progress reflects shipped capability in the live plugin (tag `v7.6`).
 | 24 | Settings-panel `anchors.fill` on `KeyboardPanel` (T-019): `KeyboardPanel` is a `PanelWindow` (no `anchors` prop) → `Cannot assign to non-existent property "fill"` aborts construction. Fix: remove `anchors.fill: parent` (Panel.qml:127). Compounds T-014. | Backlog | 0% | (spec: ADR-0011) |
 | 25 | **UI integration test gate (ADR-0006):** unit suites insufficient — require panel-popup visibility + detached-window bands-flow + click-mapping integration tests. Closes "green gates, broken UI" gap. | In Progress | 0% | (spec: ADR-0006) |
 | 26 | **T-019** `KeyboardPanel` `anchors.fill` QML error (`Cannot assign to non-existent property "fill"`) now split into its own ADR-0011 (distinct from T-014 module-resolution); remove `anchors.fill: parent` at Panel.qml:127. | In Progress | 0% | (spec: ADR-0011) |
+| 27 | **T-024 install.sh enable non-persistent** — after `./install.sh`, `omarchy plugin list` shows `disabled`; bar never loads. Root cause: `install.sh` swallows `omarchy plugin enable` with `|| true` and doesn't verify. Fix in ADR-0013 (verify + retry, fail loud). | In Progress | 0% | (spec: ADR-0013) |
