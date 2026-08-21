@@ -18,19 +18,33 @@ The plugin also still carries **detach machinery the user explicitly rejected**:
 ## 2. Decision — mandatory realignment to the Quattro contract
 
 ### 2.1 Bar widget
-- Give `WidgetButton` a real, non-zero width. Either (a) set `text` to a short label (e.g. `"♪"`) so the bar's default button-sizing applies, **or** (preferred, since we want a pure spectrum) size the button explicitly to the spectrum geometry:
-  ```qml
-  WidgetButton {
-    id: button
-    anchors.fill: parent
-    bar: root.bar
-    text: root.spectrumSilent ? "♪" : "♫"   // gives the button non-zero implicitWidth
-    hasVisualContent: true
-    // spectrum Item paints over/around the glyph; button width is now real
-  }
+- **CRITICAL (verified against `/usr/share/omarchy/shell/Ui/WidgetButton.qml`):**
+  `WidgetButton` computes `hasVisualContent: text !== ""` as a **read-only
+  property** and derives both `opacity` and `implicitWidth` from it:
   ```
-  and ensure `implicitWidth` reflects `barCount * (slotWidth + gap)` (the current `root.slotW*3` is wrong — `slotW` must equal the per-bar pixel width, e.g. `Style.space(3)` per bar + gaps, not a hardcoded 3). The bar must occupy a visible slot in the bar's `Row`.
-- Keep the only interaction as **left-click → `root.toggle()`** (settings panel). No right-click (per user; matches ADR-0010 / T-016 decision).
+  property bool hasVisualContent: text !== ""          // base, not overridable
+  visible: hasVisualContent || keepSpace
+  opacity: !hasVisualContent || concealed ? 0 : (dimmed ? 0.45 : 1)
+  implicitWidth: fixedWidth > 0 ? fixedWidth
+                 : (vertical ? barSize : Math.max(12, label.implicitWidth + scaledHorizontalMargin*2))
+  ```
+  So setting `text: ""` (even with `hasVisualContent: true` in our file) makes
+  the base recompute `hasVisualContent=false` → **opacity 0 + width collapses to
+  ~29px** (label width 0). The nested `Item`/Repeater children DO paint, but the
+  parent button is invisible and 29px wide, so the spectrum is not seen. **This
+  is the real reason the bar was empty** (confirmed by the live `4e07a74`
+  `BarWidget.qml` which still has `text:""` — dev's "width fix verified" was
+  false; he widened `implicitWidth` but opacity stayed 0).
+- **Required fix (any one):** (a) `text: " "` (non-empty) so `hasVisualContent`
+  is true and the button is opaque with a real label width; **or** (b) set
+  `fixedWidth: <px>` (e.g. `Style.space(2) + barCount*(slot+gap)`) which forces
+  `implicitWidth` regardless of text; **or** (c) render the spectrum as the
+  label string itself (unicode blocks ▁▂▃▄▅▆▇█ rebuilt per frame from
+  `root.spectrumBands`, like a ticker) — this also satisfies `text !== ""`.
+  ADR-0014 originally prescribed (a)/(b); lotus's (c) is equally valid. All
+  three require `text` non-empty OR `fixedWidth` set — that is the gating fact.
+- Keep the only interaction as **left-click → `root.toggle()`** (settings
+  panel). No right-click (per user; matches ADR-0010 / T-016 decision).
 
 ### 2.2 Panel (settings popup)
 - Realign `Panel.qml` to the spec's structure (modeled on `develop.html` §03):
