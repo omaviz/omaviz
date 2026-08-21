@@ -63,5 +63,24 @@ function ok(name, cond) {
      /function toggle\(\)/.test(SRC))
 }
 
+// --- 4. T-028: bar visualizer must be visible (no 0-width collapse) ---
+{
+  // The clock sizes WidgetButton via its OWN implicitWidth (a nested spectrum
+  // Item drives no implicit width). With text:'' the button collapses to 0 width
+  // and the bars render invisible. The fix gives the button a real size from the
+  // spectrum geometry and drops anchors.fill:parent so implicitWidth wins.
+  ok('WidgetButton sets explicit implicitWidth from spectrum geometry',
+     /WidgetButton\s*\{[\s\S]*?implicitWidth:\s*Style\.space\(2\)\s*\+\s*root\.barCount/.test(SRC))
+  ok('WidgetButton sets implicitHeight',
+     /WidgetButton\s*\{[\s\S]*?implicitHeight:\s*Style\.space\(28\)/.test(SRC))
+  ok('WidgetButton does NOT anchors.fill:parent (would override implicitWidth -> 0 width)',
+     (() => {
+       const header = SRC.match(/WidgetButton\s*\{[\s\S]*?id:\s*button[\s\S]*?bar:\s*root\.bar/)
+       return header && !/anchors\.fill:\s*parent/.test(header[0])
+     })())
+  ok('root still exposes slotW + barCount for the geometry formula',
+     /readonly property real slotW:\s*3/.test(SRC) && /property int barCount/.test(SRC))
+}
+
 console.log('\nℹ pass ' + passed)
 

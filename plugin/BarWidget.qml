@@ -162,7 +162,14 @@ BarWidget {
 
   WidgetButton {
     id: button
-    anchors.fill: parent
+    // T-028: the omarchy clock sizes WidgetButton via its implicitWidth (it does
+    // NOT use the nested spectrum Item for layout — a nested Item drives no
+    // implicit width). With empty `text` the button collapses to 0 width and the
+    // bars render invisible. Give it a real size from the spectrum geometry so it
+    // is visible in the bar. We removed the parent-fill anchor so implicitWidth
+    // (not a zero-width parent) drives the button size.
+    implicitWidth: Style.space(2) + root.barCount * (root.slotW + Style.space(2))
+    implicitHeight: Style.space(28)
     bar: root.bar
     tooltipText: root.spectrumSilent ? "Omaviz — no audio" : "Omaviz — click to configure"
     text: ""
