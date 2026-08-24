@@ -84,8 +84,18 @@ BarWidget {
   // ---- Geometry: claim a dedicated slot in the bar's Row from the
   // spectrum bar count (the button has no text/icon, so it would otherwise
   // collapse to zero and render behind neighbors). ----
-  readonly property real slotW: 3
-  implicitWidth: Style.space(2) + root.barCount * (root.slotW + Style.space(2))
+  // Gap between bars in px, from [mini] gap (0 = bars fuse together).
+  readonly property real barGap: {
+    var g = (root.config && root.config.gap !== undefined) ? +root.config.gap : 3
+    return (g === g && g >= 0) ? g : 3   // NaN/negative guard
+  }
+  readonly property real slotW: root.barGap
+  // [mini] scale multiplies the whole widget footprint (default 1).
+  readonly property real widthScale: {
+    var w = (root.config && root.config.widthScale !== undefined) ? +root.config.widthScale : 1
+    return (w === w && w >= 0.5 && w <= 4) ? w : 1
+  }
+  implicitWidth: Math.round(widthScale * (Style.space(2) + root.barCount * (root.slotW + Style.space(2))))
   implicitHeight: Style.space(28)
   onBarChanged: injectPanel()
   onSettingsChanged: injectPanel()
@@ -129,7 +139,21 @@ BarWidget {
   Timer {
     id: bridgeRetryTimer
     interval: 1500; repeat: false
-    onTriggered: { spectrumProc.running = true }
+    property int _cfgPoll: 0
+    property string _lastCfg: ""
+    onTriggered: {
+      // Poll config file every ~0.5s — FileView watchChanges proved unreliable
+      // in this Quickshell build, and panel commits must reach the mini.
+      _cfgPoll++
+      if (_cfgPoll % 30 === 0) {
+        var txt = detachConfigWrite.text()
+        if (txt && txt.length > 5) {           // ignore unloaded FileView ("")
+          if (txt !== root._lastCfg && root._lastCfg !== "") {
+            root.config = Model.readConfigFromText(txt)
+          }
+          root._lastCfg = txt
+        }
+      } spectrumProc.running = true }
   }
 
   // ---- Detached desktop-window launcher (lives on the persistent BarWidget) ----
@@ -205,6 +229,7 @@ BarWidget {
     path: Model.configPath
     watchChanges: false
     printErrors: false
+    Component.onCompleted: reload()
   }
   function writeDesktopActive(value) {
     var txt = Model.writeConfigKey(detachConfigWrite.text(), "desktop", "active", value ? "true" : "false")
@@ -258,8 +283,10 @@ BarWidget {
       anchors.fill: parent
       anchors.margins: Style.space(4)
 
-      readonly property real slotWidth: Math.max(2,
-        (width - Style.space(2) * (root.barCount + 1)) / root.barCount)
+      // [mini] gap drives inter-bar spacing; 0 = bars fuse together
+      readonly property real gapPx: (root.config && root.config.gap !== undefined && root.config.gap === root.config.gap && root.config.gap >= 0) ? +root.config.gap : 3
+      readonly property real slotWidth: Math.max(1,
+        (width - gapPx * (root.barCount - 1)) / root.barCount)
 
       Repeater {
         model: root.barModel
@@ -267,17 +294,42 @@ BarWidget {
         Rectangle {
           id: bar
           readonly property real value: getBarValue(modelData)
+          // [visual.equalizer] color mode: solid | line | fade | fire
+          readonly property string colorMode:
+            (root.config && root.config.eqColor) ? root.config.eqColor : "fire"
 
-          x: Style.space(2) + modelData * (parent.slotWidth + Style.space(2))
+          x: modelData * (parent.slotWidth + parent.gapPx)
           width: parent.slotWidth
           height: parent.height * value
           y: parent.height - height
 
           radius: Math.min(width * 0.5, 3)
           color: {
-            if (root.config.style === "fire") {
+            if (root.config.colorSource === "custom") {
+              var cc = String(root.config.customColor || "#5ec8ff")
+              var vC = Math.min(1, Math.max(0, value))
+              // dim/brighten custom color by band level (alpha blend toward black)
+              return Qt.tint(Qt.color(cc), Qt.rgba(0,0,0, 1 - 0.35 + vC * 0.65))
+            }
+            if (colorMode === "fire" || root.config.style === "fire") {
               var v0 = Math.min(1, Math.max(0, value))
               return "rgba(255," + Math.round(80 + v0 * 175) + "," + Math.round(20 + v0 * 60) + ",1)"
+            }
+            if (colorMode === "solid") {
+              // single accent color, brightness by level
+              var vs = Math.min(1, Math.max(0, value))
+              if (!root.config.colorSync) return Qt.rgba(0.92,0.94,0.98,1)
+              var bs = String(root.config.themeBottom || "#e68e0d")
+              var cS = Qt.color(bs)
+              return Qt.rgba(cS.r*(0.4+0.6*vs), cS.g*(0.4+0.6*vs), cS.b*(0.4+0.6*vs), 1)
+            }
+            if (colorMode === "fade") {
+              var vf = Math.min(1, Math.max(0, value))
+              if (!root.config.colorSync) return Qt.rgba(0.92*vf+0.08, 0.94*vf+0.06, 0.98, 1)
+              var bt = String(root.config.themeBottom || "#e68e0d")
+              var tp = String(root.config.themeTop || "#f59e0b")
+              var cb = Qt.color(bt), ct = Qt.color(tp)
+              return Qt.rgba(cb.r+(ct.r-cb.r)*vf, cb.g+(ct.g-cb.g)*vf, cb.b+(ct.b-cb.b)*vf, 1)
             }
             var v = Math.min(1, Math.max(0, value))
             // Default: monochrome (bright, fully visible on dark bar bg).

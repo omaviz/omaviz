@@ -173,15 +173,12 @@ test("visual decode rides raw 0/1/2 in ctrl().r (no *2 collision with Wave)", ()
     "WAVE ribbon loop is bounded (const int NW = 24)")
 })
 
-test("control-texture source uses NEAREST filtering (decode-race guard)", () => {
-  // The control texture packs discrete 8-bit codes (visual 0/1/2 in row 2 R,
-  // toggles in rows 8/9, density in row 11). The default LINEAR filtering
-  // averages a row with its vertical neighbours (e.g. the animated time row),
-  // so a packed value 2 (R=2/255) reads back as ~1 -> wave silently renders
-  // as the oscilloscope branch. Nearest keeps each control cell exact. This
-  // regression bit Wave/Oscilloscope (they rendered only the background).
-  assert.ok(/ShaderEffectSource\s*\{[\s\S]*?id:\s*specTex[\s\S]*?filtering:\s*ShaderEffectSource\.Nearest/.test(GLQML),
-    "specTex (control texture) must set filtering: ShaderEffectSource.Nearest")
+test("control-texture source uses NEAREST sampling (smooth:false, decode-race guard)", () => {
+  // Control rows pack discrete 8-bit codes. Linear filtering would average
+  // neighbouring rows (e.g. animated time row) and corrupt decode. Qt6 uses
+  // `smooth: false` for nearest sampling.
+  assert.ok(/id:\s*specTex[\s\S]*?smooth:\s*false/.test(GLQML),
+    "specTex must set smooth: false for exact control-cell decode")
 })
 
 test("WAVE is audio-reactive: continuous carrier modulated by bandAt envelope", () => {

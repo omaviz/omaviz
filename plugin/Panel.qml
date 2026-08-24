@@ -77,9 +77,12 @@ Panel {
 
   // ---- Live preview of the selected mini visual (Canvas-2D, GPU-free) ----
   function currentViz() {
+    // reference cfgText so the preview binding re-evaluates on every commit
+    var _dep = cfgText
     return (root.readCfg("visual", "mini") || "equalizer") === "oscilloscope" ? "Wave" : "Bars"
   }
   function currentStyle() {
+    var _dep = cfgText
     return (root.readCfg("style", "mini") || "classic") === "fire" ? "Fire" : "Classic"
   }
 
@@ -114,15 +117,35 @@ Panel {
   // surface
   KeyboardPanel {
     id: panel
-    anchors.fill: parent
     anchorItem: root.anchorItem
     owner: root.hostWidget || root
     bar: root.bar
     open: root.opened
     centerOnBar: false
     focusTarget: keyCatcher
+    // Fixed size captured once at open — re-fitting on every control change
+    // made the dialog jump/jitter when toggles altered implicit sizes.
+    property bool _sizeLocked: false
+    property int _frozenH: 0
+    onOpenedChanged: {
+      if (opened) {
+        _sizeLocked = false
+        _frozenH = 0
+        lockTimer.restart()
+      }
+    }
+    Timer {
+      id: lockTimer
+      interval: 250   // let content lay out once, then freeze size
+      onTriggered: {
+        if (opened && !_sizeLocked) {
+          _frozenH = contentHeight
+          _sizeLocked = true
+        }
+      }
+    }
     contentWidth: panel.fittedContentWidth(Style.space(460))
-    contentHeight: panel.fittedContentHeight(column.implicitHeight, Style.space(720))
+    contentHeight: _sizeLocked ? _frozenH : panel.fittedContentHeight(column.implicitHeight, Style.space(720))
 
     PanelKeyCatcher {
       id: keyCatcher
@@ -133,15 +156,15 @@ Panel {
 
     ScrollView {
       anchors.fill: parent
-      contentWidth: column.implicitWidth
+      contentWidth: width          // vertical scroll only — no horizontal
       contentHeight: column.implicitHeight
       clip: true
 
       Column {
         id: column
-        width: panel.contentWidth
+        x: Style.space(14)               // left padding via position
+        width: panel.contentWidth - Style.space(28)  // viewport minus both paddings
         spacing: Style.space(10)
-        padding: Style.space(14)
 
         // ---- Live preview ----
         PanelSectionHeader { text: "PREVIEW" }
@@ -153,26 +176,34 @@ Panel {
           VisualCanvas {
             id: previewViz
             anchors.fill: parent; anchors.margins: Style.space(6)
-            bands: Model.spectrumData.bands
-            silent: Model.spectrumData.silent
-            visual: root.currentViz()
-            style: root.currentStyle()
+            // Model.spectrumData is a plain JS object — assignments don't emit
+            // change signals. Poll into notified locals so the Canvas repaints.
+            property var _liveBands: []
+            property bool _liveSilent: true
+            property string _liveVisual: "Bars"
+            property string _liveStyle: "Classic"
+            Timer {
+              interval: 33; repeat: true; running: true
+              onTriggered: {
+                var nb = Model.spectrumData.bands
+                previewViz._liveBands = nb
+                previewViz._liveSilent = Model.spectrumData.silent
+                var v = root.currentViz()
+                var st = root.currentStyle()
+                if (previewViz._liveVisual !== v) previewViz._liveVisual = v
+                if (previewViz._liveStyle !== st) previewViz._liveStyle = st
+              }
+            }
+            bands: previewViz._liveBands
+            silent: previewViz._liveSilent
+            visual: previewViz._liveVisual
+            style: previewViz._liveStyle
             colorSync: root.config.colorSync
             barCount: (root.config.density || 64)   // dense preview reflects the desktop window
             colourScheme: 0
           }
         }
-        // v7.2 window options reflected live in the preview
-        Binding { when: previewViz.item; target: previewViz.item; property: "border"; value: (root.config.border !== false) }
-        Binding { when: previewViz.item; target: previewViz.item; property: "colorSource"; value: (root.config.colorSource || "theme") }
-        Binding { when: previewViz.item; target: previewViz.item; property: "customColor"; value: (root.config.customColor || "#5ec8ff") }
-        Binding { when: previewViz.item; target: previewViz.item; property: "themeBottom"; value: (root.config.themeBottom || "#e68e0d") }
-        Binding { when: previewViz.item; target: previewViz.item; property: "themeTop"; value: (root.config.themeTop || "#f59e0b") }
-        // TASK #2: fire toggle drives the winamp-flame preview too
-        Binding { when: previewViz.item; target: previewViz.item; property: "fire"; value: (root.config.fire === true) }
-        Binding { when: previewViz.item; target: previewViz.item; property: "peaks"; value: (root.config.peaks !== false) }
-        Binding { when: previewViz.item; target: previewViz.item; property: "falloff"; value: (root.config.falloff ?? 0.5) }
-        Binding { when: previewViz.item; target: previewViz.item; property: "alpha"; value: (root.config.alpha ?? 1.0) }
+        // (VisualCanvas is a plain Canvas — properties bound inline above.)
 
         PanelSeparator { }
 
@@ -241,6 +272,38 @@ Panel {
 
         // ---- Winamp-style controls (bar style, colors, glow) ----
         PanelSectionHeader { text: "BAR STYLE" }
+        Row {
+          width: parent.width
+          spacing: Style.space(10)
+          Text {
+            text: "Width"
+            color: root.bar ? root.bar.foreground : Color.foreground
+            font.family: Style.font.family; font.pixelSize: Style.font.body
+            anchors.verticalCenter: parent.verticalCenter
+          }
+          PanelSlider {
+            width: parent.width - Style.space(110)
+            minimum: 0.5; maximum: 4; step: 0.1
+            value: parseFloat(root.readCfg("width_scale", "mini") || "1.5")
+            onMoved: function(v) { commit("width_scale", v.toFixed(1), "mini") }
+          }
+        }
+        Row {
+          width: parent.width
+          spacing: Style.space(10)
+          Text {
+            text: "Gap"
+            color: root.bar ? root.bar.foreground : Color.foreground
+            font.family: Style.font.family; font.pixelSize: Style.font.body
+            anchors.verticalCenter: parent.verticalCenter
+          }
+          PanelSlider {
+            width: parent.width - Style.space(110)
+            minimum: 0; maximum: 10; step: 1
+            value: parseFloat(root.readCfg("gap", "mini") || "3")
+            onMoved: function(v) { commit("gap", v.toFixed(0), "mini") }
+          }
+        }
         Row {
           width: parent.width
           spacing: Style.space(10)
@@ -424,6 +487,7 @@ Panel {
           width: parent.width
           spacing: Style.space(8)
           Button {
+            id: resetBtn
             text: "Reset"
             onClicked: root.resetAll()
           }

@@ -144,7 +144,7 @@ Item {
     // averages it with its vertical neighbours (e.g. the animated time row 3),
     // so visual-code 2 (R=2/255) reads as ~1 -> wave silently renders as the
     // oscilloscope branch. Nearest keeps each control cell exact.
-    filtering: ShaderEffectSource.Nearest
+    smooth: false   // NEAREST sampling — control cells must stay exact 8-bit codes
   }
 
   ShaderEffect {

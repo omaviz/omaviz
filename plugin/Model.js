@@ -90,6 +90,10 @@ function readConfigFromText(tomlText) {
   d.visualDesktop = readTomlValue(tomlText, "desktop", "visual") ?? d.visualDesktop
   d.visualFull = readTomlValue(tomlText, "full", "visual") ?? d.visualFull
   d.style = readTomlValue(tomlText, "mini", "style") ?? d.style
+  d.gap = parseFloat(readTomlValue(tomlText, "mini", "gap") ?? "NaN")
+  if (d.gap !== d.gap || d.gap < 0) d.gap = 3   // NaN/negative → default 3
+  d.widthScale = parseFloat(readTomlValue(tomlText, "mini", "width_scale") ?? "1.5")
+  if (d.widthScale !== d.widthScale || d.widthScale < 0.5 || d.widthScale > 4) d.widthScale = 1.5
   d.styleDesktop = readTomlValue(tomlText, "desktop", "style") ?? d.style
   d.desktopActive = readTomlValue(tomlText, "desktop", "active") === "true"
   d.colorSync = readTomlValue(tomlText, "mini", "color_sync") === "true"
@@ -132,6 +136,8 @@ function defaultConfig() {
     visualMini: "equalizer",
     visualDesktop: "equalizer",
     visualFull: "wave",
+    gap: 3,
+    widthScale: 1.5,
     style: "classic",
     styleDesktop: "classic",
     desktopActive: false,
@@ -165,8 +171,9 @@ function writeConfigKey(tomlText, section, key, value) {
   // for the strict omaviz daemon (which rejects unquoted strings like
   // `style = classic`). Numbers/booleans stay unquoted.
   var v = String(value)
-  if (typeof value === "string") {
-    v = '"' + v + '"'
+  // Quote strings, but never double-quote a value that is already quoted
+  if (typeof value === "string" && !/^[\[\{]/.test(v.trim()) && !/^".*"$/.test(v.trim())) {
+    v = '"' + v.replace(/^"|"$/g, '') + '"'
   }
   var entry = key + " = " + v
 
