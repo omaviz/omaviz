@@ -127,23 +127,6 @@ Panel {
     // made the dialog jump/jitter when toggles altered implicit sizes.
     property bool _sizeLocked: false
     property int _frozenH: 0
-    onOpenedChanged: {
-      if (opened) {
-        _sizeLocked = false
-        _frozenH = 0
-        lockTimer.restart()
-      }
-    }
-    Timer {
-      id: lockTimer
-      interval: 250   // let content lay out once, then freeze size
-      onTriggered: {
-        if (opened && !_sizeLocked) {
-          _frozenH = contentHeight
-          _sizeLocked = true
-        }
-      }
-    }
     contentWidth: panel.fittedContentWidth(Style.space(460))
     contentHeight: _sizeLocked ? _frozenH : panel.fittedContentHeight(column.implicitHeight, Style.space(720))
 
@@ -502,6 +485,32 @@ Panel {
     }
 
     Component.onCompleted: configFile.reload()
+  }
+
+  // Size-freeze logic: poll open state; freeze panel size shortly after open
+  // so control toggles (which change implicit sizes) don't jitter the dialog.
+  // Timers live at root level — KeyboardPanel's contentItem only takes Items.
+  Timer {
+    id: lockPoll
+    interval: 100; repeat: true; running: true
+    onTriggered: {
+      if (panel.open) {
+        if (!panel._sizeLocked) lockTimer.restart()
+      } else {
+        panel._sizeLocked = false
+        panel._frozenH = 0
+      }
+    }
+  }
+  Timer {
+    id: lockTimer
+    interval: 300
+    onTriggered: {
+      if (panel.open && !panel._sizeLocked) {
+        panel._frozenH = panel.contentHeight
+        panel._sizeLocked = true
+      }
+    }
   }
 
   // Writable config view — no watch so async reverts never clobber a click.
