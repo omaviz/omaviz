@@ -2,15 +2,13 @@
 bridge/target/
 daemon/target/
 engine/target/
-v6/**/target/
+archive-v6/**/target/
 
 # local config / runtime
 *.omaviz-orig
 .DS_Store
 
-# v7 bundled engine IS committed (Architecture A: the plugin dir is a
-# self-contained, zero-build drop-in — matches Omarchy's plugin model).
-# The GPU shader is compiled to .qsb by build.sh and is NOT committed
-# (generated artifact, like target/).
+# v7 bundled engine + compiled shader ARE committed (Architecture A: the
+# plugin dir is a self-contained, zero-build drop-in — matches Omarchy's
+# plugin model). plugin/visual.qsb is tracked in git.
 # plugin/bin/
-plugin/visual.qsb
