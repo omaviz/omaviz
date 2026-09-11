@@ -77,12 +77,9 @@ Panel {
 
   // ---- Live preview of the selected mini visual (Canvas-2D, GPU-free) ----
   function currentViz() {
-    // reference cfgText so the preview binding re-evaluates on every commit
-    var _dep = cfgText
     return (root.readCfg("visual", "mini") || "equalizer") === "oscilloscope" ? "Wave" : "Bars"
   }
   function currentStyle() {
-    var _dep = cfgText
     return (root.readCfg("style", "mini") || "classic") === "fire" ? "Fire" : "Classic"
   }
 
@@ -117,21 +114,15 @@ Panel {
   // surface
   KeyboardPanel {
     id: panel
+    anchors.fill: parent
     anchorItem: root.anchorItem
     owner: root.hostWidget || root
     bar: root.bar
     open: root.opened
     centerOnBar: false
-    // Extra breathing room around the content (base default is
-    // Style.spacing.popupPadding; we widen it for this panel).
-    padding: Math.round(Style.spacing.popupPadding * 2)
     focusTarget: keyCatcher
-    // Fixed size captured once at open — re-fitting on every control change
-    // made the dialog jump/jitter when toggles altered implicit sizes.
-    property bool _sizeLocked: false
-    property int _frozenH: 0
     contentWidth: panel.fittedContentWidth(Style.space(460))
-    contentHeight: _sizeLocked ? _frozenH : panel.fittedContentHeight(column.implicitHeight)
+    contentHeight: panel.fittedContentHeight(column.implicitHeight, Style.space(720))
 
     PanelKeyCatcher {
       id: keyCatcher
@@ -140,45 +131,17 @@ Panel {
       onActivateRequested: root.close()
     }
 
-    Flickable {
-      id: scroll
+    ScrollView {
       anchors.fill: parent
-      contentWidth: width          // vertical movement only — no horizontal
+      contentWidth: column.implicitWidth
       contentHeight: column.implicitHeight
       clip: true
-      boundsBehavior: Flickable.StopAtBounds
-      // Only interactive when content genuinely overflows — otherwise the
-      // Flickable would eat drag gestures meant for sliders.
-      interactive: contentHeight > height
 
       Column {
         id: column
-        // Fill the padded viewport exactly like the shell's own panels
-        // (kishan.clock): the KeyboardPanel's contentHolder already applies
-        // the card's default padding, so NO extra x-offset or width fudge here.
-        width: parent.width
+        width: panel.contentWidth
         spacing: Style.space(10)
-
-        // Helper: label at natural width, control takes ALL remaining space.
-        // (Replaces the old `parent.width - Style.space(110)` hardcodes that
-        // mis-sized controls and clipped their right edge.)
-        component LabeledRow: Row {
-          default property alias controlItem: holder.data
-          property string label: ""
-          width: parent ? parent.width : 0
-          spacing: Style.space(10)
-          Text {
-            text: parent.label
-            color: root.bar ? root.bar.foreground : Color.foreground
-            font.family: Style.font.family; font.pixelSize: Style.font.body
-            anchors.verticalCenter: parent.verticalCenter
-          }
-          Item {
-            id: holder
-            height: parent.height
-            width: parent.width - (parent.children[0].implicitWidth + parent.spacing)
-          }
-        }
+        padding: Style.space(14)
 
         // ---- Live preview ----
         PanelSectionHeader { text: "PREVIEW" }
@@ -190,34 +153,26 @@ Panel {
           VisualCanvas {
             id: previewViz
             anchors.fill: parent; anchors.margins: Style.space(6)
-            // Model.spectrumData is a plain JS object — assignments don't emit
-            // change signals. Poll into notified locals so the Canvas repaints.
-            property var _liveBands: []
-            property bool _liveSilent: true
-            property string _liveVisual: "Bars"
-            property string _liveStyle: "Classic"
-            Timer {
-              interval: 33; repeat: true; running: true
-              onTriggered: {
-                var nb = Model.spectrumData.bands
-                previewViz._liveBands = nb
-                previewViz._liveSilent = Model.spectrumData.silent
-                var v = root.currentViz()
-                var st = root.currentStyle()
-                if (previewViz._liveVisual !== v) previewViz._liveVisual = v
-                if (previewViz._liveStyle !== st) previewViz._liveStyle = st
-              }
-            }
-            bands: previewViz._liveBands
-            silent: previewViz._liveSilent
-            visual: previewViz._liveVisual
-            style: previewViz._liveStyle
+            bands: Model.spectrumData.bands
+            silent: Model.spectrumData.silent
+            visual: root.currentViz()
+            style: root.currentStyle()
             colorSync: root.config.colorSync
             barCount: (root.config.density || 64)   // dense preview reflects the desktop window
             colourScheme: 0
           }
         }
-        // (VisualCanvas is a plain Canvas — properties bound inline above.)
+        // v7.2 window options reflected live in the preview
+        Binding { when: previewViz.item; target: previewViz.item; property: "border"; value: (root.config.border !== false) }
+        Binding { when: previewViz.item; target: previewViz.item; property: "colorSource"; value: (root.config.colorSource || "theme") }
+        Binding { when: previewViz.item; target: previewViz.item; property: "customColor"; value: (root.config.customColor || "#5ec8ff") }
+        Binding { when: previewViz.item; target: previewViz.item; property: "themeBottom"; value: (root.config.themeBottom || "#e68e0d") }
+        Binding { when: previewViz.item; target: previewViz.item; property: "themeTop"; value: (root.config.themeTop || "#f59e0b") }
+        // TASK #2: fire toggle drives the winamp-flame preview too
+        Binding { when: previewViz.item; target: previewViz.item; property: "fire"; value: (root.config.fire === true) }
+        Binding { when: previewViz.item; target: previewViz.item; property: "peaks"; value: (root.config.peaks !== false) }
+        Binding { when: previewViz.item; target: previewViz.item; property: "falloff"; value: (root.config.falloff ?? 0.5) }
+        Binding { when: previewViz.item; target: previewViz.item; property: "alpha"; value: (root.config.alpha ?? 1.0) }
 
         PanelSeparator { }
 
@@ -237,9 +192,35 @@ Panel {
 
         PanelSeparator { }
 
-        // ---- STYLE (the GPU renderer's winamp flame; the only style that
-        //      matters on the default GL path) ----
+        // ---- STYLE (Canvas-2D bar style; GL path uses the Fire toggle below) ----
         PanelSectionHeader { text: "STYLE" }
+        // On the GL-default render path, STYLE 'Fire' is a no-op (the winamp
+        // flame is driven by the Fire toggle, which sets desktop.fire and feeds
+        // the shader). STYLE 'Fire' only restyles the Canvas-2D fallback, so we
+        // disable it when GPU rendering is active to avoid a misleading control.
+        ButtonGroup {
+          id: styleGroup
+          width: parent.width
+          enabled: (root.readCfg("gpu", "desktop") || "true") === "false"
+          options: ["Classic", "Fire (Canvas)"]
+          value: (root.readCfg("style", "mini") || "classic") === "fire" ? "Fire (Canvas)" : "Classic"
+          onChanged: function(v) {
+            var key = v === "Fire (Canvas)" ? "fire" : "classic"
+            commit("style", '"' + key + '"', "mini")
+            commit("style", '"' + key + '"', "desktop")
+          }
+        }
+        Text {
+          visible: (root.readCfg("gpu", "desktop") || "true") === "false"
+          text: "Canvas-2D style only (GPU renderer uses the Fire toggle below)"
+          color: Qt.darker(root.bar ? root.bar.foreground : Color.foreground, 1.4)
+          font.family: Style.font.family; font.pixelSize: Style.font.bodySmall
+          wrapMode: Text.WordWrap
+          width: parent.width
+        }
+        // NEW (TASK #2): independent Fire toggle. Drives the winamp-flame on the
+        // GL/default renderer (desktop.fire -> visual.frag fireOn()), regardless
+        // of the Classic/Fire CANVAS style above.
         Row {
           width: parent.width
           spacing: Style.space(10)
@@ -260,32 +241,18 @@ Panel {
 
         // ---- Winamp-style controls (bar style, colors, glow) ----
         PanelSectionHeader { text: "BAR STYLE" }
-        LabeledRow {
-          label: "Bar width"
-          PanelSlider {
+        Row {
+          width: parent.width
+          spacing: Style.space(10)
+          Text {
+            text: "Bars"
+            color: root.bar ? root.bar.foreground : Color.foreground
+            font.family: Style.font.family; font.pixelSize: Style.font.body
             anchors.verticalCenter: parent.verticalCenter
-            width: parent.width
-            minimum: 0.5; maximum: 4; step: 0.1
-            value: parseFloat(root.readCfg("width_scale", "mini") || "1.5")
-            onMoved: function(v) { commit("width_scale", v.toFixed(1), "mini") }
           }
-        }
-        LabeledRow {
-          label: "Gap"
-          PanelSlider {
-            anchors.verticalCenter: parent.verticalCenter
-            width: parent.width
-            minimum: 0; maximum: 10; step: 1
-            value: parseFloat(root.readCfg("gap", "mini") || "3")
-            onMoved: function(v) { commit("gap", v.toFixed(0), "mini") }
-          }
-        }
-        LabeledRow {
-          label: "Bars"
           ButtonGroup {
             id: eqModeGroup
-            anchors.verticalCenter: parent.verticalCenter
-            width: parent.width
+            width: parent.width - Style.space(60)
             options: ["Bars", "Lines"]
             value: (root.readCfg("mode", "visual.equalizer") || "bars") === "lines" ? "Lines" : "Bars"
             onChanged: function(v) {
@@ -293,12 +260,18 @@ Panel {
             }
           }
         }
-        LabeledRow {
-          label: "Color"
+        Row {
+          width: parent.width
+          spacing: Style.space(10)
+          Text {
+            text: "Color"
+            color: root.bar ? root.bar.foreground : Color.foreground
+            font.family: Style.font.family; font.pixelSize: Style.font.body
+            anchors.verticalCenter: parent.verticalCenter
+          }
           ButtonGroup {
             id: eqColorGroup
-            anchors.verticalCenter: parent.verticalCenter
-            width: parent.width
+            width: parent.width - Style.space(60)
             options: ["Solid", "Line", "Fade", "Fire"]
             value: (function() {
               var c = root.readCfg("color", "visual.equalizer") || "fire"
@@ -313,13 +286,19 @@ Panel {
         Row {
           width: parent.width
           spacing: Style.space(10)
+          Text {
+            text: "Glow"
+            color: root.bar ? root.bar.foreground : Color.foreground
+            font.family: Style.font.family; font.pixelSize: Style.font.body
+            anchors.verticalCenter: parent.verticalCenter
+          }
           ToggleSwitch {
             id: glowToggle
             checked: root.cfgBool("peaks", "visual.equalizer")
             onToggled: commit("peaks", checked ? "true" : "false", "visual.equalizer")
           }
           Text {
-            text: "Glow (peak hold)"
+            text: "Peak hold"
             color: root.bar ? root.bar.foreground : Color.foreground
             font.family: Style.font.family; font.pixelSize: Style.font.body
             anchors.verticalCenter: parent.verticalCenter
@@ -333,24 +312,30 @@ Panel {
         Row {
           width: parent.width
           spacing: Style.space(10)
-          ToggleSwitch {
-            id: colorSyncToggle
-            checked: root.cfgBool("color_sync", "mini")
-            onToggled: commit("color_sync", checked ? "true" : "false", "mini")
-          }
           Text {
             text: "Color sync"
             color: root.bar ? root.bar.foreground : Color.foreground
             font.family: Style.font.family; font.pixelSize: Style.font.body
             anchors.verticalCenter: parent.verticalCenter
           }
+          ToggleSwitch {
+            id: colorSyncToggle
+            checked: root.cfgBool("color_sync", "mini")
+            onToggled: commit("color_sync", checked ? "true" : "false", "mini")
+          }
         }
-        LabeledRow {
-          label: "Color source"
+        Row {
+          width: parent.width
+          spacing: Style.space(10)
+          Text {
+            text: "Color source"
+            color: root.bar ? root.bar.foreground : Color.foreground
+            font.family: Style.font.family; font.pixelSize: Style.font.body
+            anchors.verticalCenter: parent.verticalCenter
+          }
           ButtonGroup {
             id: colorSrcGroup
-            anchors.verticalCenter: parent.verticalCenter
-            width: parent.width
+            width: parent.width - Style.space(100)
             options: ["Theme", "Custom"]
             value: (root.readCfg("color_source", "desktop") || "theme") === "custom" ? "Custom" : "Theme"
             onChanged: function(v) {
@@ -362,11 +347,17 @@ Panel {
         // v7.6: Desktop window spectrum density. Drives the engine's --bands for
         // the detached window and the GL bar count (GL track generalizes NB).
         // Higher = denser/immense spectrum; engine supports up to ~256.
-        LabeledRow {
-          label: "Density"
-          PanelSlider {
+        Row {
+          width: parent.width
+          spacing: Style.space(10)
+          Text {
+            text: "Density"
+            color: root.bar ? root.bar.foreground : Color.foreground
+            font.family: Style.font.family; font.pixelSize: Style.font.body
             anchors.verticalCenter: parent.verticalCenter
-            width: parent.width
+          }
+          PanelSlider {
+            width: parent.width - Style.space(110)
             minimum: 32; maximum: 128; step: 8
             value: parseInt(root.readCfg("density", "desktop") || "128")
             onMoved: function(v) { commit("density", String(Math.round(v)), "desktop") }
@@ -393,21 +384,33 @@ Panel {
             anchors.verticalCenter: parent.verticalCenter
           }
         }
-        LabeledRow {
-          label: "Sensitivity"
-          PanelSlider {
+        Row {
+          width: parent.width
+          spacing: Style.space(10)
+          Text {
+            text: "Sensitivity"
+            color: root.bar ? root.bar.foreground : Color.foreground
+            font.family: Style.font.family; font.pixelSize: Style.font.body
             anchors.verticalCenter: parent.verticalCenter
-            width: parent.width
+          }
+          PanelSlider {
+            width: parent.width - Style.space(110)
             minimum: 0.1; maximum: 3.0; step: 0.1
             value: parseFloat(root.readCfg("sensitivity", "audio") || "1.0")
             onMoved: function(v) { commit("sensitivity", v.toFixed(1), "audio") }
           }
         }
-        LabeledRow {
-          label: "Smoothing"
-          PanelSlider {
+        Row {
+          width: parent.width
+          spacing: Style.space(10)
+          Text {
+            text: "Smoothing"
+            color: root.bar ? root.bar.foreground : Color.foreground
+            font.family: Style.font.family; font.pixelSize: Style.font.body
             anchors.verticalCenter: parent.verticalCenter
-            width: parent.width
+          }
+          PanelSlider {
+            width: parent.width - Style.space(110)
             minimum: 0.0; maximum: 1.0; step: 0.05
             value: parseFloat(root.readCfg("smoothing", "audio") || "0.5")
             onMoved: function(v) { commit("smoothing", v.toFixed(2), "audio") }
@@ -421,7 +424,6 @@ Panel {
           width: parent.width
           spacing: Style.space(8)
           Button {
-            id: resetBtn
             text: "Reset"
             onClicked: root.resetAll()
           }
@@ -436,32 +438,6 @@ Panel {
     }
 
     Component.onCompleted: configFile.reload()
-  }
-
-  // Size-freeze logic: poll open state; freeze panel size shortly after open
-  // so control toggles (which change implicit sizes) don't jitter the dialog.
-  // Timers live at root level — KeyboardPanel's contentItem only takes Items.
-  Timer {
-    id: lockPoll
-    interval: 100; repeat: true; running: true
-    onTriggered: {
-      if (panel.open) {
-        if (!panel._sizeLocked) lockTimer.restart()
-      } else {
-        panel._sizeLocked = false
-        panel._frozenH = 0
-      }
-    }
-  }
-  Timer {
-    id: lockTimer
-    interval: 300
-    onTriggered: {
-      if (panel.open && !panel._sizeLocked) {
-        panel._frozenH = panel.contentHeight
-        panel._sizeLocked = true
-      }
-    }
   }
 
   // Writable config view — no watch so async reverts never clobber a click.
