@@ -1,15 +1,5 @@
 import QtQuick
 
-// Shared visualization renderer (self-contained QML, no WGSL, no shell-only
-// modules so it loads both inside the shell and as a standalone Loader).
-// `visual` selects the base shape:
-//   "Bars" — vertical spectrum bars (default bar spectrograph)
-//   "Wave" — smooth mirrored sine ribbon (string-like)
-// `style` ("Classic" | "Fire") layers a winamp-style flame over the Bars
-// visual. Fire is a STYLE of the bar visual, not a separate visualization.
-// `colorSync` = false renders monochrome (mini/panel look); true renders
-// colored (desktop showcase). Driven live by `bands`/`silent`.
-
 Canvas {
   id: cv
   property var bands: []
@@ -17,57 +7,62 @@ Canvas {
   property string visual: "Bars"
   property string style: "Classic"
   property bool colorSync: false
-  property int barCount: 0   // 0 = use all bands; else downsample to this many bars
-  property int colourScheme: 0  // 0=theme(mono), 1=warm, 2=cool
+  property int barCount: 0
+  property int colourScheme: 0
   property color monoColor: "#dce0eb"
+  property int gapPx: 1
+  property int minBarHeight: 0
+  property bool peaks: true
+  property real peakFalloff: 0.5
+  property var _peakArr: []
 
-  // Downsample the raw spectrum to `barCount` display bars (if requested).
   function displayBands() {
     var b = bands
+    if (b.length === 0) return []
     var n = barCount > 0 ? barCount : b.length
-    if (n === b.length || b.length === 0) return b
-    var out = []
-    for (var i = 0; i < n; i++) {
-      var lo = Math.floor(i * b.length / n)
-      var hi = Math.max(lo + 1, Math.floor((i + 1) * b.length / n))
-      var m = 0
-      for (var j = lo; j < hi; j++) m += b[j]
-      out.push(m / (hi - lo))
+    if (n === b.length) return b
+    if (n < b.length) {
+      var out = []
+      for (var i = 0; i < n; i++) {
+        var lo = Math.floor(i * b.length / n)
+        var hi = Math.max(lo + 1, Math.floor((i + 1) * b.length / n))
+        var m = 0
+        for (var j = lo; j < hi; j++) {
+          if (b[j] > m) m = b[j]
+        }
+        out.push(m)
+      }
+      return out
     }
-    return out
+    var up = []
+    for (var k = 0; k < n; k++) {
+      var srcIdx = Math.round(k * (b.length - 1) / (n - 1))
+      up.push(b[srcIdx])
+    }
+    return up
   }
 
   onBandsChanged: requestPaint()
-  onVisualChanged: requestPaint()
-  onStyleChanged: requestPaint()
-  onSilentChanged: requestPaint()
-  onColorSyncChanged: requestPaint()
   onBarCountChanged: requestPaint()
-  onColourSchemeChanged: requestPaint()
   onWidthChanged: requestPaint()
   onHeightChanged: requestPaint()
 
-  function cssMonoTint(a) { return "rgba(220,224,235," + a.toFixed(3) + ")" }
-  function cssColorFor(h) {
-    if (colourScheme === 2) { // cool
-      if (h < 0.33) return "#2a9df4"
-      if (h < 0.66) return "#7b5de5"
-      return "#b15bff"
-    }
-    if (colourScheme === 1) { // warm
-      if (h < 0.33) return "#ff5a1e"
-      if (h < 0.66) return "#ff8c1a"
-      return "#ffd000"
-    }
-    // colourScheme 0 = theme (Matte Black, see THEME_PALETTE.md):
-    // accent #e68e0d -> bright_blue #f59e0b ramp.
-    if (h < 0.33) return "#e68e0d"
-    if (h < 0.66) return "#f08e0d"
-    return "#f59e0b"
-  }
   function fillFor(h, a) {
-    if (colorSync) return cssColorFor(h)
-    // Theme-dominant gradient: amber base → white-hot tip
+    if (colorSync) {
+      if (colourScheme === 2) {
+        if (h < 0.33) return "#2a9df4"
+        if (h < 0.66) return "#7b5de5"
+        return "#b15bff"
+      }
+      if (colourScheme === 1) {
+        if (h < 0.33) return "#ff5a1e"
+        if (h < 0.66) return "#ff8c1a"
+        return "#ffd000"
+      }
+      if (h < 0.33) return "#e68e0d"
+      if (h < 0.66) return "#f08e0d"
+      return "#f59e0b"
+    }
     var bot = Qt.color("#e68e0d")
     var top = Qt.color("#ffffff")
     var r = bot.r + (top.r - bot.r) * h
@@ -75,30 +70,35 @@ Canvas {
     var b = bot.b + (top.b - bot.b) * h
     return Qt.rgba(r, g, b, 1.0)
   }
-  function isFire() { return style === "Fire" && visual === "Bars" }
 
   onPaint: {
     var ctx = getContext("2d")
     ctx.clearRect(0, 0, width, height)
-    var n = displayBands().length
-    if (!n) return
-    if (visual === "Wave") drawWave(ctx)
-    else if (isFire()) drawFireBars(ctx)
-    else drawBars(ctx)
-  }
-
-  // ---- Classic Bars ----
-  function drawBars(ctx) {
     var b = displayBands()
     var n = b.length
-    var gap = width * 0.012
-    var slot = width / n
-    var bw = Math.max(1, slot - gap)
+    if (!n) return
+    if (visual === "Wave") { drawWave(ctx); return }
+
+    var gap = gapPx
+    var totalGap = gap * (n - 1)
+    var bw = Math.max(2, (width - totalGap) / n)
+
+    if (_peakArr.length !== n) {
+      _peakArr = []
+      for (var p = 0; p < n; p++) _peakArr.push(0)
+    }
+
+    var f = Math.max(0.05, 1.0 - peakFalloff * 0.12)
     for (var i = 0; i < n; i++) {
-      var v = Math.min(1, Math.max(0, b[i]))
-      if (silent) v = 0
-      var h = v * (height * 0.92)
-      var x = i * slot + gap / 2
+      var v = silent ? 0 : Math.min(1, Math.max(0, b[i]))
+      if (v >= _peakArr[i]) { _peakArr[i] = v } else { _peakArr[i] = _peakArr[i] * f }
+    }
+
+    for (var i = 0; i < n; i++) {
+      var v = silent ? 0 : Math.min(1, Math.max(0, b[i]))
+      var h = v * height
+      if (h > 0 && h < minBarHeight) h = minBarHeight
+      var x = i * (bw + gap)
       var y = height - h
       ctx.fillStyle = fillFor(v, 0.25 + v * 0.75)
       ctx.beginPath()
@@ -106,86 +106,34 @@ Canvas {
       if (ctx.roundRect) ctx.roundRect(x, y, bw, h, r); else ctx.rect(x, y, bw, h)
       ctx.fill()
     }
-  }
 
-  // ---- Bars styled as a winamp-style flame ----
-  function drawFireBars(ctx) {
-    var b = displayBands()
-    var n = b.length
-    var gap = width * 0.018
-    var slot = width / n
-    var bw = Math.max(1.5, slot - gap)
-    var energy = 0
-    for (var e = 0; e < n; e++) energy += b[e]
-    energy = energy / n
-    var bg = ctx.createLinearGradient(0, height, 0, 0)
-    bg.addColorStop(0, "rgba(255,90,20," + (0.10 + energy * 0.25).toFixed(3) + ")")
-    bg.addColorStop(1, "rgba(60,0,0,0)")
-    ctx.fillStyle = bg
-    ctx.fillRect(0, 0, width, height)
-
-    ctx.beginPath()
-    ctx.moveTo(0, height)
-    for (var i = 0; i < n; i++) {
-      var v = silent ? 0 : Math.min(1, Math.max(0, b[i]))
-      var h = v * (height * 0.96)
-      var x = i * slot
-      var y = height - h
-      var flick = (i % 2 ? 1 : -1) * (3 + v * 6)
-      ctx.lineTo(x + bw * 0.5, y + flick)
-      ctx.lineTo(x + slot, height - h * 0.82)
-    }
-    ctx.lineTo(width, height)
-    ctx.closePath()
-    var fg = ctx.createLinearGradient(0, height, 0, 0)
-    if (colorSync) {
-      fg.addColorStop(0.0, "#ff2d00")
-      fg.addColorStop(0.45, "#ff7b00")
-      fg.addColorStop(0.8, "#ffd000")
-      fg.addColorStop(1.0, "#fff27a")
-    } else {
-      // Theme-dominant gradient: amber base → white-hot tip
-      fg.addColorStop(0.0, "rgba(230,142,13,0.55)")
-      fg.addColorStop(0.5, "rgba(242,180,60,0.8)")
-      fg.addColorStop(1.0, "rgba(255,255,255,0.95)")
-    }
-    ctx.fillStyle = fg
-    ctx.fill()
-
-    for (var p = 0; p < n; p++) {
-      var pv = silent ? 0 : Math.min(1, Math.max(0, b[p]))
-      if (pv < 0.04) continue
-      var px = p * slot + slot * 0.5
-      var py = height - pv * (height * 0.96)
-      ctx.fillStyle = colorSync ? "#fff7c0" : "rgba(255,255,255,0.9)"
-      ctx.beginPath()
-      ctx.arc(px, py, Math.max(1, bw * 0.32), 0, Math.PI * 2)
-      ctx.fill()
+    if (peaks) {
+      ctx.fillStyle = "#ffffff"
+      for (var p = 0; p < n; p++) {
+        var pv = _peakArr[p]
+        if (pv < 0.02) continue
+        var py = height - pv * height
+        var px = p * (bw + gap)
+        ctx.fillRect(px, py - 1, bw, 2)
+      }
     }
   }
 
-  // ---- Wave (mirrored sine ribbon, string-like) ----
   function drawWave(ctx) {
     var b = displayBands()
     var n = b.length
     var mid = height * 0.5
     var step = Math.max(1, Math.floor(width / 220))
-    function envAt(x) {
-      var t = x / width
-      var bi = Math.min(n - 1, Math.floor(t * n))
-      return Math.min(1, b[bi]) * (0.35 + 0.65 * Math.sin(t * Math.PI))
-    }
     ctx.lineWidth = 2.5
     ctx.strokeStyle = fillFor(0.8, 0.9)
     ctx.beginPath()
     for (var x = 0; x <= width; x += step) {
-      var env = envAt(x)
+      var t = x / width
+      var bi = Math.min(n - 1, Math.floor(t * n))
+      var env = Math.min(1, b[bi]) * (0.35 + 0.65 * Math.sin(t * Math.PI))
       var y = mid - (height * 0.42) * env * Math.sin((x / width) * Math.PI * 6)
       if (x === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y)
     }
     ctx.stroke()
-    ctx.lineTo(width, mid); ctx.lineTo(0, mid); ctx.closePath()
-    ctx.fillStyle = fillFor(0.6, 0.12)
-    ctx.fill()
   }
 }
