@@ -6,7 +6,9 @@ import qs.Commons
 import qs.Ui
 import "Model.js" as Model
 
-// Omaviz settings panel (v7.2 / TASK #2).
+// Omaviz settings panel (bars-minimum ADR-0008: PREVIEW + SOURCE only).
+// The panel writes NOTHING — no viz/fire/detach/density controls. Detach
+// lives on BarWidget right-click; the desktop window closes via its own ×.
 //
 // Bar-widget contract (verified against live BarWidget.qml):
 //   injectPanel() sets:  t.bar, t.anchorItem, t.hostWidget, t.settings
@@ -35,33 +37,9 @@ Panel {
   property var hostWidget: null
   // `bar` and `settings` are provided by the Panel base and overwritten by
   // injectPanel(); declared here so the base binding does not error pre-injection.
-
-  // ---- In-memory config buffer (synchronous round-trip) ----
-  // Quickshell FileView.setText() does NOT update text() synchronously, so the
-  // panel keeps its own buffer and writes through Model.writeConfigKey, then
-  // re-parses the same string so the first click always sticks (regression
-  // guard: "every control needs two clicks").
-  property string cfgText: configFile.text()
-
-  // Live config object (mirrors BarWidget's `root.config`). The preview binds
-  // to this so it re-renders on every write; it MUST exist or the bindings
-  // throw "Cannot read property of undefined".
-  property var config: Model.readConfigFromText(cfgText)
-
-  function reloadCfg() { cfgText = configFile.text(); root.config = Model.readConfigFromText(cfgText) }
-  function commit(key, value, section) {
-    cfgText = Model.writeConfigKey(cfgText, section || "desktop", key, value)
-    configFile.setText(cfgText)
-    root.config = Model.readConfigFromText(cfgText)
-    if (hostWidget && typeof hostWidget.applyConfig === "function")
-      hostWidget.applyConfig(cfgText)
-  }
-  function readCfg(key, section) {
-    return Model.readTomlValue(cfgText, section || "desktop", key)
-  }
-  function cfgBool(key, section) {
-    return readCfg(key, section) === "true"
-  }
+  // NOTE (ADR-0008): the panel is read-only. There is no config buffer, no
+  // commit()/readCfg()/reloadCfg() — the preview follows the live feed and
+  // the footer is a SOURCE readout. All config reads live on BarWidget/Desktop.
 
   // ---- Popup lifecycle ----
   // IMPORTANT: do NOT override opened/open/close/toggle here. The `Panel`
@@ -75,44 +53,13 @@ Panel {
   // The earlier (broken) version overrode these to set panel.open directly,
   // which never invoked panelController.show(), so the panel never appeared.
 
-  // ---- Live preview of the selected mini visual (Canvas-2D, GPU-free) ----
-  function currentViz() {
-    // reference cfgText so the preview binding re-evaluates on every commit
-    var _dep = cfgText
-    return (root.readCfg("visual", "mini") || "equalizer") === "oscilloscope" ? "Wave" : "Bars"
-  }
-  function currentStyle() {
-    var _dep = cfgText
-    return (root.readCfg("style", "mini") || "classic") === "fire" ? "Fire" : "Classic"
-  }
+  // ---- Live Bars preview (Canvas-2D, GPU-free, locked to Bars) ----
+  // ADR-0008: no viz/style selector feeds it. The preview follows the live
+  // feed (Model.spectrumData) and always renders Bars in the theme gradient.
 
   // ---- Source (read-only, from the engine's stdout) ----
   readonly property string sourceLabelText:
     Model.sourceLabel(Model.spectrumData.source || "")
-
-  // ---- Detach/Attach label derived from desktop.active (source of truth) ----
-  readonly property bool detached: root.cfgBool("active", "desktop")
-  function toggleDetach() {
-    if (hostWidget && typeof hostWidget.detach === "function") hostWidget.detach()
-    // The flag flips in the config file (hostWidget writes desktop.active +
-    // reset); reload so our label follows immediately.
-    Qt.callLater(root.reloadCfg)
-  }
-
-  function resetAll() {
-    // Reset to defaults (Matte Black-aligned). Writes a clean audio+mini+desktop
-    // block; visuals keep their own sections untouched.
-    var base = "[audio]\nsensitivity = 1.0\nsmoothing = 0.5\nbands = 32\n\n" +
-      "[mini]\nvisual = \"equalizer\"\nstyle = \"classic\"\ncolor_sync = false\n\n" +
-      "[desktop]\nactive = \"false\"\ngpu = \"true\"\ncolor_source = \"theme\"\ndensity = 128\n" +
-      "custom_color = \"#5ec8ff\"\ntheme_bottom = \"#e68e0d\"\ntheme_top = \"#f59e0b\"\n" +
-      "fire = \"false\"\n"
-    cfgText = base
-    configFile.setText(cfgText)
-    root.config = Model.readConfigFromText(cfgText)
-    if (hostWidget && typeof hostWidget.applyConfig === "function")
-      hostWidget.applyConfig(cfgText)
-  }
 
   // surface
   KeyboardPanel {
@@ -194,26 +141,22 @@ Panel {
             // change signals. Poll into notified locals so the Canvas repaints.
             property var _liveBands: []
             property bool _liveSilent: true
-            property string _liveVisual: "Bars"
-            property string _liveStyle: "Classic"
             Timer {
               interval: 33; repeat: true; running: true
               onTriggered: {
                 var nb = Model.spectrumData.bands
                 previewViz._liveBands = nb
                 previewViz._liveSilent = Model.spectrumData.silent
-                var v = root.currentViz()
-                var st = root.currentStyle()
-                if (previewViz._liveVisual !== v) previewViz._liveVisual = v
-                if (previewViz._liveStyle !== st) previewViz._liveStyle = st
               }
             }
             bands: previewViz._liveBands
             silent: previewViz._liveSilent
-            visual: previewViz._liveVisual
-            style: previewViz._liveStyle
-            colorSync: root.config.colorSync
-            barCount: (root.config.density || 64)   // dense preview reflects the desktop window
+            // ADR-0008: locked Bars. No selector feeds this binding.
+            visual: "Bars"
+            style: "Classic"
+            // ADR-0008: preview look is locked (theme-gradient bars look).
+            colorSync: false
+            barCount: 64
             colourScheme: 0
           }
         }
@@ -221,161 +164,7 @@ Panel {
 
         PanelSeparator { }
 
-        // ---- VISUALIZATION (Bar vs Oscilloscope; Fire is a style, not a viz) ----
-        PanelSectionHeader { text: "VISUALIZATION" }
-        ButtonGroup {
-          id: vizGroup
-          width: parent.width
-          options: ["Bar", "Oscilloscope"]
-          value: (root.readCfg("visual", "mini") || "equalizer") === "oscilloscope" ? "Oscilloscope" : "Bar"
-          onChanged: function(v) {
-            var key = v === "Oscilloscope" ? "oscilloscope" : "equalizer"
-            commit("visual", '"' + key + '"', "mini")
-            commit("visual", '"' + key + '"', "desktop")
-          }
-        }
-
-        PanelSeparator { }
-
-        // ---- STYLE (the GPU renderer's winamp flame; the only style that
-        //      matters on the default GL path) ----
-        PanelSectionHeader { text: "STYLE" }
-        Row {
-          width: parent.width
-          spacing: Style.space(10)
-          ToggleSwitch {
-            id: fireToggle
-            checked: root.cfgBool("fire")
-            onToggled: commit("fire", checked ? "true" : "false")
-          }
-          Text {
-            text: "Fire effect (winamp flame, GPU/GL)"
-            color: root.bar ? root.bar.foreground : Color.foreground
-            font.family: Style.font.family; font.pixelSize: Style.font.body
-            anchors.verticalCenter: parent.verticalCenter
-          }
-        }
-
-        PanelSeparator { }
-
-        // ---- Winamp-style controls (bar style, colors, glow) ----
-        PanelSectionHeader { text: "BAR STYLE" }
-        LabeledRow {
-          label: "Bar width"
-          PanelSlider {
-            anchors.verticalCenter: parent.verticalCenter
-            width: parent.width
-            minimum: 0.5; maximum: 4; step: 0.1
-            value: parseFloat(root.readCfg("width_scale", "mini") || "1.5")
-            onMoved: function(v) { commit("width_scale", v.toFixed(1), "mini") }
-          }
-        }
-        LabeledRow {
-          label: "Gap"
-          PanelSlider {
-            anchors.verticalCenter: parent.verticalCenter
-            width: parent.width
-            minimum: 0; maximum: 10; step: 1
-            value: parseFloat(root.readCfg("gap", "mini") || "3")
-            onMoved: function(v) { commit("gap", v.toFixed(0), "mini") }
-          }
-        }
-        LabeledRow {
-          label: "Bars"
-          ButtonGroup {
-            id: eqModeGroup
-            anchors.verticalCenter: parent.verticalCenter
-            width: parent.width
-            options: ["Bars", "Lines"]
-            value: (root.readCfg("mode", "visual.equalizer") || "bars") === "lines" ? "Lines" : "Bars"
-            onChanged: function(v) {
-              commit("mode", '"' + (v === "Lines" ? "lines" : "bars") + '"', "visual.equalizer")
-            }
-          }
-        }
-        LabeledRow {
-          label: "Color"
-          ButtonGroup {
-            id: eqColorGroup
-            anchors.verticalCenter: parent.verticalCenter
-            width: parent.width
-            options: ["Solid", "Line", "Fade", "Fire"]
-            value: (function() {
-              var c = root.readCfg("color", "visual.equalizer") || "fire"
-              return c === "solid" ? "Solid" : c === "line" ? "Line" : c === "fade" ? "Fade" : "Fire"
-            })()
-            onChanged: function(v) {
-              var key = v === "Solid" ? "solid" : v === "Line" ? "line" : v === "Fade" ? "fade" : "fire"
-              commit("color", '"' + key + '"', "visual.equalizer")
-            }
-          }
-        }
-        Row {
-          width: parent.width
-          spacing: Style.space(10)
-          ToggleSwitch {
-            id: glowToggle
-            checked: root.cfgBool("peaks", "visual.equalizer")
-            onToggled: commit("peaks", checked ? "true" : "false", "visual.equalizer")
-          }
-          Text {
-            text: "Glow (peak hold)"
-            color: root.bar ? root.bar.foreground : Color.foreground
-            font.family: Style.font.family; font.pixelSize: Style.font.body
-            anchors.verticalCenter: parent.verticalCenter
-          }
-        }
-
-        PanelSeparator { }
-
-        // ---- OPTIONS ----
-        PanelSectionHeader { text: "OPTIONS" }
-        Row {
-          width: parent.width
-          spacing: Style.space(10)
-          ToggleSwitch {
-            id: colorSyncToggle
-            checked: root.cfgBool("color_sync", "mini")
-            onToggled: commit("color_sync", checked ? "true" : "false", "mini")
-          }
-          Text {
-            text: "Color sync"
-            color: root.bar ? root.bar.foreground : Color.foreground
-            font.family: Style.font.family; font.pixelSize: Style.font.body
-            anchors.verticalCenter: parent.verticalCenter
-          }
-        }
-        LabeledRow {
-          label: "Color source"
-          ButtonGroup {
-            id: colorSrcGroup
-            anchors.verticalCenter: parent.verticalCenter
-            width: parent.width
-            options: ["Theme", "Custom"]
-            value: (root.readCfg("color_source", "desktop") || "theme") === "custom" ? "Custom" : "Theme"
-            onChanged: function(v) {
-              commit("color_source", '"' + (v === "Custom" ? "custom" : "theme") + '"', "desktop")
-            }
-          }
-        }
-
-        // v7.6: Desktop window spectrum density. Drives the engine's --bands for
-        // the detached window and the GL bar count (GL track generalizes NB).
-        // Higher = denser/immense spectrum; engine supports up to ~256.
-        LabeledRow {
-          label: "Density"
-          PanelSlider {
-            anchors.verticalCenter: parent.verticalCenter
-            width: parent.width
-            minimum: 32; maximum: 128; step: 8
-            value: parseInt(root.readCfg("density", "desktop") || "128")
-            onMoved: function(v) { commit("density", String(Math.round(v)), "desktop") }
-          }
-        }
-        PanelSeparator { }
-
-        // ---- AUDIO (read-only source + sensitivity/smoothing) ----
-        PanelSectionHeader { text: "AUDIO" }
+        // ---- Footer: read-only source ----
         Row {
           width: parent.width
           spacing: Style.space(8)
@@ -393,53 +182,15 @@ Panel {
             anchors.verticalCenter: parent.verticalCenter
           }
         }
-        LabeledRow {
-          label: "Sensitivity"
-          PanelSlider {
-            anchors.verticalCenter: parent.verticalCenter
-            width: parent.width
-            minimum: 0.1; maximum: 3.0; step: 0.1
-            value: parseFloat(root.readCfg("sensitivity", "audio") || "1.0")
-            onMoved: function(v) { commit("sensitivity", v.toFixed(1), "audio") }
-          }
-        }
-        LabeledRow {
-          label: "Smoothing"
-          PanelSlider {
-            anchors.verticalCenter: parent.verticalCenter
-            width: parent.width
-            minimum: 0.0; maximum: 1.0; step: 0.05
-            value: parseFloat(root.readCfg("smoothing", "audio") || "0.5")
-            onMoved: function(v) { commit("smoothing", v.toFixed(2), "audio") }
-          }
-        }
-
-        PanelSeparator { }
-
-        // ---- Footer: Reset + Detach/Attach ----
-        Row {
-          width: parent.width
-          spacing: Style.space(8)
-          Button {
-            id: resetBtn
-            text: "Reset"
-            onClicked: root.resetAll()
-          }
-          Item { width: parent.width - resetBtn.width - detachBtn.width - Style.space(8); height: 1 }
-          Button {
-            id: detachBtn
-            text: root.detached ? "Attach ↗" : "Detach ↗"
-            onClicked: root.toggleDetach()
-          }
-        }
       }
     }
 
-    Component.onCompleted: configFile.reload()
+    // NOTE: no Component.onCompleted config reload — the panel is read-only
+    // (ADR-0008) and owns no FileView.
   }
 
   // Size-freeze logic: poll open state; freeze panel size shortly after open
-  // so control toggles (which change implicit sizes) don't jitter the dialog.
+  // so content changes don't jitter the dialog.
   // Timers live at root level — KeyboardPanel's contentItem only takes Items.
   Timer {
     id: lockPoll
@@ -464,13 +215,4 @@ Panel {
     }
   }
 
-  // Writable config view — no watch so async reverts never clobber a click.
-  FileView {
-    id: configFile
-    path: Model.configPath
-    watchChanges: false
-    printErrors: false
-    onLoaded: root.reloadCfg()
-    onFileChanged: root.reloadCfg()
-  }
 }

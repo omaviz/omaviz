@@ -292,17 +292,15 @@ BarWidget {
                 return "rgba(255," + Math.round(80 + v0 * 175) + "," + Math.round(20 + v0 * 60) + ",1)"
               }
               var v = Math.min(1, Math.max(0, value))
-              // Default: theme-dominant colors with intensity variation.
+              // Default: theme-dominant gradient (amber base → white-hot tip).
               if (!root.config.colorSync) {
                 var botS2 = String(root.config.themeBottom || "")
-                var topS2 = String(root.config.themeTop || "")
                 if (botS2 === "undefined" || botS2 === "null" || botS2 === "") botS2 = "#e68e0d"
-                if (topS2 === "undefined" || topS2 === "null" || topS2 === "") topS2 = "#f59e0b"
                 var bot2 = Qt.color(botS2)
-                var top2 = Qt.color(topS2)
-                var r = bot2.r + (top2.r - bot2.r) * v
-                var g = bot2.g + (top2.g - bot2.g) * v
-                var b = bot2.b + (top2.b - bot2.b) * v
+                // Blend from theme color toward white at the top for a perceivable gradient.
+                var r = bot2.r + (1.0 - bot2.r) * v
+                var g = bot2.g + (1.0 - bot2.g) * v
+                var b = bot2.b + (1.0 - bot2.b) * v
                 return Qt.rgba(r, g, b, 1.0)
               }
               // color-sync ON: theme-dominant bottom->top gradient

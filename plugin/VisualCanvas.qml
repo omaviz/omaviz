@@ -65,7 +65,16 @@ Canvas {
     if (h < 0.66) return "#f08e0d"
     return "#f59e0b"
   }
-  function fillFor(h, a) { return colorSync ? cssColorFor(h) : cssMonoTint(a) }
+  function fillFor(h, a) {
+    if (colorSync) return cssColorFor(h)
+    // Theme-dominant gradient: amber base → white-hot tip
+    var bot = Qt.color("#e68e0d")
+    var top = Qt.color("#ffffff")
+    var r = bot.r + (top.r - bot.r) * h
+    var g = bot.g + (top.g - bot.g) * h
+    var b = bot.b + (top.b - bot.b) * h
+    return Qt.rgba(r, g, b, 1.0)
+  }
   function isFire() { return style === "Fire" && visual === "Bars" }
 
   onPaint: {
@@ -135,7 +144,9 @@ Canvas {
       fg.addColorStop(0.8, "#ffd000")
       fg.addColorStop(1.0, "#fff27a")
     } else {
-      fg.addColorStop(0.0, "rgba(255,180,120,0.55)")
+      // Theme-dominant gradient: amber base → white-hot tip
+      fg.addColorStop(0.0, "rgba(230,142,13,0.55)")
+      fg.addColorStop(0.5, "rgba(242,180,60,0.8)")
       fg.addColorStop(1.0, "rgba(255,255,255,0.95)")
     }
     ctx.fillStyle = fg
