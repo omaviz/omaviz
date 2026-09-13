@@ -5,7 +5,7 @@ preview, and a detached desktop window. One shared Canvas-2D renderer
 (`VisualCanvas.qml`) drives all three surfaces — mini, preview, desktop —
 so every option looks identical everywhere.
 
-![version](https://img.shields.io/badge/version-7.10.0-amber) ![license](https://img.shields.io/badge/license-MIT-blue)
+![version](https://img.shields.io/badge/version-7.14.1-amber) ![license](https://img.shields.io/badge/license-MIT-blue)
 
 ## Features
 

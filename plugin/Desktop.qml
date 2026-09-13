@@ -141,7 +141,6 @@ Window {
       DotsCanvas {
         anchors.left: parent.left; anchors.right: parent.right
         anchors.leftMargin: 4; anchors.rightMargin: 4
-        anchors.verticalCenter: win.vizConfig.artMode === true ? parent.verticalCenter : undefined
         anchors.top: win.vizConfig.artMode === true ? undefined : parent.top
         anchors.bottom: win.vizConfig.artMode === true ? undefined : parent.bottom
         anchors.bottomMargin: 4
@@ -155,11 +154,16 @@ Window {
         id: vizLoader
         anchors.left: parent.left; anchors.right: parent.right
         anchors.leftMargin: 4; anchors.rightMargin: 4
-        anchors.verticalCenter: win.vizConfig.artMode === true ? parent.verticalCenter : undefined
-        anchors.top: win.vizConfig.artMode === true ? undefined : parent.top
-        anchors.bottom: win.vizConfig.artMode === true ? undefined : parent.bottom
+        // Bottom-anchored: visualization container hugs bottom of window
+        // instead of centering. Minimum 95% of window height, visualization
+        // occupies 95% of container height (like preview mode).
+        anchors.bottom: parent.bottom
         anchors.bottomMargin: 4
-        height: win.vizConfig.artMode === true ? Math.max(60, parent.height * 0.62) : parent.height - 4
+        anchors.top: undefined
+        // Height: 95% of parent, with minimum of 100px (was 400, but parent
+        // is window height 200px; use proportion instead of fixed min)
+        height: Math.max(100, parent.height * 0.95)
+        // Visual area occupies 95% of container height
         sourceComponent: win.gpuActive ? gpuComp : canvasComp
       }
       Component {
