@@ -22,6 +22,25 @@ Window {
   // so settings-panel changes reflect in the open window within ~100ms.
   property var vizConfig: Model.defaultConfig()
   function refreshVizConfig() { win.vizConfig = Model.readConfigFromText(cfgWrite.text()) }
+  // Local option writers: same single-write discipline as BarWidget
+  // (one base text, one setText). Engine-flag changes are picked up by
+  // the 100ms poll loop, which restarts the bridge on fall-mode flips.
+  function vizVal(value) {
+    if (typeof value === "boolean") return value ? "true" : "false"
+    return String(value)
+  }
+  function writeVizOptions(key1, value1, key2, value2) {
+    var txt = cfgWrite.text()
+    txt = Model.writeConfigKey(txt, "desktop", key1, win.vizVal(value1))
+    if (key2) txt = Model.writeConfigKey(txt, "desktop", key2, win.vizVal(value2))
+    cfgWrite.setText(txt)
+    win.refreshVizConfig()
+  }
+  function writeVizOption(key, value) { win.writeVizOptions(key, value, null, null) }
+  function writeEngineOption(key, value) { win.writeVizOption(key, value) }
+  // Hover-drawer state (Option 2: settings reachable without closing).
+  property bool hovering: false
+  property bool drawerOpen: false
 
   Process {
     id: bridge
@@ -74,6 +93,15 @@ Window {
     Rectangle {
       width: parent.width; height: parent.height - 22; color: "#0c0c12"
 
+      // Hover sensor: reveals the gear without swallowing clicks.
+      MouseArea {
+        anchors.fill: parent
+        hoverEnabled: true
+        acceptedButtons: Qt.NoButton
+        onEntered: win.hovering = true
+        onExited: win.hovering = false
+      }
+
       VisualCanvas {
         id: desktopViz
         anchors.fill: parent
@@ -102,6 +130,48 @@ Window {
         sensitivity: win.vizConfig.sensitivity ?? 1.0
         themeBottom: win.vizConfig.themeBottom || "#e68e0d"
         themeTop: win.vizConfig.themeTop || "#f59e0b"
+      }
+
+      // Gear: fades in on hover, toggles the settings drawer.
+      Text {
+        text: "⚙"
+        anchors.right: parent.right; anchors.top: parent.top
+        anchors.rightMargin: 8; anchors.topMargin: 4
+        color: "#e8e8f0"; font.pixelSize: 16
+        opacity: (win.hovering || win.drawerOpen) ? 0.9 : 0
+        Behavior on opacity { NumberAnimation { duration: 150 } }
+        MouseArea {
+          anchors.fill: parent; anchors.margins: -6
+          onClicked: win.drawerOpen = !win.drawerOpen
+        }
+      }
+
+      // Settings drawer: the shared OptionsForm, applied live to this
+      // window — no close/reopen round-trip, no lost window size.
+      Rectangle {
+        visible: win.drawerOpen
+        anchors.right: parent.right; anchors.top: parent.top; anchors.bottom: parent.bottom
+        width: 264
+        color: "#14141cf2"
+        border.width: 1; border.color: "#3a3a48"
+        Flickable {
+          anchors.fill: parent; anchors.margins: 10
+          contentHeight: drawerForm.height
+          clip: true
+          Column {
+            id: drawerForm
+            width: parent.width
+            spacing: 2
+            Text { text: "SETTINGS"; color: "#9a9ab0"; font.pixelSize: 11; font.letterSpacing: 1 }
+            OptionsForm {
+              width: parent.width
+              cfg: win.vizConfig
+              onVizOption: function(key, value) { win.writeVizOption(key, value) }
+              onVizOptions: function(k1, v1, k2, v2) { win.writeVizOptions(k1, v1, k2, v2) }
+              onEngineOption: function(key, value) { win.writeEngineOption(key, value) }
+            }
+          }
+        }
       }
     }
   }

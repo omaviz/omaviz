@@ -188,142 +188,17 @@ Panel {
         // updates disk + its own config immediately, so mini, preview
         // and the open desktop window all reflect the change at once)
         PanelSectionHeader { text: "OPTIONS" }
-        // Mode selector + per-mode sections. Mini always shows spectrum;
-        // scope mode affects preview/desktop only (noted in the caption).
-        Dropdown {
+        // Shared dependency-free form (also embedded in the desktop
+        // window's hover drawer) — single source of truth for options.
+        OptionsForm {
           width: parent.width
-          label: "Mode"
-          options: [{ value: "spectrum", label: "Spectrum" }, { value: "scope", label: "Oscilloscope" }]
-          value: panelOpts.isScope ? "scope" : "spectrum"
-          onChanged: function(v) { if (root.hostWidget) root.hostWidget.writeVizOption("scope", v === "scope") }
-        }
-        Column {
-          id: panelOpts
-          width: parent.width
-          spacing: Style.space(10)
-          property bool isScope: root.hcfg.scope === true
-          property bool spikesOn: root.hcfg.spikes === true
-
-          // ---- Spectrum-only ----
-          PanelSectionHeader { text: "SPECTRUM"; visible: !panelOpts.isScope }
-          Toggle {
-            visible: !panelOpts.isScope
-            id: peaksTgl
-            width: parent.width
-            label: "Peaks"
-            description: "White peak-hold markers on each bar"
-            checked: root.hcfg.peaks !== false
-            onClicked: if (root.hostWidget) root.hostWidget.writeVizOption("peaks", !checked)
-          }
-          Column {
-            width: parent.width
-            spacing: Style.space(4)
-            visible: !panelOpts.isScope && peaksTgl.checked
-            Text {
-              text: "Peak fall speed (0 holds, 1 falls fast)"
-              color: Qt.darker(root.bar ? root.bar.foreground : Color.foreground, 1.4)
-              font.family: Style.font.family; font.pixelSize: Style.font.bodySmall
-              width: parent.width
-            }
-            PanelSlider {
-              id: fallSlider
-              width: parent.width
-              bar: root.bar
-              minimum: 0; maximum: 1; step: 0.05
-              value: (root.hcfg.peakFalloff ?? 0.5)
-              onReleased: function(v) { if (root.hostWidget) root.hostWidget.writeVizOption("peak_falloff", Math.round(v * 20) / 20) }
-            }
-          }
-          Toggle {
-            visible: !panelOpts.isScope
-            width: parent.width
-            label: "Spikes"
-            description: "Dense thin flame spikes, no gaps (auto-enables Fire)"
-            checked: panelOpts.spikesOn
-            onClicked: {
-              if (!root.hostWidget) return
-              var v = !checked
-              root.hostWidget.writeVizOptions("spikes", v, "fire", v)
-            }
-          }
-          Toggle {
-            // Auto-managed by Spikes — hidden while spikes own it.
-            visible: !panelOpts.isScope && !panelOpts.spikesOn
-            width: parent.width
-            label: "Fire"
-            description: "Red flame gradient from the base"
-            checked: root.hcfg.fire === true
-            onClicked: if (root.hostWidget) root.hostWidget.writeVizOption("fire", !checked)
-          }
-          Toggle {
-            visible: !panelOpts.isScope
-            width: parent.width
-            label: "Stacks"
-            description: "Segmented bars with gaps, Winamp-style (preview/desktop)"
-            checked: root.hcfg.splits === true
-            onClicked: if (root.hostWidget) root.hostWidget.writeVizOption("splits", !checked)
-          }
-          Toggle {
-            visible: !panelOpts.isScope
-            width: parent.width
-            label: "Linear fall"
-            description: "Winamp-style instant rise, fixed-rate drop (restarts engine)"
-            checked: root.hcfg.linearFall === true
-            onClicked: if (root.hostWidget) root.hostWidget.writeEngineOption("linear_fall", !checked)
-          }
-          Toggle {
-            visible: !panelOpts.isScope
-            width: parent.width
-            label: "Mono"
-            description: "B&W mini bars: black on light themes, white on dark (overrides Fire)"
-            checked: root.hcfg.mono === true
-            onClicked: if (root.hostWidget) root.hostWidget.writeVizOption("mono", !checked)
-          }
-
-          // ---- Oscilloscope-only ----
-          PanelSectionHeader { text: "OSCILLOSCOPE"; visible: panelOpts.isScope }
-          Column {
-            width: parent.width
-            spacing: Style.space(4)
-            visible: panelOpts.isScope
-            Text {
-              text: "Waveform on mini, preview and desktop. Follows Fire color and Sensitivity."
-              color: Qt.darker(root.bar ? root.bar.foreground : Color.foreground, 1.4)
-              font.family: Style.font.family; font.pixelSize: Style.font.bodySmall
-              width: parent.width
-              wrapMode: Text.WordWrap
-            }
-            Text {
-              text: "Line thickness"
-              color: Qt.darker(root.bar ? root.bar.foreground : Color.foreground, 1.4)
-              font.family: Style.font.family; font.pixelSize: Style.font.bodySmall
-              width: parent.width
-            }
-            PanelSlider {
-              width: parent.width
-              bar: root.bar
-              minimum: 1; maximum: 5; step: 0.5
-              value: (root.hcfg.scopeThickness ?? 2)
-              onReleased: function(v) { if (root.hostWidget) root.hostWidget.writeVizOption("scope_thickness", Math.round(v * 2) / 2) }
-            }
-          }
-
-          // ---- Common (both modes) ----
-          PanelSectionHeader { text: "COMMON" }
-          Toggle {
-            width: parent.width
-            label: "Dots"
-            description: "Dotted skin backdrop behind the bars"
-            checked: root.hcfg.dots !== false
-            onClicked: if (root.hostWidget) root.hostWidget.writeVizOption("dots", !checked)
-          }
-          Toggle {
-            width: parent.width
-            label: "Reflection"
-            description: "Faded floor mirror below the bars (preview/desktop)"
-            checked: root.hcfg.reflect === true
-            onClicked: if (root.hostWidget) root.hostWidget.writeVizOption("reflect", !checked)
-          }
+          cfg: root.hcfg
+          fg: root.bar ? root.bar.foreground : Color.foreground
+          muted: Qt.darker(root.bar ? root.bar.foreground : Color.foreground, 1.4)
+          accent: Color.accent
+          onVizOption: function(key, value) { if (root.hostWidget) root.hostWidget.writeVizOption(key, value) }
+          onVizOptions: function(k1, v1, k2, v2) { if (root.hostWidget) root.hostWidget.writeVizOptions(k1, v1, k2, v2) }
+          onEngineOption: function(key, value) { if (root.hostWidget) root.hostWidget.writeEngineOption(key, value) }
         }
 
         PanelSeparator { }
