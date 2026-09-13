@@ -348,7 +348,8 @@ var spectrumData = {
   beat: 0,
   silent: true,
   source: "",
-  seq: 0
+  seq: 0,
+  t: 0
 }
 
 // Parse a JSON line from spectrum-bridge / omaviz-engine stdout
@@ -360,6 +361,8 @@ function parseSpectrumLine(jsonLine) {
       spectrumData.energy = data.energy !== undefined ? data.energy : 0
       spectrumData.beat = data.beat !== undefined ? data.beat : 0
       spectrumData.silent = data.silent === true
+      // Emission timestamp (ms epoch): lets consumers measure pipeline lag.
+      if (data.t !== undefined) spectrumData.t = data.t
       // Frame sequence: lets consumers (preview) skip reassignment when
       // the engine holds a frame to its heartbeat rate.
       spectrumData.seq++

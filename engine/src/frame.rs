@@ -16,8 +16,9 @@ pub struct Frame<'a> {
 }
 
 /// Serialize a frame to a single-line JSON string.
-/// Order is fixed: bands, energy, beat, silent, source.
-/// The source name is escaped so it can never break the JSON contract.
+/// Order is fixed: bands, energy, beat, silent, source, t.
+/// `t` is the emission epoch (ms) — lets consumers measure pipeline lag
+/// and skip stale frames. Older parsers ignore unknown keys.
 pub fn build_frame(frame: &Frame) -> String {
     // Build manually to guarantee key order + stable numeric formatting.
     let bands_json: Vec<String> = frame.bands.iter().map(|v| format!("{:.4}", v)).collect();
@@ -28,13 +29,18 @@ pub fn build_frame(frame: &Frame) -> String {
         .replace('\n', "\\n")
         .replace('\r', "\\r")
         .replace('\t', "\\t");
+    let now_ms = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis())
+        .unwrap_or(0);
     format!(
-        "{{\"bands\":[{}],\"energy\":{:.4},\"beat\":{:.4},\"silent\":{},\"source\":\"{}\"}}",
+        "{{\"bands\":[{}],\"energy\":{:.4},\"beat\":{:.4},\"silent\":{},\"source\":\"{}\",\"t\":{}}}",
         bands_json.join(","),
         frame.energy,
         frame.beat,
         frame.silent,
-        source_escaped
+        source_escaped,
+        now_ms
     )
 }
 
@@ -51,13 +57,14 @@ mod tests {
         let b = sample_bands();
         let f = Frame { bands: &b, energy: 0.4, beat: 0.1, silent: false, source: "pipewire" };
         let s = build_frame(&f);
-        // key order must be bands, energy, beat, silent, source
+        // key order must be bands, energy, beat, silent, source, t
         let bi = s.find("\"bands\"").unwrap();
         let ei = s.find("\"energy\"").unwrap();
         let ti = s.find("\"beat\"").unwrap();
         let si = s.find("\"silent\"").unwrap();
         let soi = s.find("\"source\"").unwrap();
-        assert!(bi < ei && ei < ti && ti < si && si < soi, "key order wrong: {s}");
+        let tti = s.find("\"t\"").unwrap();
+        assert!(bi < ei && ei < ti && ti < si && si < soi && soi < tti, "key order wrong: {s}");
     }
 
     #[test]
@@ -70,6 +77,7 @@ mod tests {
         assert_eq!(v["energy"].as_f64().unwrap(), 0.4);
         assert_eq!(v["beat"].as_f64().unwrap(), 0.1);
         assert_eq!(v["silent"].as_bool().unwrap(), false);
+        assert!(v["t"].as_u64().unwrap() > 0, "emission timestamp missing");
         assert_eq!(v["source"].as_str().unwrap(), "pipewire");
     }
 

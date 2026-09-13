@@ -67,7 +67,7 @@ impl Analyzer {
             energy: 0.0,
             beat: 0.0,
             energy_avg: 0.0,
-            attack: 0.55,
+            attack: 0.70,
             decay: 0.12,
             sample_rate,
         }
