@@ -24,6 +24,10 @@ Window {
   // so settings-panel changes reflect in the open window within ~100ms.
   property var vizConfig: Model.defaultConfig()
   function refreshVizConfig() { win.vizConfig = Model.readConfigFromText(cfgWrite.text()) }
+  // GPU renderer: wanted by config (default on), tripped off if the GL
+  // pipeline errors — the Canvas fallback then takes over (no-GPU path).
+  property bool gpuFailed: false
+  readonly property bool gpuActive: win.vizConfig.gpu !== false && !win.gpuFailed
   // ---- Now-playing (MPRIS, zero deps — Quickshell built-in) ----
   // Player pick mirrors the shell media service: prefer a playing source
   // with track metadata, else the first source that has any.
@@ -134,8 +138,42 @@ Window {
         }
       }
 
+      GpuCanvas {
+        id: desktopGpu
+        anchors.left: parent.left; anchors.right: parent.right
+        anchors.leftMargin: 4; anchors.rightMargin: 4
+        anchors.verticalCenter: win.vizConfig.artMode === true ? parent.verticalCenter : undefined
+        anchors.top: win.vizConfig.artMode === true ? undefined : parent.top
+        anchors.bottom: win.vizConfig.artMode === true ? undefined : parent.bottom
+        anchors.bottomMargin: 4
+        height: win.vizConfig.artMode === true ? Math.max(60, parent.height * 0.62) : parent.height - 4
+        visible: win.gpuActive
+        onGpuFailed: win.gpuFailed = true
+
+        bands: win.spectrumBands
+        silent: win.spectrumSilent
+        wave: win.spectrumWave
+        visual: win.vizConfig.scope === true ? "Oscilloscope" : "Bars"
+        artMode: win.vizConfig.artMode === true
+        dots: win.vizConfig.dots !== false
+        reflect: win.vizConfig.reflect === true
+        scopeLineWidth: win.vizConfig.scopeThickness ?? 2
+        colorSync: false
+        barCount: Math.max(16, Math.floor((parent.width - 8) / 10))
+        gapPx: Math.min(6, Math.max(0, win.vizConfig.gap ?? 1))
+        peaks: win.vizConfig.peaks !== false
+        peakFalloff: win.vizConfig.peakFalloff ?? 0.5
+        spikes: win.vizConfig.spikes === true
+        fire: win.vizConfig.fire === true
+        splits: win.vizConfig.splits === true
+        sensitivity: win.vizConfig.sensitivity ?? 1.0
+        themeBottom: win.vizConfig.themeBottom || "#e68e0d"
+        themeTop: win.vizConfig.themeTop || "#f59e0b"
+      }
+
       VisualCanvas {
         id: desktopViz
+        visible: !win.gpuActive
         anchors.left: parent.left; anchors.right: parent.right
         anchors.leftMargin: 4; anchors.rightMargin: 4
         // Artwork: centered band (min 60px) so short windows keep it

@@ -333,6 +333,13 @@ Panel {
           PanelSectionHeader { text: "COMMON" }
           Toggle {
             width: parent.width
+            label: "GPU renderer"
+            description: "Desktop uses the GPU shader (falls back to CPU automatically)"
+            checked: root.hcfg.gpu !== false
+            onClicked: if (root.hostWidget) root.hostWidget.writeVizOption("gpu", !checked)
+          }
+          Toggle {
+            width: parent.width
             label: "Dots"
             description: "Dotted skin backdrop behind the bars"
             checked: root.hcfg.dots !== false
