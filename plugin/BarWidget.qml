@@ -5,72 +5,39 @@ import qs.Commons
 import qs.Ui
 import "Model.js" as Model
 
-// Omaviz spectrum bar widget (v7).
-// Single bar-widget kind; the panel is loaded internally via Loader
-// (clock-plugin pattern). Left-click opens the settings panel.
-// The bar renders the live spectrum from the bundled omaviz-engine
-// (plugin-local bin/), spawned by this widget. No daemon, no socket.
-
 BarWidget {
   id: root
   moduleName: "org.omaviz.visualizer"
 
-  // ---- Live state (declared on root so QML bindings track changes) ----
   property var config: Model.defaultConfig()
   property var visuals: []
   property var spectrumBands: []
   property bool spectrumSilent: true
-  // Mini player pauses (freezes + dims) while the detached desktop window is
-  // open. Derived from BOTH the config flag and the actual detach process
-  // state (set by the panel via root.detachedRunning) so a stale
-  // desktop.active=true (window killed without onClosing) can never freeze
-  // the mini forever. detachedRunning is intentionally writable (NOT readonly)
-  // because the Panel assigns it from detach()/detachProc.onExited.
   property bool detachedRunning: false
   readonly property bool paused: Model.isPaused(root.config.desktopActive === true, root.detachedRunning)
-  readonly property int barCount: Math.max(
-    8, (root.config && root.config.bands !== undefined) ? root.config.bands : 32)
-  // Explicit index model so each Repeater delegate gets its band index via
-  // modelData (the shell's Repeater does not expose the implicit `index`
-  // context property the way stock QtQuick does). Regenerated when barCount
-  // changes (e.g. config reload).
+  readonly property int barCount: Math.max(8, (root.config && root.config.bands !== undefined) ? root.config.bands : 32)
   property var barModel: buildBarModel(root.barCount)
-  function buildBarModel(n) {
-    var a = []
-    for (var i = 0; i < n; i++) a.push(i)
-    return a
-  }
+  function buildBarModel(n) { var a = []; for (var i = 0; i < n; i++) a.push(i); return a }
   onBarCountChanged: root.barModel = buildBarModel(root.barCount)
 
-  // Map a bar index to its spectrum value (root scope so the Repeater
-  // delegate can resolve it during initialization).
   function getBarValue(index) {
     var bands = root.spectrumBands
     if (!bands || bands.length === 0) return 0
-    var sens = (root.config && root.config.sensitivity !== undefined)
-      ? root.config.sensitivity : 1.0
+    var sens = (root.config && root.config.sensitivity !== undefined) ? root.config.sensitivity : 1.0
     var bandIndex = Math.floor(index * bands.length / root.barCount)
     bandIndex = Math.min(bandIndex, bands.length - 1)
     return Math.min(1, bands[bandIndex] * sens)
   }
 
-  // Allow the settings panel (loaded in the same QML process) to push a new
-  // config immediately after a write, so pause / color-sync propagate without
-  // depending on cross-FileView disk-watch timing.
   function applyConfig(text) { root.config = Model.readConfigFromText(text) }
 
-  // ---- Panel lifecycle contract (required by Bar.findPanelWidget) ----
-  readonly property bool opened: panelLoader.item
-    ? panelLoader.item.opened === true : false
-  readonly property bool popoutSwitchClosing: panelLoader.item
-    ? panelLoader.item.popoutSwitchClosing === true : false
+  readonly property bool opened: panelLoader.item ? panelLoader.item.opened === true : false
+  readonly property bool popoutSwitchClosing: panelLoader.item ? panelLoader.item.popoutSwitchClosing === true : false
 
   function open() { if (panelLoader.item) panelLoader.item.open() }
   function close() { if (panelLoader.item) panelLoader.item.close() }
   function toggle() { if (panelLoader.item) panelLoader.item.toggle() }
-  function closeForPopoutSwitch() {
-    if (panelLoader.item) panelLoader.item.closeForPopoutSwitch()
-  }
+  function closeForPopoutSwitch() { if (panelLoader.item) panelLoader.item.closeForPopoutSwitch() }
 
   function injectPanel() {
     var t = panelLoader.item
@@ -81,31 +48,30 @@ BarWidget {
     if ("settings" in t) t.settings = root.settings
   }
 
-  // ---- Geometry: claim a dedicated slot in the bar's Row from the
-  // spectrum bar count (the button has no text/icon, so it would otherwise
-  // collapse to zero and render behind neighbors). ----
-  readonly property real slotW: 3
-  implicitWidth: Style.space(2) + root.barCount * (root.slotW + Style.space(2))
+  readonly property real barGap: {
+    var g = (root.config && root.config.gap !== undefined) ? +root.config.gap : 3
+    return (g === g && g >= 0) ? g : 3
+  }
+  readonly property real slotW: root.barGap
+  readonly property real widthScale: {
+    var w = (root.config && root.config.widthScale !== undefined) ? +root.config.widthScale : 1
+    return (w === w && w >= 0.5 && w <= 4) ? w : 1
+  }
+  implicitWidth: Math.round(widthScale * (Style.space(2) + root.barCount * (root.slotW + Style.space(2))))
   implicitHeight: Style.space(28)
   onBarChanged: injectPanel()
   onSettingsChanged: injectPanel()
 
-  // ---- Spectrum reader: bundled omaviz-engine (plugin-local) -> JSON lines ----
-  readonly property string engineBin:
-    Quickshell.env("HOME") + "/.config/omarchy/plugins/"
-    + root.moduleName + "/bin/omaviz-engine"
-  // Paths the detached desktop window needs (mirrors Panel's, kept here so the
-  // detach Process — which lives on the persistent BarWidget, not the panel —
-  // can launch Desktop.qml after the panel closes).
+  readonly property string engineBin: Quickshell.env("HOME") + "/.config/omarchy/plugins/" + root.moduleName + "/bin/omaviz-engine"
   readonly property string pluginDir: String(Qt.resolvedUrl(".")).replace(/^file:\/\//, "")
-  readonly property string shellImportPath: "/usr/share/omarchy/shell"
+
   Process {
     id: spectrumProc
     running: true
     command: [root.engineBin]
     stdout: SplitParser {
       onRead: function(data) {
-        if (root.paused) return   // freeze the mini player while detached (#7)
+        if (root.paused) return
         var lines = String(data).split("\n")
         for (var i = 0; i < lines.length; i++) {
           var line = lines[i].trim()
@@ -115,61 +81,30 @@ BarWidget {
         root.spectrumSilent = Model.spectrumData.silent
       }
     }
-    // Self-heal across reboots / engine restarts: if the engine exits, retry a
-    // few times so the mini comes up on its own instead of staying dead.
     onExited: function(code, status) {
-      if (root._bridgeRetries < 10) {
-        root._bridgeRetries++
-        bridgeRetryTimer.restart()
-      }
+      if (root._bridgeRetries < 10) { root._bridgeRetries++; bridgeRetryTimer.restart() }
     }
   }
 
   property int _bridgeRetries: 0
-  Timer {
-    id: bridgeRetryTimer
-    interval: 1500; repeat: false
-    onTriggered: { spectrumProc.running = true }
-  }
+  Timer { id: bridgeRetryTimer; interval: 1500; repeat: false; onTriggered: { spectrumProc.running = true } }
 
-  // ---- Detached desktop-window launcher (lives on the persistent BarWidget) ----
-  // Kept on the BarWidget (not the panel) so the window survives the panel
-  // closing. detach()/attach() are methods here; the panel button just calls
-  // root.hostWidget.detach(). NOTE: we deliberately do NOT set `environment`
-  // here — Quickshell's Process.environment REPLACES (not merges) the child's
-  // env, which would wipe PATH/WAYLAND_DISPLAY/HOME and make the bare
-  // `quickshell` command fail to exec/connect (window never opens). The child
-  // inherits the parent Quickshell env, which is correct, and setting
-  // running=false terminates it directly (that is what makes Attach reliable).
-  // Desktop.qml imports no qs.* modules, so no custom QML2_IMPORT_PATH is
-  // needed either.
   Process {
     id: detachProc
     running: false
     stdout: StdioCollector { onDataChanged: function() {} }
     onExited: function(code, status) {
-      // Window closed (or launch failed). Resume the mini so it is never
-      // left stuck-paused. Clear the in-memory detach flag FIRST (this is the
-      // authoritative unpause — it does not depend on the disk write), then
-      // reset desktop.active on disk.
       root.detachedRunning = false
       if (root.config.desktopActive === true) root.writeDesktopActive(false)
     }
   }
 
-  // Detach / Attach toggle.
   function detach() {
     if (root.config.desktopActive === true) {
-      // Attach: terminate the window if it is running. ALSO reset the flag
-      // unconditionally — if the window already died without clearing it
-      // (external kill, crash), onExited never fires and the flag would stay
-      // stuck as "true", leaving the button frozen on "Attach" with no
-      // window to close. Resetting here guarantees we can detach again.
       detachProc.running = false
       root.detachedRunning = false
       root.writeDesktopActive(false)
     } else {
-      // Detach: launch the standalone desktop window.
       detachProc.command = ["quickshell", "-p", root.pluginDir + "/Desktop.qml"]
       root.writeDesktopActive(true)
       root.detachedRunning = true
@@ -178,7 +113,6 @@ BarWidget {
     }
   }
 
-  // ---- Config reader (daemon writes ~/.config/omaviz/config.toml) ----
   FileView {
     id: configFile
     path: Model.configPath
@@ -186,9 +120,6 @@ BarWidget {
     printErrors: false
     onLoaded: {
       root.config = Model.readConfigFromText(text())
-      // Self-heal: if the desktop flag is stuck true but no window is running
-      // (e.g. the detach window was killed externally), reset it so the
-      // button returns to "Detach" instead of being frozen on "Attach".
       if (root.config.desktopActive === true && !detachProc.running) {
         root.writeDesktopActive(false)
       }
@@ -197,14 +128,12 @@ BarWidget {
     onLoadFailed: root.config = Model.defaultConfig()
   }
 
-  // Writable config view (detach lifecycle writes desktop.active here so the
-  // reset does not depend on the panel being open). Same no-watch pattern as
-  // the panel's writer to avoid async reverts.
   FileView {
     id: detachConfigWrite
     path: Model.configPath
     watchChanges: false
     printErrors: false
+    Component.onCompleted: reload()
   }
   function writeDesktopActive(value) {
     var txt = Model.writeConfigKey(detachConfigWrite.text(), "desktop", "active", value ? "true" : "false")
@@ -212,7 +141,6 @@ BarWidget {
     root.config = Model.readConfigFromText(txt)
   }
 
-  // ---- Visual enumeration from ~/.config/omaviz/visuals/*.toml ----
   Process {
     id: visualsProc
     running: false
@@ -237,24 +165,25 @@ BarWidget {
   WidgetButton {
     id: button
     anchors.fill: parent
+    visible: !paused
     bar: root.bar
-    tooltipText: root.paused ? "Omaviz — detached (paused)"
-                  : (root.spectrumSilent ? "Omaviz — no audio" : "Omaviz — click to configure")
+    tooltipText: root.paused ? "Omaviz — desktop window open" : (root.spectrumSilent ? "Omaviz — no audio" : "Omaviz — click for settings, double-click for desktop")
     text: ""
     hasVisualContent: true
 
-    // Left-click opens the SETTINGS PANEL (user's explicit final intent:
-    // "it should open the settings panel" — correcting an earlier misstatement
-    // that left-click should open the desktop window). Right-click opens the
-    // detached desktop visualization window. detach()/attach() live on BarWidget
-    // (not the panel) so the window survives the panel closing — and the viz is
-    // reachable directly without the panel having to mount first.
+    property double lastClickTime: 0
     onPressed: function(b) {
-      if (b === Qt.LeftButton) root.toggle()
-      else if (b === Qt.RightButton) root.detach()
+      if (b === Qt.LeftButton) {
+        var now = new Date().getTime()
+        if (now - lastClickTime < 300) {
+          root.detach()
+        } else {
+          root.toggle()
+        }
+        lastClickTime = now
+      }
     }
 
-    // Dark container behind the mini bars (90% height, centered vertically).
     Rectangle {
       id: miniBg
       anchors.verticalCenter: parent.verticalCenter
@@ -265,7 +194,6 @@ BarWidget {
       border.width: 1
       border.color: Qt.rgba(0.20, 0.20, 0.25, 0.50)
 
-      // Item with bars inside, 2px padding from container
       Item {
         anchors.fill: parent
         anchors.margins: 4
@@ -292,18 +220,15 @@ BarWidget {
                 return "rgba(255," + Math.round(80 + v0 * 175) + "," + Math.round(20 + v0 * 60) + ",1)"
               }
               var v = Math.min(1, Math.max(0, value))
-              // Default: theme-dominant gradient (amber base → white-hot tip).
               if (!root.config.colorSync) {
                 var botS2 = String(root.config.themeBottom || "")
                 if (botS2 === "undefined" || botS2 === "null" || botS2 === "") botS2 = "#e68e0d"
                 var bot2 = Qt.color(botS2)
-                // Blend from theme color toward white at the top for a perceivable gradient.
                 var r = bot2.r + (1.0 - bot2.r) * v
                 var g = bot2.g + (1.0 - bot2.g) * v
                 var b = bot2.b + (1.0 - bot2.b) * v
                 return Qt.rgba(r, g, b, 1.0)
               }
-              // color-sync ON: theme-dominant bottom->top gradient
               var botS = String(root.config.themeBottom || "")
               var topS = String(root.config.themeTop || "")
               if (botS === "undefined" || botS === "null" || botS === "") botS = "#e68e0d"
@@ -333,11 +258,11 @@ BarWidget {
 
   IpcHandler {
     target: "org.omaviz.visualizer"
-    function open(): void { root.open() }
-    function close(): void { root.close() }
-    function toggle(): void { root.toggle() }
-    function show(): void { root.open() }
-    function hide(): void { root.close() }
-    function refresh(): void { visualsProc.refresh() }
+    function open() { root.open() }
+    function close() { root.close() }
+    function toggle() { root.toggle() }
+    function show() { root.open() }
+    function hide() { root.close() }
+    function refresh() { visualsProc.refresh() }
   }
 }

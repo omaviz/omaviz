@@ -137,8 +137,6 @@ Panel {
           VisualCanvas {
             id: previewViz
             anchors.fill: parent; anchors.margins: Style.space(6)
-            // Model.spectrumData is a plain JS object — assignments don't emit
-            // change signals. Poll into notified locals so the Canvas repaints.
             property var _liveBands: []
             property bool _liveSilent: true
             Timer {
@@ -151,13 +149,20 @@ Panel {
             }
             bands: previewViz._liveBands
             silent: previewViz._liveSilent
-            // ADR-0008: locked Bars. No selector feeds this binding.
             visual: "Bars"
             style: "Classic"
-            // ADR-0008: preview look is locked (theme-gradient bars look).
             colorSync: false
             barCount: 64
             colourScheme: 0
+            gapPx: 1
+            minBarHeight: 0
+            peaks: true
+            peakFalloff: 0.5
+          }
+          // Double-click on preview opens desktop window
+          MouseArea {
+            anchors.fill: parent
+            onDoubleClicked: { root.hostWidget.detach() }
           }
         }
         // (VisualCanvas is a plain Canvas — properties bound inline above.)
