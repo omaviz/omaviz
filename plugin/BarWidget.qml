@@ -71,7 +71,6 @@ BarWidget {
     command: [root.engineBin]
     stdout: SplitParser {
       onRead: function(data) {
-        if (root.paused) return
         var lines = String(data).split("\n")
         for (var i = 0; i < lines.length; i++) {
           var line = lines[i].trim()
@@ -94,8 +93,29 @@ BarWidget {
     running: false
     stdout: StdioCollector { onDataChanged: function() {} }
     onExited: function(code, status) {
+      // Desktop window closed (manual close, Super+W, or crash)
       root.detachedRunning = false
-      if (root.config.desktopActive === true) root.writeDesktopActive(false)
+      if (root.config.desktopActive === true) {
+        root.writeDesktopActive(false)
+      }
+    }
+  }
+
+  // Sync detachedRunning with actual process state (every 500ms)
+  Timer {
+    interval: 500; repeat: true; running: true
+    onTriggered: {
+      // If detachProc is not running but detachedRunning is still true, reset it
+      if (!detachProc.running && root.detachedRunning) {
+        root.detachedRunning = false
+        if (root.config.desktopActive === true) {
+          root.writeDesktopActive(false)
+        }
+      }
+      // Also sync: if config says desktop is active but detachProc isn't running, reset
+      if (root.config.desktopActive === true && !detachProc.running && !root.detachedRunning) {
+        root.writeDesktopActive(false)
+      }
     }
   }
 
@@ -105,6 +125,8 @@ BarWidget {
       root.detachedRunning = false
       root.writeDesktopActive(false)
     } else {
+      // Close the settings panel before opening desktop
+      if (panelLoader.item) panelLoader.item.close()
       detachProc.command = ["quickshell", "-p", root.pluginDir + "/Desktop.qml"]
       root.writeDesktopActive(true)
       root.detachedRunning = true
@@ -120,11 +142,10 @@ BarWidget {
     printErrors: false
     onLoaded: {
       root.config = Model.readConfigFromText(text())
-      if (root.config.desktopActive === true && !detachProc.running) {
-        root.writeDesktopActive(false)
-      }
     }
-    onFileChanged: root.config = Model.readConfigFromText(text())
+    onFileChanged: {
+      root.config = Model.readConfigFromText(text())
+    }
     onLoadFailed: root.config = Model.defaultConfig()
   }
 
@@ -165,9 +186,9 @@ BarWidget {
   WidgetButton {
     id: button
     anchors.fill: parent
-    visible: !paused
+    visible: !detachedRunning
     bar: root.bar
-    tooltipText: root.paused ? "Omaviz — desktop window open" : (root.spectrumSilent ? "Omaviz — no audio" : "Omaviz — click for settings, double-click for desktop")
+    tooltipText: root.spectrumSilent ? "Omaviz — no audio" : "Omaviz — click for settings, double-click for desktop"
     text: ""
     hasVisualContent: true
 
@@ -198,8 +219,9 @@ BarWidget {
         anchors.fill: parent
         anchors.margins: 4
 
+        readonly property real gapPx: 1
         readonly property real slotWidth: Math.max(2,
-          (width - Style.space(2) * (root.barCount + 1)) / root.barCount)
+          (width - gapPx * (root.barCount - 1)) / root.barCount)
 
         Repeater {
           model: root.barModel
@@ -208,7 +230,7 @@ BarWidget {
             id: bar
             readonly property real value: getBarValue(modelData)
 
-            x: Style.space(2) + modelData * (parent.slotWidth + Style.space(2))
+            x: modelData * (parent.slotWidth + parent.gapPx)
             width: parent.slotWidth
             height: parent.height * value
             y: parent.height - height

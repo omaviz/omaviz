@@ -129,6 +129,14 @@ Panel {
 
         // ---- Live preview ----
         PanelSectionHeader { text: "PREVIEW" }
+        Text {
+          text: "Double-click to open full-screen visualization"
+          color: Qt.darker(root.bar ? root.bar.foreground : Color.foreground, 1.4)
+          font.family: Style.font.family; font.pixelSize: Style.font.bodySmall
+          font.letterSpacing: 0.5
+          width: parent.width
+          horizontalAlignment: Text.AlignHCenter
+        }
         Rectangle {
           width: parent.width; height: Style.space(60)
           color: Color.popups.background
