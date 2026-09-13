@@ -12,6 +12,7 @@ BarWidget {
   property var config: Model.defaultConfig()
   property var visuals: []
   property var spectrumBands: []
+  property var spectrumWave: []
   property bool spectrumSilent: true
   // Liveness lease: true only if the flag is set AND the heartbeat is fresh.
   // A stranded active=true (crash, kill -9, old code) self-heals within ~6s.
@@ -63,7 +64,9 @@ BarWidget {
     running: true
     // High-res feed (128 bands): mini downsamples to 32, preview to 64 —
     // both map from rich source detail instead of a coarse 32-band feed.
-    command: [root.engineBin, "--bands", "128"]
+    // --wave always on (cheap scope feed); --fall-mode follows config.
+    command: [root.engineBin, "--bands", "128", "--wave"].concat(
+      root.config.linearFall === true ? ["--fall-mode", "linear"] : [])
     stdout: SplitParser {
       onRead: function(data) {
         var lines = String(data).split("\n")
@@ -72,6 +75,7 @@ BarWidget {
           if (line) Model.parseSpectrumLine(line)
         }
         root.spectrumBands = Model.spectrumData.bands
+        root.spectrumWave = Model.spectrumData.wave
         root.spectrumSilent = Model.spectrumData.silent
         root.noteSpectrumFrame()
       }
@@ -164,6 +168,13 @@ BarWidget {
   }
   function writeVizOption(key, value) {
     writeVizOptions(key, value, null, null)
+  }
+  // Engine-flag options need a process restart to take effect (CLI args
+  // are read at spawn). Restart is cheap (~100ms gap, backoff resets).
+  function writeEngineOption(key, value) {
+    writeVizOption(key, value)
+    spectrumProc.running = false
+    spectrumProc.running = true
   }
   function writeVizOptions(key1, value1, key2, value2) {
     // Multi-key single write: two sequential setText calls race on the same
@@ -272,6 +283,9 @@ BarWidget {
         // colorSync follows the LIVE shell accent; otherwise config colors.
         themeBottom: root.config.colorSync === true ? Qt.darker(Color.accent, 1.3) : (root.config.themeBottom || "#e68e0d")
         themeTop: root.config.colorSync === true ? Color.accent : (root.config.themeTop || "#f59e0b")
+        wave: root.spectrumWave
+        dots: root.config.dots !== false
+        reflect: false
       }
     }
   }

@@ -12,8 +12,12 @@
 - ✅ Phase 1 (feel): event-driven preview (direct `hostWidget.spectrumBands`
   binding, 33ms timer deleted); Winamp peak physics (hang + ×1.05
   accelerating fall, falloff→initial speed) in shared VisualCanvas.
-- ⬜ Phase 2 (motion): linear bar-fall engine mode behind config; FFT-1024
-  latency experiment (43ms → 21ms floor, bass tradeoff).
-- ⬜ Phase 3 (look): dotted backdrop + reflection toggles, oscilloscope parity.
+- ✅ Phase 2 (motion): `--fall-mode linear` (instant rise, fixed 0.05/frame
+  fall) behind the Linear-fall toggle (engine restart on flip); `--fft-size`
+  256..8192 validated (default 2048; 1024 verified sane, bass tradeoff kept
+  as experiment, not default).
+- ✅ Phase 3 (look): dotted backdrop (default on), floor reflection toggle,
+  true oscilloscope (`--wave` 128-pt feed, own protocol line, canvas plots
+  real data with synth fallback) behind the Oscilloscope toggle.
 - ⬜ GPU fallback: only if Canvas CPU regresses (GL spare lacks all v7.7+
   features; still CPU-packs per frame).

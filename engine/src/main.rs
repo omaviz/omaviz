@@ -37,6 +37,22 @@ struct Cli {
     /// Number of spectrum bands in the output frame.
     #[arg(long, default_value_t = 32)]
     bands: usize,
+
+    /// Bar motion: exp (attack/decay easing, default) or linear
+    /// (Winamp-style: instant rise, fixed-rate fall).
+    #[arg(long, default_value = "exp")]
+    fall_mode: String,
+
+    /// FFT window size in samples (window latency = size/rate, e.g.
+    /// 2048 @48kHz ≈ 43ms, 1024 ≈ 21ms). Smaller is snappier but
+    /// coarsens bass resolution. Must be a power of two.
+    #[arg(long, default_value_t = 2048)]
+    fft_size: usize,
+
+    /// Append a 128-point downsampled time-domain snippet ("wave") per
+    /// frame for the oscilloscope renderer. Adds ~0.7KB/line.
+    #[arg(long, default_value_t = false)]
+    wave: bool,
 }
 
 fn main() -> anyhow::Result<()> {
@@ -50,6 +66,17 @@ fn main() -> anyhow::Result<()> {
             cli.bands
         );
     }
+    if !cli.fft_size.is_power_of_two() || !(256..=8192).contains(&cli.fft_size) {
+        anyhow::bail!(
+            "--fft-size must be a power of two in 256..=8192 (got {})",
+            cli.fft_size
+        );
+    }
+    let linear_fall = match cli.fall_mode.as_str() {
+        "linear" => true,
+        "exp" => false,
+        other => anyhow::bail!("--fall-mode must be exp|linear (got {other})"),
+    };
 
     // Resolve the backend up-front (errors on unsupported source).
     let backend = source::resolve(&cli.source)?;
@@ -115,9 +142,9 @@ fn main() -> anyhow::Result<()> {
             // emit every tick so frames keep flowing at ~60 Hz.
             if let Some(c) = pending_chunk {
                 match &mut analyzer {
-                    None => analyzer = Some(Analyzer::new(c.rate as f32, cli.bands)),
+                    None => analyzer = Some(Analyzer::new(c.rate as f32, cli.bands, cli.fft_size, linear_fall)),
                     Some(a) if (a.sample_rate() as u32) != c.rate => {
-                        *a = Analyzer::new(c.rate as f32, cli.bands);
+                        *a = Analyzer::new(c.rate as f32, cli.bands, cli.fft_size, linear_fall);
                     }
                     _ => {}
                 }
@@ -185,6 +212,15 @@ fn main() -> anyhow::Result<()> {
                 };
                 let line = build_frame(&frame);
                 writeln!(out, "{line}")?;
+                // Oscilloscope feed: 128-point time-domain snippet on its
+                // own line ({wave:[...]}); the plugin parses it separately
+                // so spectrum frames stay untouched.
+                if cli.wave {
+                    let w = a.wave_snippet(128);
+                    let w_json: Vec<String> =
+                        w.iter().map(|v| format!("{:.4}", v)).collect();
+                    writeln!(out, "{{\"wave\":[{}]}}", w_json.join(","))?;
+                }
                 out.flush()?;
             }
         }

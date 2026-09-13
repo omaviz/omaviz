@@ -121,6 +121,10 @@ function readConfigFromText(tomlText) {
   if (d.peakFalloff > 1) d.peakFalloff = 1
   d.spikes = readTomlValue(tomlText, "desktop", "spikes") === "true"
   d.splits = readTomlValue(tomlText, "desktop", "splits") === "true"
+  d.linearFall = readTomlValue(tomlText, "desktop", "linear_fall") === "true"
+  d.scope = readTomlValue(tomlText, "desktop", "scope") === "true"
+  d.dots = readTomlValue(tomlText, "desktop", "dots") !== "false"
+  d.reflect = readTomlValue(tomlText, "desktop", "reflect") === "true"
   // v7.4 Winamp-faithful per-visualization option sets (independent).
   d.eqMode = readTomlValue(tomlText, "visual.equalizer", "mode") || "bars"        // bars|lines
   d.eqColor = readTomlValue(tomlText, "visual.equalizer", "color") || "fire"      // solid|line|fade|fire
@@ -162,6 +166,7 @@ function defaultConfig() {
     themeTop: "#f59e0b",
     fire: false,
     peaks: true, peakFalloff: 0.5, spikes: false, splits: false,
+    linearFall: false, scope: false, dots: true, reflect: false,
     eqMode: "bars", eqColor: "fire", eqGrid: false, eqPeaks: true, eqFalloff: 0.5, eqZoom: "1x", eqThickness: 2,
     scopeStyle: "line", scopeColor: "solid", scopeGrid: false, scopeScan: false, scopeCentered: true, scopeThickness: 2
   }
@@ -344,6 +349,7 @@ function readAudioFromText(tomlText) {
 // Holds the latest spectrum frame (updated by QML Process stdout)
 var spectrumData = {
   bands: [],
+  wave: [],
   energy: 0,
   beat: 0,
   silent: true,
@@ -356,6 +362,11 @@ var spectrumData = {
 function parseSpectrumLine(jsonLine) {
   try {
     var data = JSON.parse(jsonLine)
+    // Oscilloscope feed: standalone {wave:[...]} line (see --wave).
+    if (data && Array.isArray(data.wave) && !Array.isArray(data.bands)) {
+      spectrumData.wave = data.wave
+      return
+    }
     if (data && Array.isArray(data.bands)) {
       spectrumData.bands = data.bands
       spectrumData.energy = data.energy !== undefined ? data.energy : 0

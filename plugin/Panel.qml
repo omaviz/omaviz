@@ -144,7 +144,10 @@ Panel {
             // frame of display lag plus 30 wakeups/sec for nothing).
             bands: root.hostWidget ? root.hostWidget.spectrumBands : []
             silent: root.hostWidget ? root.hostWidget.spectrumSilent : true
-            visual: "Bars"
+            wave: root.hostWidget ? root.hostWidget.spectrumWave : []
+            visual: root.hostWidget && root.hostWidget.config.scope === true ? "Oscilloscope" : "Bars"
+            dots: root.hostWidget ? root.hostWidget.config.dots !== false : true
+            reflect: root.hostWidget ? root.hostWidget.config.reflect === true : false
             style: "Classic"
             colorSync: false
             barCount: 64
@@ -233,6 +236,34 @@ Panel {
           description: "Segmented bars with gaps, Winamp-style (preview/desktop)"
           checked: root.hostWidget ? root.hostWidget.config.splits === true : false
           onClicked: if (root.hostWidget) root.hostWidget.writeVizOption("splits", !checked)
+        }
+        Toggle {
+          width: parent.width
+          label: "Linear fall"
+          description: "Winamp-style instant rise, fixed-rate drop (restarts engine)"
+          checked: root.hostWidget ? root.hostWidget.config.linearFall === true : false
+          onClicked: if (root.hostWidget) root.hostWidget.writeEngineOption("linear_fall", !checked)
+        }
+        Toggle {
+          width: parent.width
+          label: "Oscilloscope"
+          description: "Time-domain waveform instead of bars (preview/desktop)"
+          checked: root.hostWidget ? root.hostWidget.config.scope === true : false
+          onClicked: if (root.hostWidget) root.hostWidget.writeVizOption("scope", !checked)
+        }
+        Toggle {
+          width: parent.width
+          label: "Dots"
+          description: "Dotted skin backdrop behind the bars"
+          checked: root.hostWidget ? root.hostWidget.config.dots !== false : true
+          onClicked: if (root.hostWidget) root.hostWidget.writeVizOption("dots", !checked)
+        }
+        Toggle {
+          width: parent.width
+          label: "Reflection"
+          description: "Faded floor mirror below the bars (preview/desktop)"
+          checked: root.hostWidget ? root.hostWidget.config.reflect === true : false
+          onClicked: if (root.hostWidget) root.hostWidget.writeVizOption("reflect", !checked)
         }
 
         PanelSeparator { }

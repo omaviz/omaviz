@@ -16,6 +16,7 @@ Window {
   flags: Qt.Window | Qt.WindowStaysOnTopHint
 
   property var spectrumBands: Model.spectrumData.bands
+  property var spectrumWave: []
   property bool spectrumSilent: Model.spectrumData.silent
   readonly property string visualName: "Bars"
   // Live viz options (peaks/falloff/spikes/fire) — re-parsed on each poll
@@ -27,7 +28,9 @@ Window {
     id: bridge
     running: false
     // Full-res feed for the big surface: near 1:1 with dense spike bars.
-    command: [Model.engineBin, "--bands", "256"]
+    // --wave for scope mode; fall-mode follows config (restarted on change).
+    command: [Model.engineBin, "--bands", "256", "--wave"].concat(
+      win.vizConfig.linearFall === true ? ["--fall-mode", "linear"] : [])
     stdout: SplitParser {
       splitMarker: "\n"
       onRead: function(data) {
@@ -36,6 +39,8 @@ Window {
           if (obj && Array.isArray(obj.bands)) {
             win.spectrumBands = obj.bands
             win.spectrumSilent = obj.silent === true
+          } else if (obj && Array.isArray(obj.wave)) {
+            win.spectrumWave = obj.wave
           }
         } catch (e) {}
       }
@@ -77,8 +82,12 @@ Window {
 
         bands: win.spectrumBands
         silent: win.spectrumSilent
+        wave: win.spectrumWave
 
-        visual: "Bars"
+        visual: win.vizConfig.scope === true ? "Oscilloscope" : "Bars"
+        dots: win.vizConfig.dots !== false
+        reflect: win.vizConfig.reflect === true
+
         style: "Classic"
         colorSync: false
         barCount: Math.max(16, Math.floor((parent.width - 8) / 10))
@@ -117,6 +126,7 @@ Window {
   // app-launcher + keybind paths that bypass BarWidget's detach()).
   property bool _claimed: false
   property bool _allowClose: false
+  property bool _lastLinearFall: false
   Timer { id: closeTimer; interval: 200; repeat: false; onTriggered: win.close() }
   Timer {
     // Delayed quit: FileView.setText is async — quitting instantly in
@@ -130,6 +140,12 @@ Window {
     onTriggered: {
       cfgWrite.reload()
       win.refreshVizConfig()
+      // Engine flags are spawn-time: restart the bridge when fall-mode flips.
+      var lf = win.vizConfig.linearFall === true
+      if (win._lastLinearFall !== lf) {
+        win._lastLinearFall = lf
+        if (bridge.running) { bridge.running = false; bridge.running = true }
+      }
       if (!win._claimed && cfgWrite.text().length > 0) {
         win._claimed = true
         win.setDesktopActive(true)
