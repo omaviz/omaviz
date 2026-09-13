@@ -150,6 +150,7 @@ Panel {
             silent: root.hostWidget ? root.hostWidget.spectrumSilent : true
             wave: root.hostWidget ? root.hostWidget.spectrumWave : []
             visual: root.hostWidget && root.hostWidget.config.scope === true ? "Oscilloscope" : "Bars"
+            immersive: root.hcfg.immersive === true
             dots: root.hcfg.dots !== false
             reflect: root.hcfg.reflect === true
             scopeLineWidth: (root.hcfg.scopeThickness ?? 2)
@@ -193,21 +194,22 @@ Panel {
         Dropdown {
           width: parent.width
           label: "Mode"
-          options: [{ value: "spectrum", label: "Spectrum" }, { value: "scope", label: "Oscilloscope" }]
-          value: panelOpts.isScope ? "scope" : "spectrum"
-          onChanged: function(v) { if (root.hostWidget) root.hostWidget.writeVizOption("scope", v === "scope") }
+          options: [{ value: "spectrum", label: "Spectrum" }, { value: "scope", label: "Oscilloscope" }, { value: "immersive", label: "Immersive" }]
+          value: panelOpts.mode
+          onChanged: function(v) { if (root.hostWidget) root.hostWidget.writeVizOptions("scope", v === "scope", "immersive", v === "immersive") }
         }
         Column {
           id: panelOpts
           width: parent.width
           spacing: Style.space(10)
-          property bool isScope: root.hcfg.scope === true
+          property string mode: root.hcfg.immersive === true ? "immersive" : (root.hcfg.scope === true ? "scope" : "spectrum")
+          property bool isScope: panelOpts.mode === "scope"
           property bool spikesOn: root.hcfg.spikes === true
 
           // ---- Spectrum-only ----
-          PanelSectionHeader { text: "SPECTRUM"; visible: !panelOpts.isScope }
+          PanelSectionHeader { text: "SPECTRUM"; visible: panelOpts.mode === "spectrum" }
           Toggle {
-            visible: !panelOpts.isScope
+            visible: panelOpts.mode === "spectrum"
             id: peaksTgl
             width: parent.width
             label: "Peaks"
@@ -218,7 +220,7 @@ Panel {
           Column {
             width: parent.width
             spacing: Style.space(4)
-            visible: !panelOpts.isScope && peaksTgl.checked
+            visible: panelOpts.mode === "spectrum" && peaksTgl.checked
             Text {
               text: "Peak fall speed (0 holds, 1 falls fast)"
               color: Qt.darker(root.bar ? root.bar.foreground : Color.foreground, 1.4)
@@ -235,7 +237,7 @@ Panel {
             }
           }
           Toggle {
-            visible: !panelOpts.isScope
+            visible: panelOpts.mode === "spectrum"
             width: parent.width
             label: "Spikes"
             description: "Dense thin flame spikes, no gaps (auto-enables Fire)"
@@ -248,7 +250,7 @@ Panel {
           }
           Toggle {
             // Auto-managed by Spikes — hidden while spikes own it.
-            visible: !panelOpts.isScope && !panelOpts.spikesOn
+            visible: panelOpts.mode === "spectrum" && !panelOpts.spikesOn
             width: parent.width
             label: "Fire"
             description: "Red flame gradient from the base"
@@ -256,7 +258,7 @@ Panel {
             onClicked: if (root.hostWidget) root.hostWidget.writeVizOption("fire", !checked)
           }
           Toggle {
-            visible: !panelOpts.isScope
+            visible: panelOpts.mode === "spectrum"
             width: parent.width
             label: "Stacks"
             description: "Segmented bars with gaps, Winamp-style (preview/desktop)"
@@ -264,7 +266,7 @@ Panel {
             onClicked: if (root.hostWidget) root.hostWidget.writeVizOption("splits", !checked)
           }
           Toggle {
-            visible: !panelOpts.isScope
+            visible: panelOpts.mode === "spectrum"
             width: parent.width
             label: "Linear fall"
             description: "Winamp-style instant rise, fixed-rate drop (restarts engine)"
@@ -272,7 +274,7 @@ Panel {
             onClicked: if (root.hostWidget) root.hostWidget.writeEngineOption("linear_fall", !checked)
           }
           Toggle {
-            visible: !panelOpts.isScope
+            visible: panelOpts.mode === "spectrum"
             width: parent.width
             label: "Mono"
             description: "B&W mini bars: black on light themes, white on dark (overrides Fire)"
@@ -308,7 +310,26 @@ Panel {
             }
           }
 
-          // ---- Common (both modes) ----
+          // ---- Immersive-only ----
+          PanelSectionHeader { text: "IMMERSIVE"; visible: panelOpts.mode === "immersive" }
+          Text {
+            visible: panelOpts.mode === "immersive"
+            text: "Artwork wash + quiet white bars on preview/desktop (mini: wash only, no art)."
+            color: Qt.darker(root.bar ? root.bar.foreground : Color.foreground, 1.4)
+            font.family: Style.font.family; font.pixelSize: Style.font.bodySmall
+            width: parent.width
+            wrapMode: Text.WordWrap
+          }
+          Toggle {
+            visible: panelOpts.mode === "immersive"
+            width: parent.width
+            label: "Artwork"
+            description: "Album-art backdrop when available (fallback: reactive glow)"
+            checked: root.hcfg.artwork !== false
+            onClicked: if (root.hostWidget) root.hostWidget.writeVizOption("artwork", !checked)
+          }
+
+          // ---- Common (all modes) ----
           PanelSectionHeader { text: "COMMON" }
           Toggle {
             width: parent.width

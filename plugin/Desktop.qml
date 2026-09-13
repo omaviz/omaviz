@@ -95,7 +95,7 @@ Window {
       width: parent.width; height: 22; color: "#16161f"
       Text {
         anchors.left: parent.left; anchors.verticalCenter: parent.verticalCenter; anchors.leftMargin: 10
-        text: win.vizConfig.scope === true ? "Omaviz — Scope" : "Omaviz — Bars"
+        text: win.vizConfig.immersive === true ? "Omaviz — Immersive" : (win.vizConfig.scope === true ? "Omaviz — Scope" : "Omaviz — Bars")
         color: "#e8e8f0"; font.pixelSize: 11; font.family: "monospace"
       }
       Button {
@@ -110,6 +110,23 @@ Window {
     Rectangle {
       width: parent.width; height: parent.height - 22; color: "#0c0c12"
 
+      // Artwork backdrop (immersive only): downscaled source = free blur,
+      // dimmed so the white bars stay readable. Falls back to the
+      // canvas wash when no art (radio, browser streams).
+      Image {
+        anchors.fill: parent
+        visible: win.vizConfig.immersive === true && win.vizConfig.artwork !== false && win.trackArt !== ""
+        source: win.trackArt
+        sourceSize.width: 48; sourceSize.height: 48
+        fillMode: Image.PreserveAspectCrop
+        opacity: 0.55
+      }
+      Rectangle {
+        anchors.fill: parent
+        visible: win.vizConfig.immersive === true
+        color: Qt.rgba(0, 0, 0, 0.35)
+      }
+
       VisualCanvas {
         id: desktopViz
         anchors.fill: parent
@@ -120,6 +137,7 @@ Window {
         wave: win.spectrumWave
 
         visual: win.vizConfig.scope === true ? "Oscilloscope" : "Bars"
+        immersive: win.vizConfig.immersive === true
         dots: win.vizConfig.dots !== false
         reflect: win.vizConfig.reflect === true
         scopeLineWidth: win.vizConfig.scopeThickness ?? 2

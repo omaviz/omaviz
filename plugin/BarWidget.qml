@@ -242,6 +242,7 @@ BarWidget {
         bands: root.desktopLive ? [] : root.spectrumBands
         silent: root.desktopLive ? true : root.spectrumSilent
         visual: root.config.scope === true ? "Oscilloscope" : "Bars"
+        immersive: root.config.immersive === true
         colorSync: root.config.colorSync === true
         barCount: root.barCount
         // Rendered gap follows config (same value that sizes the container).
