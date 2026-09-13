@@ -281,7 +281,6 @@ BarWidget {
         themeBottom: root.config.colorSync === true ? Qt.darker(Color.accent, 1.3) : (root.config.themeBottom || "#e68e0d")
         themeTop: root.config.colorSync === true ? Color.accent : (root.config.themeTop || "#f59e0b")
         wave: root.desktopLive ? [] : root.spectrumWave
-        dots: root.config.dots !== false
         reflect: false
         // Mono: B&W bars by theme luminance (black on light, white on dark).
         mono: root.config.mono === true

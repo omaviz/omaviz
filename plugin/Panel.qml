@@ -156,7 +156,6 @@ Panel {
             wave: root.hostWidget ? root.hostWidget.spectrumWave : []
             visual: root.hostWidget && root.hostWidget.config.scope === true ? "Oscilloscope" : "Bars"
             artMode: root.hcfg.artMode === true
-            dots: false   // static underlay above
             reflect: root.hcfg.reflect === true
             scopeLineWidth: (root.hcfg.scopeThickness ?? 2)
             colorSync: false
