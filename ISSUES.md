@@ -52,9 +52,11 @@ Bars follow the **live** shell accent when `color_sync=true`
 (`Color.accent` + darker variant, reactive to theme switches); otherwise
 config `theme_bottom/top`. No config round-trip needed.
 
-### #8 ~~[quality] Theme-aware backgrounds~~ ✅ Fixed
-Mini container and desktop window use `Color.background` — identical look
-on the dark theme (verified), correct on light themes. Border unchanged.
+### #8 ~~[quality] Theme-aware backgrounds~~ ✅ Fixed (bar/panel; desktop static)
+Mini container uses `Color.background` (identical on dark theme, correct
+on light). Desktop window stays static `#0c0c12`: standalone
+`quickshell -p` cannot resolve `qs.*` imports (shell-context only) — the
+import killed the window on launch, caught 2026-09-13. Border unchanged.
 
 ### #6 ~~[quality] Per-surface band counts~~ ✅ Verified
 Bar-feed 128 (mini→32 max-downsample, preview→64), desktop 256 (dense

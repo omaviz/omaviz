@@ -2,7 +2,6 @@ import QtQuick
 import QtQuick.Controls
 import Quickshell
 import Quickshell.Io
-import qs.Commons
 import "Model.js" as Model
 
 Window {
@@ -10,8 +9,10 @@ Window {
   width: 600
   height: 200
   visible: true
-  // Theme-aware window background (dark theme ≈ previous #0c0c12 look).
-  color: Color.background
+  // NOTE: no qs.Commons import here — standalone `quickshell -p` cannot
+  // resolve qs.* modules (shell-context only), and the import kills the
+  // window on launch. Desktop background stays static dark.
+  color: "#0c0c12"
   flags: Qt.Window | Qt.WindowStaysOnTopHint
 
   property var spectrumBands: Model.spectrumData.bands
