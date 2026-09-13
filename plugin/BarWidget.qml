@@ -10,7 +10,6 @@ BarWidget {
   moduleName: "org.omaviz.visualizer"
 
   property var config: Model.defaultConfig()
-  property var visuals: []
   property var spectrumBands: []
   property var spectrumWave: []
   property bool spectrumSilent: true
@@ -198,27 +197,6 @@ BarWidget {
     root.refreshDesktopLive()
   }
 
-  Process {
-    id: visualsProc
-    running: false
-    command: ["bash", "-c",
-      "for f in " + Util.shellQuote(Model.visualsDir) + "/*.toml; do " +
-      "[ -f \"$f\" ] && printf '%s\\0%s\\0' \"$f\" \"$(cat \"$f\" 2>/dev/null)\"; done"]
-
-    function refresh() { if (!running) running = true }
-
-    stdout: SplitParser {
-      onRead: function(data) {
-        var chunks = String(data).split("\0")
-        var contents = []
-        for (var i = 0; i + 1 < chunks.length; i += 2) {
-          if (chunks[i]) contents.push({ path: chunks[i], text: chunks[i + 1] || "" })
-        }
-        root.visuals = Model.discoverVisualsFromText(contents)
-      }
-    }
-  }
-
   WidgetButton {
     id: button
     anchors.fill: parent
@@ -264,10 +242,8 @@ BarWidget {
         bands: root.spectrumBands
         silent: root.spectrumSilent
         visual: root.config.scope === true ? "Oscilloscope" : "Bars"
-        style: root.config.style || "Classic"
         colorSync: root.config.colorSync === true
         barCount: root.barCount
-        colourScheme: 0
         // Rendered gap follows config (same value that sizes the container).
         gapPx: Math.min(6, Math.max(0, root.barGap))
         minBarHeight: 0
@@ -286,6 +262,9 @@ BarWidget {
         wave: root.spectrumWave
         dots: root.config.dots !== false
         reflect: false
+        // Mono: B&W bars by theme luminance (black on light, white on dark).
+        mono: root.config.mono === true
+        monoLight: (0.299 * Color.background.r + 0.587 * Color.background.g + 0.114 * Color.background.b) > 0.5
       }
     }
   }
@@ -305,6 +284,5 @@ BarWidget {
     function toggle() { root.toggle() }
     function show() { root.open() }
     function hide() { root.close() }
-    function refresh() { visualsProc.refresh() }
   }
 }

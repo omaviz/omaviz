@@ -22,7 +22,6 @@ try {
   }
 } catch (e) { /* keep default */ }
 var configPath = home + "/.config/omaviz/config.toml"
-var visualsDir = home + "/.config/omaviz/visuals"
 // v6 bridge binary (REMOVED in v7 — kept only as a constant for back-compat).
 var bridgePath = home + "/.local/bin/omaviz-spectrum-bridge"
 // v7 bundled engine: lives INSIDE the plugin package (no systemd, no socket,
@@ -80,32 +79,17 @@ function readConfigFromText(tomlText) {
   var d = defaultConfig()
   if (!tomlText) return d
   d.sensitivity = readTomlFloat(tomlText, "audio", "sensitivity") ?? d.sensitivity
-  d.smoothing = readTomlFloat(tomlText, "audio", "smoothing") ?? d.smoothing
   d.bands = readTomlInt(tomlText, "audio", "bands") ?? d.bands
-  // v7.6 desktop window bar density (spectrum resolution). The engine accepts
-  // any N; the GL renderer's bar count is generalized by the GL track. The
-  // Canvas-2D desktop fallback + bar preview already render bands.length.
-  d.density = readTomlInt(tomlText, "desktop", "density") ?? d.density
-  d.visualMini = readTomlValue(tomlText, "mini", "visual") ?? d.visualMini
-  d.visualDesktop = readTomlValue(tomlText, "desktop", "visual") ?? d.visualDesktop
-  d.visualFull = readTomlValue(tomlText, "full", "visual") ?? d.visualFull
-  d.style = readTomlValue(tomlText, "mini", "style") ?? d.style
   d.gap = parseFloat(readTomlValue(tomlText, "mini", "gap") ?? "NaN")
   if (d.gap !== d.gap || d.gap < 0) d.gap = 3   // NaN/negative → default 3
   d.widthScale = parseFloat(readTomlValue(tomlText, "mini", "width_scale") ?? "1.5")
   if (d.widthScale !== d.widthScale || d.widthScale < 0.5 || d.widthScale > 4) d.widthScale = 1.5
-  d.styleDesktop = readTomlValue(tomlText, "desktop", "style") ?? d.style
   d.desktopActive = readTomlValue(tomlText, "desktop", "active") === "true"
   // Heartbeat lease (epoch ms, written by the open desktop window every 2s).
   // Guards against a stranded active=true with no live window.
   d.desktopHeartbeat = parseInt(readTomlValue(tomlText, "desktop", "heartbeat") ?? "0", 10)
   if (d.desktopHeartbeat !== d.desktopHeartbeat) d.desktopHeartbeat = 0
   d.colorSync = readTomlValue(tomlText, "mini", "color_sync") === "true"
-  d.gpu = readTomlValue(tomlText, "desktop", "gpu") !== "false"
-  // v7.2 visual options (window)
-  d.border = readTomlValue(tomlText, "desktop", "border") !== "false"   // default true
-  d.colorSource = readTomlValue(tomlText, "desktop", "color_source") || "theme"
-  d.customColor = readTomlValue(tomlText, "desktop", "custom_color") || "#5ec8ff"
   // Theme gradient defaults: Matte Black active theme (see THEME_PALETTE.md).
   // accent (#e68e0d) -> bright_blue (#f59e0b). Replaces the old cyan/purple
   // (#19e0d4 / #a45cff) which did NOT match the active theme.
@@ -121,6 +105,7 @@ function readConfigFromText(tomlText) {
   if (d.peakFalloff > 1) d.peakFalloff = 1
   d.spikes = readTomlValue(tomlText, "desktop", "spikes") === "true"
   d.splits = readTomlValue(tomlText, "desktop", "splits") === "true"
+  d.mono = readTomlValue(tomlText, "desktop", "mono") === "true"
   d.linearFall = readTomlValue(tomlText, "desktop", "linear_fall") === "true"
   d.scope = readTomlValue(tomlText, "desktop", "scope") === "true"
   d.scopeThickness = readTomlFloat(tomlText, "desktop", "scope_thickness") ?? 2
@@ -128,50 +113,23 @@ function readConfigFromText(tomlText) {
   if (d.scopeThickness > 5) d.scopeThickness = 5
   d.dots = readTomlValue(tomlText, "desktop", "dots") !== "false"
   d.reflect = readTomlValue(tomlText, "desktop", "reflect") === "true"
-  // v7.4 Winamp-faithful per-visualization option sets (independent).
-  d.eqMode = readTomlValue(tomlText, "visual.equalizer", "mode") || "bars"        // bars|lines
-  d.eqColor = readTomlValue(tomlText, "visual.equalizer", "color") || "fire"      // solid|line|fade|fire
-  d.eqGrid = readTomlValue(tomlText, "visual.equalizer", "grid") === "true"
-  d.eqPeaks = readTomlValue(tomlText, "visual.equalizer", "peaks") !== "false"    // default on
-  d.eqFalloff = readTomlFloat(tomlText, "visual.equalizer", "falloff") ?? 0.5      // 0 slow .. 1 fast
-  d.eqZoom = readTomlValue(tomlText, "visual.equalizer", "zoom") || "1x"          // 1x|2x|4x
-  d.eqThickness = readTomlInt(tomlText, "visual.equalizer", "thickness") || 2
-  d.scopeStyle = readTomlValue(tomlText, "visual.oscilloscope", "style") || "line" // line|dot
-  d.scopeColor = readTomlValue(tomlText, "visual.oscilloscope", "color") || "solid" // solid|line|fade|fire
-  d.scopeGrid = readTomlValue(tomlText, "visual.oscilloscope", "grid") === "true"
-  d.scopeScan = readTomlValue(tomlText, "visual.oscilloscope", "scan") === "true"
-  d.scopeCentered = readTomlValue(tomlText, "visual.oscilloscope", "centered") === "true"
-  d.scopeThickness = readTomlInt(tomlText, "visual.oscilloscope", "thickness") || 2
   return d
 }
 
 function defaultConfig() {
   return {
     sensitivity: 1.0,
-    smoothing: 0.5,
     bands: 32,
-    density: 128,       // desktop window spectrum resolution (dense/immersive default)
-    visualMini: "equalizer",
-    visualDesktop: "equalizer",
-    visualFull: "wave",
     gap: 3,
     widthScale: 1.5,
-    style: "classic",
-    styleDesktop: "classic",
     desktopActive: false,
     desktopHeartbeat: 0,
     colorSync: false,
-    gpu: true,
-    border: true,
-    colorSource: "theme",
-    customColor: "#5ec8ff",
     themeBottom: "#e68e0d",
     themeTop: "#f59e0b",
     fire: false,
-    peaks: true, peakFalloff: 0.5, spikes: false, splits: false,
+    peaks: true, peakFalloff: 0.5, spikes: false, splits: false, mono: false,
     linearFall: false, scope: false, scopeThickness: 2, dots: true, reflect: false,
-    eqMode: "bars", eqColor: "fire", eqGrid: false, eqPeaks: true, eqFalloff: 0.5, eqZoom: "1x", eqThickness: 2,
-    scopeStyle: "line", scopeColor: "solid", scopeGrid: false, scopeScan: false, scopeCentered: true, scopeThickness: 2
   }
 }
 
@@ -221,130 +179,6 @@ function writeConfigKey(tomlText, section, key, value) {
     lines.splice(targetIdx + 1, 0, entry)
   }
   return lines.join("\n")
-}
-
-// ---- Visualizations ----
-
-function parseVisualToml(tomlText, name) {
-  var label = name
-  var description = ""
-  var params = []
-  var currentParam = null
-
-  if (!tomlText) return { name, label, description, params: [] }
-
-  var currentParamIndex = -1
-  function flush() {
-    if (currentParam && currentParam.name) params.push(currentParam)
-    currentParamIndex = -1
-  }
-
-  var lines = String(tomlText).split("\n")
-  for (var i = 0; i < lines.length; i++) {
-    var line = lines[i].trim()
-    if (line.startsWith("#") || line === "") continue
-
-    if (line.startsWith("label =") || line.startsWith("description =")) {
-      if (currentParamIndex >= 0) {
-        // Belongs to the current [[params]] table.
-        var pk0 = line.split("=")[0].trim()
-        var pv0 = line.split("=").slice(1).join("=").trim().replace(/^["']|["']$/g, "")
-        if (pk0 === "label") currentParam.label = pv0
-        else if (pk0 === "description") currentParam.description = pv0
-      } else {
-        // Top-level visual label/description.
-        if (line.startsWith("label =")) label = line.split("=")[1].trim().replace(/^["']|["']$/g, "")
-        else if (line.startsWith("description =")) description = line.split("=")[1].trim().replace(/^["']|["']$/g, "")
-      }
-      continue
-    }
-
-    if (line.indexOf("params") >= 0 && line.startsWith("[")) {
-      // A [[params]] table starts a new param object. Flush any previous one.
-      if (currentParamIndex >= 0) flush()
-      currentParam = { name: null, label: null, default: 0, min: 0, max: 1, type: "float", help: "" }
-      currentParamIndex = params.length
-    } else if (currentParam && line.indexOf("=") >= 0) {
-      // Lines belonging to the current param table.
-      var pk = line.split("=")[0].trim()
-      var pv = line.split("=").slice(1).join("=").trim().replace(/^["']|["']$/g, "")
-      if (pk === "name") currentParam.name = pv
-      else if (pk === "label") currentParam.label = pv
-      else if (pk === "default") currentParam.default = parseFloat(pv) || 0
-      else if (pk === "min") currentParam.min = parseFloat(pv) || 0
-      else if (pk === "max") currentParam.max = parseFloat(pv) || 1
-      else if (pk === "type") currentParam.type = pv
-      else if (pk === "boolean") currentParam.boolean = (pv === "true")
-      else if (pk === "help") currentParam.help = pv
-    }
-    // A non-params section header (e.g. [other]) ends param parsing.
-    else if (line.startsWith("[") && line.indexOf("params") < 0) {
-      flush()
-      currentParam = null
-      currentParamIndex = -1
-    }
-  }
-  flush()
-
-  return { name, label, description, params }
-}
-
-function discoverVisualsFromText(tomlFiles) {
-  // tomlFiles: array of { path, text }
-  var result = []
-  for (var i = 0; i < tomlFiles.length; i++) {
-    var path = tomlFiles[i].path
-    var name = path.replace(/.*\/([^/]+)\.toml$/, "$1")
-    var visual = parseVisualToml(tomlFiles[i].text, name)
-    if (visual.label) {
-      result.push(visual)
-    }
-  }
-  result.sort(function(a, b) {
-    return String(a.label).localeCompare(String(b.label))
-  })
-  return result
-}
-
-// Get param declarations for a visual's .toml text
-function visualParamsFromText(tomlText, name) {
-  var v = parseVisualToml(tomlText, name)
-  // Tag each param with the visual it belongs to, so the panel writes
-  // knob edits back to the correct [visual.<name>] section.
-  for (var i = 0; i < v.params.length; i++) v.params[i].source = name
-  return v.params
-}
-
-// Read current config values for a visual's params.
-// User-edited values live in config.toml under [visual.<source>], where
-// <source> is the visual each param belongs to (tagged by visualParamsFromText).
-// The shared config text is passed in so we read the user's saved values.
-function visualConfigValues(configText, params) {
-  var values = {}
-  for (var i = 0; i < params.length; i++) {
-    var p = params[i]
-    var section = "visual." + (p.source || p.visual || "equalizer")
-    var v = readTomlValue(configText, section, p.name)
-    if (v !== null) {
-      if (p.type === "boolean") values[p.name] = (v === "true")
-      else if (p.boolean === true) values[p.name] = (v === "true")
-      else values[p.name] = parseFloat(v) || p.default
-    } else {
-      values[p.name] = p.default
-    }
-  }
-  return values
-}
-
-// ---- Audio config helpers ----
-
-function readAudioFromText(tomlText) {
-  if (!tomlText) return { sensitivity: 1.0, smoothing: 0.5, bands: 32 }
-  return {
-    sensitivity: readTomlFloat(tomlText, "audio", "sensitivity") ?? 1.0,
-    smoothing: readTomlFloat(tomlText, "audio", "smoothing") ?? 0.5,
-    bands: readTomlInt(tomlText, "audio", "bands") ?? 32
-  }
 }
 
 // ---- Spectrum ----
@@ -405,39 +239,6 @@ function sourceLabel(name) {
   return map[name] !== undefined ? map[name] : name
 }
 
-// ---- File IO helpers used by the panel ----
-// (QML FileView is read-only on load; writing is done by the panel's own
-//  writable FileView. These read helpers let the panel re-read after a write.)
-
-// Read a whole file as text. Returns "" if missing.
-function readFileText(path) {
-  // QML owns file IO; this is a fallback used only when no FileView is wired.
-  // The panel provides its content via Model.parseSpectrumLine-style hooks,
-  // so we expose a no-throw stub that returns the last known value.
-  return _fileCache[path] || ""
-}
-
-var _fileCache = {}
-
-function cacheFileText(path, text) {
-  _fileCache[path] = text
-}
-
-// Enumerate visual .toml files from the visuals dir (panel calls this after
-// its visualsProc populates Model._visualFiles).
-function listVisualFiles() {
-  return _visualFiles
-}
-
-var _visualFiles = []
-
-function setVisualFiles(files) {
-  _visualFiles = files
-}
-
-// Redirect path helpers the panel references
-function readTomlFile() { return "" }
-
 // ---- Desktop mode ----
 function isDesktopActiveFromText(tomlText) {
   return readTomlValue(tomlText, "desktop", "active") === "true"
@@ -447,22 +248,12 @@ function isDesktopActiveFromText(tomlText) {
 if (typeof module !== "undefined") {
   module.exports = {
     configPath: configPath,
-    visualsDir: visualsDir,
     readConfigFromText: readConfigFromText,
     defaultConfig: defaultConfig,
     writeConfigKey: writeConfigKey,
-    discoverVisualsFromText: discoverVisualsFromText,
-    visualParamsFromText: visualParamsFromText,
-    visualConfigValues: visualConfigValues,
-    readAudioFromText: readAudioFromText,
     parseSpectrumLine: parseSpectrumLine,
     spectrumData: spectrumData,
     isDesktopActiveFromText: isDesktopActiveFromText,
-    readFileText: readFileText,
-    cacheFileText: cacheFileText,
-    listVisualFiles: listVisualFiles,
-    setVisualFiles: setVisualFiles,
-    readTomlFile: readTomlFile,
     readTomlTopKey: readTomlTopKey,
     engineBin: engineBin
   }

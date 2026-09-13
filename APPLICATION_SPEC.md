@@ -39,10 +39,7 @@ plugin/  (deployed to ~/.config/omarchy/plugins/org.omaviz.visualizer/)
 ├── Desktop.qml     (detached window)
 ├── Model.js        (.pragma library: config IO, spectrum parse)
 ├── VisualCanvas.qml  (Canvas-2D renderer — DEFAULT)
-├── VisualCanvasGL.qml (GPU/ShaderEffect renderer — LEGACY FALLBACK)
 ├── shaders/visual.frag
-├── visual.qsb          (compiled by build.sh; legacy)
-├── glspectrum.js   (spectrum → texture packing, legacy GL)
 ├── visuals/*.toml  (equalizer / wave / fire)
 ├── bin/
 │   └── omaviz-engine   (Rust: capture → FFT/DSP → JSON lines on stdout;

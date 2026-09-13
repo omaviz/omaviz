@@ -18,7 +18,6 @@ Window {
   property var spectrumBands: Model.spectrumData.bands
   property var spectrumWave: []
   property bool spectrumSilent: Model.spectrumData.silent
-  readonly property string visualName: "Bars"
   // Live viz options (peaks/falloff/spikes/fire) — re-parsed on each poll
   // so settings-panel changes reflect in the open window within ~100ms.
   property var vizConfig: Model.defaultConfig()
@@ -60,7 +59,7 @@ Window {
       width: parent.width; height: 22; color: "#16161f"
       Text {
         anchors.left: parent.left; anchors.verticalCenter: parent.verticalCenter; anchors.leftMargin: 10
-        text: "Omaviz — Bars"
+        text: win.vizConfig.scope === true ? "Omaviz — Scope" : "Omaviz — Bars"
         color: "#e8e8f0"; font.pixelSize: 11; font.family: "monospace"
       }
       Button {
@@ -89,10 +88,8 @@ Window {
         reflect: win.vizConfig.reflect === true
         scopeLineWidth: win.vizConfig.scopeThickness ?? 2
 
-        style: "Classic"
         colorSync: false
         barCount: Math.max(16, Math.floor((parent.width - 8) / 10))
-        colourScheme: 0
         gapPx: Math.min(6, Math.max(0, win.vizConfig.gap ?? 1))
         minBarHeight: 0
 

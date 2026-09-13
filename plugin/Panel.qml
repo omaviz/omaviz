@@ -34,6 +34,10 @@ Panel {
   ipcTarget: "org.omaviz.visualizer"
   manageIpc: false
 
+  // Config alias: live bar config once injected, sane defaults before.
+  // Kills the 14x `hostWidget ? ... : default` guard repetition below.
+  property var hcfg: root.hostWidget ? root.hostWidget.config : Model.defaultConfig()
+
   // ---- Injected by BarWidget.injectPanel() ----
   property var anchorItem: null
   property var hostWidget: null
@@ -146,22 +150,20 @@ Panel {
             silent: root.hostWidget ? root.hostWidget.spectrumSilent : true
             wave: root.hostWidget ? root.hostWidget.spectrumWave : []
             visual: root.hostWidget && root.hostWidget.config.scope === true ? "Oscilloscope" : "Bars"
-            dots: root.hostWidget ? root.hostWidget.config.dots !== false : true
-            reflect: root.hostWidget ? root.hostWidget.config.reflect === true : false
-            scopeLineWidth: root.hostWidget ? (root.hostWidget.config.scopeThickness ?? 2) : 2
-            style: "Classic"
+            dots: root.hcfg.dots !== false
+            reflect: root.hcfg.reflect === true
+            scopeLineWidth: (root.hcfg.scopeThickness ?? 2)
             colorSync: false
             barCount: 64
-            colourScheme: 0
-            gapPx: root.hostWidget ? Math.min(6, Math.max(0, root.hostWidget.barGap)) : 1
+                gapPx: root.hostWidget ? Math.min(6, Math.max(0, root.hostWidget.barGap)) : 1
             minBarHeight: 0
             // Live from bar config — settings below reflect immediately.
-            peaks: root.hostWidget ? root.hostWidget.config.peaks !== false : true
-            peakFalloff: root.hostWidget ? (root.hostWidget.config.peakFalloff ?? 0.5) : 0.5
-            spikes: root.hostWidget ? root.hostWidget.config.spikes === true : false
-            fire: root.hostWidget ? root.hostWidget.config.fire === true : false
-            splits: root.hostWidget ? root.hostWidget.config.splits === true : false
-            sensitivity: root.hostWidget ? (root.hostWidget.config.sensitivity ?? 1.0) : 1.0
+            peaks: root.hcfg.peaks !== false
+            peakFalloff: (root.hcfg.peakFalloff ?? 0.5)
+            spikes: root.hcfg.spikes === true
+            fire: root.hcfg.fire === true
+            splits: root.hcfg.splits === true
+            sensitivity: (root.hcfg.sensitivity ?? 1.0)
             themeBottom: root.hostWidget ? (root.hostWidget.config.colorSync === true ? Qt.darker(Color.accent, 1.3) : (root.hostWidget.config.themeBottom || "#e68e0d")) : "#e68e0d"
             themeTop: root.hostWidget ? (root.hostWidget.config.colorSync === true ? Color.accent : (root.hostWidget.config.themeTop || "#f59e0b")) : "#f59e0b"
           }
@@ -199,8 +201,8 @@ Panel {
           id: panelOpts
           width: parent.width
           spacing: Style.space(10)
-          property bool isScope: root.hostWidget ? root.hostWidget.config.scope === true : false
-          property bool spikesOn: root.hostWidget ? root.hostWidget.config.spikes === true : false
+          property bool isScope: root.hcfg.scope === true
+          property bool spikesOn: root.hcfg.spikes === true
 
           // ---- Spectrum-only ----
           PanelSectionHeader { text: "SPECTRUM"; visible: !panelOpts.isScope }
@@ -210,7 +212,7 @@ Panel {
             width: parent.width
             label: "Peaks"
             description: "White peak-hold markers on each bar"
-            checked: root.hostWidget ? root.hostWidget.config.peaks !== false : true
+            checked: root.hcfg.peaks !== false
             onClicked: if (root.hostWidget) root.hostWidget.writeVizOption("peaks", !checked)
           }
           Column {
@@ -228,7 +230,7 @@ Panel {
               width: parent.width
               bar: root.bar
               minimum: 0; maximum: 1; step: 0.05
-              value: root.hostWidget ? (root.hostWidget.config.peakFalloff ?? 0.5) : 0.5
+              value: (root.hcfg.peakFalloff ?? 0.5)
               onReleased: function(v) { if (root.hostWidget) root.hostWidget.writeVizOption("peak_falloff", Math.round(v * 20) / 20) }
             }
           }
@@ -250,7 +252,7 @@ Panel {
             width: parent.width
             label: "Fire"
             description: "Red flame gradient from the base"
-            checked: root.hostWidget ? root.hostWidget.config.fire === true : false
+            checked: root.hcfg.fire === true
             onClicked: if (root.hostWidget) root.hostWidget.writeVizOption("fire", !checked)
           }
           Toggle {
@@ -258,7 +260,7 @@ Panel {
             width: parent.width
             label: "Stacks"
             description: "Segmented bars with gaps, Winamp-style (preview/desktop)"
-            checked: root.hostWidget ? root.hostWidget.config.splits === true : false
+            checked: root.hcfg.splits === true
             onClicked: if (root.hostWidget) root.hostWidget.writeVizOption("splits", !checked)
           }
           Toggle {
@@ -266,8 +268,16 @@ Panel {
             width: parent.width
             label: "Linear fall"
             description: "Winamp-style instant rise, fixed-rate drop (restarts engine)"
-            checked: root.hostWidget ? root.hostWidget.config.linearFall === true : false
+            checked: root.hcfg.linearFall === true
             onClicked: if (root.hostWidget) root.hostWidget.writeEngineOption("linear_fall", !checked)
+          }
+          Toggle {
+            visible: !panelOpts.isScope
+            width: parent.width
+            label: "Mono"
+            description: "B&W mini bars: black on light themes, white on dark (overrides Fire)"
+            checked: root.hcfg.mono === true
+            onClicked: if (root.hostWidget) root.hostWidget.writeVizOption("mono", !checked)
           }
 
           // ---- Oscilloscope-only ----
@@ -293,7 +303,7 @@ Panel {
               width: parent.width
               bar: root.bar
               minimum: 1; maximum: 5; step: 0.5
-              value: root.hostWidget ? (root.hostWidget.config.scopeThickness ?? 2) : 2
+              value: (root.hcfg.scopeThickness ?? 2)
               onReleased: function(v) { if (root.hostWidget) root.hostWidget.writeVizOption("scope_thickness", Math.round(v * 2) / 2) }
             }
           }
@@ -304,14 +314,14 @@ Panel {
             width: parent.width
             label: "Dots"
             description: "Dotted skin backdrop behind the bars"
-            checked: root.hostWidget ? root.hostWidget.config.dots !== false : true
+            checked: root.hcfg.dots !== false
             onClicked: if (root.hostWidget) root.hostWidget.writeVizOption("dots", !checked)
           }
           Toggle {
             width: parent.width
             label: "Reflection"
             description: "Faded floor mirror below the bars (preview/desktop)"
-            checked: root.hostWidget ? root.hostWidget.config.reflect === true : false
+            checked: root.hcfg.reflect === true
             onClicked: if (root.hostWidget) root.hostWidget.writeVizOption("reflect", !checked)
           }
         }

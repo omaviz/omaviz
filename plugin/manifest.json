@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "org.omaviz.visualizer",
   "name": "Omaviz",
-  "version": "7.10.0",
+  "version": "7.11.0",
   "author": "kishan",
   "description": "Audio visualizer — winamp-style spectrum, mini bar + desktop detach",
   "kinds": [

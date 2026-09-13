@@ -5,10 +5,8 @@ Canvas {
   property var bands: []
   property bool silent: false
   property string visual: "Bars"
-  property string style: "Classic"
   property bool colorSync: false
   property int barCount: 0
-  property int colourScheme: 0
   property color monoColor: "#dce0eb"
   property int gapPx: 1
   property int minBarHeight: 0
@@ -24,6 +22,10 @@ Canvas {
   // Oscilloscope feed: 128-point time-domain samples (-1..1, newest last).
   property var wave: []
   property real scopeLineWidth: 2
+  // B&W mode (mini option): solid black on light themes, white on dark.
+  // Takes precedence over Fire — an explicit monochrome choice.
+  property bool mono: false
+  property bool monoLight: false
   // Winamp skin dressing: dotted backdrop (on) and floor reflection (off).
   property bool dots: true
   property bool reflect: false
@@ -99,8 +101,11 @@ Canvas {
   onPeaksChanged: requestPaint()
   onPeakFalloffChanged: requestPaint()
   onScopeLineWidthChanged: requestPaint()
+  onMonoChanged: requestPaint()
+  onMonoLightChanged: requestPaint()
 
   function fillFor(h, a) {
+    if (mono) return monoLight ? "#000000" : "#ffffff"
     if (fire) {
       // Winamp flame, kept luminous at low levels so quiet bars stay
       // visible on dark containers (dark reds vanish; orange does not).
@@ -187,7 +192,10 @@ Canvas {
       } else if (spikes) {
         // Pointed tip: sharp triangle apex over a square body.
         // Fire: vertical red-to-hot gradient along the bar area.
-        if (fire) {
+        if (mono) {
+          ctx.fillStyle = monoLight ? "#000000" : "#ffffff";
+        }
+        if (!mono && fire) {
           var g1 = ctx.createLinearGradient(0, baseY, 0, baseY - areaH)
           g1.addColorStop(0, fireColorAt(0))
           g1.addColorStop(0.25, fireColorAt(0.25))
@@ -214,7 +222,10 @@ Canvas {
           ctx.fill()
         }
       } else {
-        if (fire) {
+        if (mono) {
+          ctx.fillStyle = monoLight ? "#000000" : "#ffffff";
+        }
+        else if (fire) {
           var g2 = ctx.createLinearGradient(0, baseY, 0, baseY - areaH)
           g2.addColorStop(0, fireColorAt(0))
           g2.addColorStop(0.25, fireColorAt(0.25))
@@ -232,7 +243,8 @@ Canvas {
 
     if (peaks) {
       // Thin-spike caps: 1px hot ticks (a 2px block would swallow a 2px bar).
-      ctx.fillStyle = spikes ? "#ffe9a8" : "#ffffff"
+      // Mono: caps match the bars (ticks sit on the background above them).
+      ctx.fillStyle = mono ? (monoLight ? "#000000" : "#ffffff") : (spikes ? "#ffe9a8" : "#ffffff")
       var capH = spikes ? 1 : 2
       for (var p = 0; p < n; p++) {
         var pv = _peakArr[p]
@@ -247,7 +259,7 @@ Canvas {
       // Floor mirror: faded copy of each bar below the baseline.
       ctx.save()
       ctx.globalAlpha = 0.22
-      ctx.fillStyle = fire ? fireColorAt(0.12) : themeBottom
+      ctx.fillStyle = mono ? (monoLight ? "#000000" : "#ffffff") : (fire ? fireColorAt(0.12) : themeBottom)
       for (var m = 0; m < n; m++) {
         var mv = silent ? 0 : Math.min(1, Math.max(0, b[m]) * sensitivity)
         var mh = mv * areaH * 0.5

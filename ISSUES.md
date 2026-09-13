@@ -69,10 +69,10 @@ colorSync=false → bottom-to-white-hot, true → bottom-to-top theme blend.
 Mini verified live in amber after rewrite.
 
 ### Small batch (one pass) — ✅ Fixed
-- #17 build.sh no longer hard-fails without `qsb` (warn-only; GL unused)
+- #17 build.sh qsb block removed (GL renderer deleted, v7.11)
 - #20 `source` JSON-escaped in frame.rs + round-trip test (35 green)
 - #10 engine fallback: covered by #21 retry + #12 stale-silence (dimmed state still open if wanted)
-- #11 VisualCanvasGL.qml: kept as documented spare (zero runtime cost)
+- #11 VisualCanvasGL.qml + glspectrum.js + shaders/: deleted (GPU decision: stay, v7.11 — see GPU_PLAN.md)
 - #18 version + spec drift fixed (manifest 7.8.0, spec v7.8.0 documents shared Canvas, options, flag/heartbeat, emit policy)
 - #19 empty plugin/tests/ removed; QML covered by qmllint, engine by cargo test (35 green)
 - #7 multi-channel (instrument separation): ❌ won't-do — confirmed with user 2026-09-13. Splitting a mixed stream into instruments needs ML source separation, out of scope for an FFT visualizer. Per-app taps possible later if wanted.
