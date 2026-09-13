@@ -131,7 +131,7 @@ Canvas {
     var r = Math.round(bot.r + (top.r - bot.r) * h)
     var g = Math.round(bot.g + (top.g - bot.g) * h)
     var b = Math.round(bot.b + (top.b - bot.b) * h)
-    return "rgba(" + r + "," + g + "," + b + ",0.16)"
+    return "rgba(" + r + "," + g + "," + b + ",0.10)"
   }
 
   onPaint: {
@@ -154,9 +154,9 @@ Canvas {
         var gw = width / n
         var gx = g * gw - gw
         var gh = Math.max(2, gv * height)
-        if (fire) ctx.fillStyle = "rgba(255," + Math.round(120 + gv * 120) + ",60,0.16)"
+        if (fire) ctx.fillStyle = "rgba(255," + Math.round(120 + gv * 120) + ",60,0.10)"
         else ctx.fillStyle = fillWash(gv)
-        ctx.fillRect(gx, height - gh, gw * 3, gh)
+        ctx.fillRect(gx, height - gh, gw * 2, gh)
       }
     }
 
@@ -204,7 +204,9 @@ Canvas {
         while (sy > y) {
           var sh = Math.min(segH, sy - y)
           var tMid = 1 - (sy - sh / 2 - (baseY - areaH)) / areaH
-          ctx.fillStyle = fire ? fireColorAt(tMid) : fillFor(v, 0.25 + v * 0.75)
+          if (immersive) ctx.fillStyle = "#ffffff";
+          else if (fire) ctx.fillStyle = fireColorAt(tMid);
+          else ctx.fillStyle = fillFor(v, 0.25 + v * 0.75);
           ctx.fillRect(x, sy - sh, bw + spikeOverlap, sh)
           sy -= segH + segGap
         }

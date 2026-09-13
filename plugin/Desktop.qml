@@ -42,22 +42,8 @@ Window {
   readonly property string trackTitle: win.activePlayer ? (win.activePlayer.trackTitle || "") : ""
   readonly property string trackArtist: win.activePlayer ? (win.activePlayer.trackArtist || "") : ""
   readonly property string trackArt: win.activePlayer ? (win.activePlayer.trackArtUrl || "") : ""
-  readonly property string trackKey: win.trackTitle + "\n" + win.trackArtist
   readonly property string trackLabel: win.trackArtist !== "" ? win.trackArtist + " — " + win.trackTitle : win.trackTitle
-  property bool showTrack: false
-  onTrackKeyChanged: {
-    if (win.trackTitle !== "") {
-      win.showTrack = true
-      trackFade.restart()
-    } else {
-      win.showTrack = false
-    }
-  }
-  Timer {
-    id: trackFade
-    interval: 4000; repeat: false
-    onTriggered: win.showTrack = false
-  }
+  readonly property string modeName: win.vizConfig.immersive === true ? "Omaviz (Immersive)" : (win.vizConfig.scope === true ? "Omaviz (Scope)" : "Omaviz")
 
   Process {
     id: bridge
@@ -94,9 +80,12 @@ Window {
     Rectangle {
       width: parent.width; height: 22; color: "#16161f"
       Text {
-        anchors.left: parent.left; anchors.verticalCenter: parent.verticalCenter; anchors.leftMargin: 10
-        text: win.vizConfig.immersive === true ? "Omaviz — Immersive" : (win.vizConfig.scope === true ? "Omaviz — Scope" : "Omaviz — Bars")
+        anchors.left: parent.left; anchors.right: parent.right
+        anchors.verticalCenter: parent.verticalCenter
+        anchors.leftMargin: 10; anchors.rightMargin: 30
+        text: win.modeName + (win.trackLabel !== "" ? " · " + win.trackLabel : "")
         color: "#e8e8f0"; font.pixelSize: 11; font.family: "monospace"
+        elide: Text.ElideRight
       }
       Button {
         anchors.right: parent.right; anchors.verticalCenter: parent.verticalCenter; anchors.rightMargin: 6
@@ -115,16 +104,20 @@ Window {
       // canvas wash when no art (radio, browser streams).
       Image {
         anchors.fill: parent
-        visible: win.vizConfig.immersive === true && win.vizConfig.artwork !== false && win.trackArt !== ""
+        // Always rendered while immersive: empty source draws nothing, so
+        // arrival fades in via the opacity animation instead of popping.
+        visible: win.vizConfig.immersive === true && win.vizConfig.artwork !== false
         source: win.trackArt
-        sourceSize.width: 48; sourceSize.height: 48
+        // Tiny source upscaled = heavy blur: only dominant colors survive.
+        sourceSize.width: 24; sourceSize.height: 24
         fillMode: Image.PreserveAspectCrop
-        opacity: 0.55
+        opacity: win.trackArt !== "" ? 0.5 : 0
+        Behavior on opacity { NumberAnimation { duration: 900 } }
       }
       Rectangle {
         anchors.fill: parent
         visible: win.vizConfig.immersive === true
-        color: Qt.rgba(0, 0, 0, 0.35)
+        color: Qt.rgba(0, 0, 0, 0.45)
       }
 
       VisualCanvas {
@@ -158,22 +151,6 @@ Window {
         themeTop: win.vizConfig.themeTop || "#f59e0b"
       }
 
-      // Now-playing pill: appears on track change, fades after 4s.
-      Rectangle {
-        anchors.left: parent.left; anchors.top: parent.top
-        anchors.leftMargin: 8; anchors.topMargin: 6
-        width: trackText.width + 20; height: 24
-        radius: 12
-        color: Qt.rgba(0, 0, 0, 0.55)
-        opacity: win.showTrack ? 1 : 0
-        Behavior on opacity { NumberAnimation { duration: 600 } }
-        Text {
-          id: trackText
-          anchors.centerIn: parent
-          text: win.trackLabel
-          color: "#f2f2f7"; font.pixelSize: 11; font.family: "monospace"
-        }
-      }
     }
   }
 
