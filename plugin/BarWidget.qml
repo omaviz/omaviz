@@ -106,7 +106,7 @@ BarWidget {
     }
   }
 
-  // Shared truth: config desktop.active decides mini visibility,
+  // Shared truth: config desktop.active decides the mini paused-state,
   // so EVERY launch path (bar double-click, app launcher, keybind)
   // converges. detachProc state is only a fallback for close detection.
   // NOTE: do NOT clear desktop.active here based on detachProc —
@@ -200,9 +200,9 @@ BarWidget {
   WidgetButton {
     id: button
     anchors.fill: parent
-    // Shared flag + fresh heartbeat: hidden whenever a LIVE desktop
-    // window is open, regardless of which path launched it.
-    visible: !root.desktopLive
+    // Option 1: the mini stays in the bar while a desktop window is open,
+    // but renders a paused floor (no animation, bars at bottom) instead
+    // of hiding — settings stay one click away, no round-trip.
     bar: root.bar
     tooltipText: root.spectrumSilent ? "Omaviz — no audio" : "Omaviz — click for settings, double-click for desktop"
     text: ""
@@ -239,15 +239,16 @@ BarWidget {
       VisualCanvas {
         anchors.fill: parent
         anchors.margins: root.config.spikes === true ? 0 : 4
-        bands: root.spectrumBands
-        silent: root.spectrumSilent
+        bands: root.desktopLive ? [] : root.spectrumBands
+        silent: root.desktopLive ? true : root.spectrumSilent
         visual: root.config.scope === true ? "Oscilloscope" : "Bars"
         colorSync: root.config.colorSync === true
         barCount: root.barCount
         // Rendered gap follows config (same value that sizes the container).
         gapPx: Math.min(6, Math.max(0, root.barGap))
         minBarHeight: 0
-        peaks: root.config.peaks !== false
+        // Paused with the desktop open: no peak animation over the floor.
+        peaks: !root.desktopLive && root.config.peaks !== false
         peakFalloff: root.config.peakFalloff ?? 0.5
         spikes: root.config.spikes === true
         fire: root.config.fire === true
@@ -259,7 +260,7 @@ BarWidget {
         // colorSync follows the LIVE shell accent; otherwise config colors.
         themeBottom: root.config.colorSync === true ? Qt.darker(Color.accent, 1.3) : (root.config.themeBottom || "#e68e0d")
         themeTop: root.config.colorSync === true ? Color.accent : (root.config.themeTop || "#f59e0b")
-        wave: root.spectrumWave
+        wave: root.desktopLive ? [] : root.spectrumWave
         dots: root.config.dots !== false
         reflect: false
         // Mono: B&W bars by theme luminance (black on light, white on dark).
