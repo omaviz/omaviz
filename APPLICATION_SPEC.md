@@ -1,4 +1,4 @@
-# omaviz — Application Specification (v7.10.0)
+# omaviz — Application Specification (v7.12.0)
 
 > **Plugin id:** `org.omaviz.visualizer`
 > **Version:** 7.10.0 (spec + manifest, git tag)
