@@ -263,7 +263,7 @@ BarWidget {
         anchors.margins: root.config.spikes === true ? 0 : 4
         bands: root.spectrumBands
         silent: root.spectrumSilent
-        visual: "Bars"
+        visual: root.config.scope === true ? "Oscilloscope" : "Bars"
         style: root.config.style || "Classic"
         colorSync: root.config.colorSync === true
         barCount: root.barCount

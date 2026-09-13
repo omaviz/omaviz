@@ -148,6 +148,7 @@ Panel {
             visual: root.hostWidget && root.hostWidget.config.scope === true ? "Oscilloscope" : "Bars"
             dots: root.hostWidget ? root.hostWidget.config.dots !== false : true
             reflect: root.hostWidget ? root.hostWidget.config.reflect === true : false
+            scopeLineWidth: root.hostWidget ? (root.hostWidget.config.scopeThickness ?? 2) : 2
             style: "Classic"
             colorSync: false
             barCount: 64
@@ -185,85 +186,134 @@ Panel {
         // updates disk + its own config immediately, so mini, preview
         // and the open desktop window all reflect the change at once)
         PanelSectionHeader { text: "OPTIONS" }
-        Toggle {
-          id: peaksTgl
+        // Mode selector + per-mode sections. Mini always shows spectrum;
+        // scope mode affects preview/desktop only (noted in the caption).
+        Dropdown {
           width: parent.width
-          label: "Peaks"
-          description: "White peak-hold markers on each bar"
-          checked: root.hostWidget ? root.hostWidget.config.peaks !== false : true
-          onClicked: if (root.hostWidget) root.hostWidget.writeVizOption("peaks", !checked)
+          label: "Mode"
+          options: [{ value: "spectrum", label: "Spectrum" }, { value: "scope", label: "Oscilloscope" }]
+          value: panelOpts.isScope ? "scope" : "spectrum"
+          onChanged: function(v) { if (root.hostWidget) root.hostWidget.writeVizOption("scope", v === "scope") }
         }
         Column {
+          id: panelOpts
           width: parent.width
-          spacing: Style.space(4)
-          visible: peaksTgl.checked
-          Text {
-            text: "Peak fall speed (0 holds, 1 falls fast)"
-            color: Qt.darker(root.bar ? root.bar.foreground : Color.foreground, 1.4)
-            font.family: Style.font.family; font.pixelSize: Style.font.bodySmall
+          spacing: Style.space(10)
+          property bool isScope: root.hostWidget ? root.hostWidget.config.scope === true : false
+          property bool spikesOn: root.hostWidget ? root.hostWidget.config.spikes === true : false
+
+          // ---- Spectrum-only ----
+          PanelSectionHeader { text: "SPECTRUM"; visible: !panelOpts.isScope }
+          Toggle {
+            visible: !panelOpts.isScope
+            id: peaksTgl
             width: parent.width
+            label: "Peaks"
+            description: "White peak-hold markers on each bar"
+            checked: root.hostWidget ? root.hostWidget.config.peaks !== false : true
+            onClicked: if (root.hostWidget) root.hostWidget.writeVizOption("peaks", !checked)
           }
-          PanelSlider {
-            id: fallSlider
+          Column {
             width: parent.width
-            bar: root.bar
-            minimum: 0; maximum: 1; step: 0.05
-            value: root.hostWidget ? (root.hostWidget.config.peakFalloff ?? 0.5) : 0.5
-            onReleased: function(v) { if (root.hostWidget) root.hostWidget.writeVizOption("peak_falloff", Math.round(v * 20) / 20) }
+            spacing: Style.space(4)
+            visible: !panelOpts.isScope && peaksTgl.checked
+            Text {
+              text: "Peak fall speed (0 holds, 1 falls fast)"
+              color: Qt.darker(root.bar ? root.bar.foreground : Color.foreground, 1.4)
+              font.family: Style.font.family; font.pixelSize: Style.font.bodySmall
+              width: parent.width
+            }
+            PanelSlider {
+              id: fallSlider
+              width: parent.width
+              bar: root.bar
+              minimum: 0; maximum: 1; step: 0.05
+              value: root.hostWidget ? (root.hostWidget.config.peakFalloff ?? 0.5) : 0.5
+              onReleased: function(v) { if (root.hostWidget) root.hostWidget.writeVizOption("peak_falloff", Math.round(v * 20) / 20) }
+            }
           }
-        }
-        Toggle {
-          width: parent.width
-          label: "Spikes"
-          description: "Dense thin flame spikes, no gaps (auto-enables Fire)"
-          checked: root.hostWidget ? root.hostWidget.config.spikes === true : false
-          onClicked: {
-            if (!root.hostWidget) return
-            var v = !checked
-            root.hostWidget.writeVizOptions("spikes", v, "fire", v)
+          Toggle {
+            visible: !panelOpts.isScope
+            width: parent.width
+            label: "Spikes"
+            description: "Dense thin flame spikes, no gaps (auto-enables Fire)"
+            checked: panelOpts.spikesOn
+            onClicked: {
+              if (!root.hostWidget) return
+              var v = !checked
+              root.hostWidget.writeVizOptions("spikes", v, "fire", v)
+            }
           }
-        }
-        Toggle {
-          width: parent.width
-          label: "Fire"
-          description: "Red flame gradient from the base"
-          checked: root.hostWidget ? root.hostWidget.config.fire === true : false
-          onClicked: if (root.hostWidget) root.hostWidget.writeVizOption("fire", !checked)
-        }
-        Toggle {
-          width: parent.width
-          label: "Stacks"
-          description: "Segmented bars with gaps, Winamp-style (preview/desktop)"
-          checked: root.hostWidget ? root.hostWidget.config.splits === true : false
-          onClicked: if (root.hostWidget) root.hostWidget.writeVizOption("splits", !checked)
-        }
-        Toggle {
-          width: parent.width
-          label: "Linear fall"
-          description: "Winamp-style instant rise, fixed-rate drop (restarts engine)"
-          checked: root.hostWidget ? root.hostWidget.config.linearFall === true : false
-          onClicked: if (root.hostWidget) root.hostWidget.writeEngineOption("linear_fall", !checked)
-        }
-        Toggle {
-          width: parent.width
-          label: "Oscilloscope"
-          description: "Time-domain waveform instead of bars (preview/desktop)"
-          checked: root.hostWidget ? root.hostWidget.config.scope === true : false
-          onClicked: if (root.hostWidget) root.hostWidget.writeVizOption("scope", !checked)
-        }
-        Toggle {
-          width: parent.width
-          label: "Dots"
-          description: "Dotted skin backdrop behind the bars"
-          checked: root.hostWidget ? root.hostWidget.config.dots !== false : true
-          onClicked: if (root.hostWidget) root.hostWidget.writeVizOption("dots", !checked)
-        }
-        Toggle {
-          width: parent.width
-          label: "Reflection"
-          description: "Faded floor mirror below the bars (preview/desktop)"
-          checked: root.hostWidget ? root.hostWidget.config.reflect === true : false
-          onClicked: if (root.hostWidget) root.hostWidget.writeVizOption("reflect", !checked)
+          Toggle {
+            // Auto-managed by Spikes — hidden while spikes own it.
+            visible: !panelOpts.isScope && !panelOpts.spikesOn
+            width: parent.width
+            label: "Fire"
+            description: "Red flame gradient from the base"
+            checked: root.hostWidget ? root.hostWidget.config.fire === true : false
+            onClicked: if (root.hostWidget) root.hostWidget.writeVizOption("fire", !checked)
+          }
+          Toggle {
+            visible: !panelOpts.isScope
+            width: parent.width
+            label: "Stacks"
+            description: "Segmented bars with gaps, Winamp-style (preview/desktop)"
+            checked: root.hostWidget ? root.hostWidget.config.splits === true : false
+            onClicked: if (root.hostWidget) root.hostWidget.writeVizOption("splits", !checked)
+          }
+          Toggle {
+            visible: !panelOpts.isScope
+            width: parent.width
+            label: "Linear fall"
+            description: "Winamp-style instant rise, fixed-rate drop (restarts engine)"
+            checked: root.hostWidget ? root.hostWidget.config.linearFall === true : false
+            onClicked: if (root.hostWidget) root.hostWidget.writeEngineOption("linear_fall", !checked)
+          }
+
+          // ---- Oscilloscope-only ----
+          PanelSectionHeader { text: "OSCILLOSCOPE"; visible: panelOpts.isScope }
+          Column {
+            width: parent.width
+            spacing: Style.space(4)
+            visible: panelOpts.isScope
+            Text {
+              text: "Waveform on mini, preview and desktop. Follows Fire color and Sensitivity."
+              color: Qt.darker(root.bar ? root.bar.foreground : Color.foreground, 1.4)
+              font.family: Style.font.family; font.pixelSize: Style.font.bodySmall
+              width: parent.width
+              wrapMode: Text.WordWrap
+            }
+            Text {
+              text: "Line thickness"
+              color: Qt.darker(root.bar ? root.bar.foreground : Color.foreground, 1.4)
+              font.family: Style.font.family; font.pixelSize: Style.font.bodySmall
+              width: parent.width
+            }
+            PanelSlider {
+              width: parent.width
+              bar: root.bar
+              minimum: 1; maximum: 5; step: 0.5
+              value: root.hostWidget ? (root.hostWidget.config.scopeThickness ?? 2) : 2
+              onReleased: function(v) { if (root.hostWidget) root.hostWidget.writeVizOption("scope_thickness", Math.round(v * 2) / 2) }
+            }
+          }
+
+          // ---- Common (both modes) ----
+          PanelSectionHeader { text: "COMMON" }
+          Toggle {
+            width: parent.width
+            label: "Dots"
+            description: "Dotted skin backdrop behind the bars"
+            checked: root.hostWidget ? root.hostWidget.config.dots !== false : true
+            onClicked: if (root.hostWidget) root.hostWidget.writeVizOption("dots", !checked)
+          }
+          Toggle {
+            width: parent.width
+            label: "Reflection"
+            description: "Faded floor mirror below the bars (preview/desktop)"
+            checked: root.hostWidget ? root.hostWidget.config.reflect === true : false
+            onClicked: if (root.hostWidget) root.hostWidget.writeVizOption("reflect", !checked)
+          }
         }
 
         PanelSeparator { }

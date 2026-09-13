@@ -87,6 +87,7 @@ Window {
         visual: win.vizConfig.scope === true ? "Oscilloscope" : "Bars"
         dots: win.vizConfig.dots !== false
         reflect: win.vizConfig.reflect === true
+        scopeLineWidth: win.vizConfig.scopeThickness ?? 2
 
         style: "Classic"
         colorSync: false

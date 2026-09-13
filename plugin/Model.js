@@ -123,6 +123,9 @@ function readConfigFromText(tomlText) {
   d.splits = readTomlValue(tomlText, "desktop", "splits") === "true"
   d.linearFall = readTomlValue(tomlText, "desktop", "linear_fall") === "true"
   d.scope = readTomlValue(tomlText, "desktop", "scope") === "true"
+  d.scopeThickness = readTomlFloat(tomlText, "desktop", "scope_thickness") ?? 2
+  if (d.scopeThickness !== d.scopeThickness || d.scopeThickness < 1) d.scopeThickness = 1
+  if (d.scopeThickness > 5) d.scopeThickness = 5
   d.dots = readTomlValue(tomlText, "desktop", "dots") !== "false"
   d.reflect = readTomlValue(tomlText, "desktop", "reflect") === "true"
   // v7.4 Winamp-faithful per-visualization option sets (independent).
@@ -166,7 +169,7 @@ function defaultConfig() {
     themeTop: "#f59e0b",
     fire: false,
     peaks: true, peakFalloff: 0.5, spikes: false, splits: false,
-    linearFall: false, scope: false, dots: true, reflect: false,
+    linearFall: false, scope: false, scopeThickness: 2, dots: true, reflect: false,
     eqMode: "bars", eqColor: "fire", eqGrid: false, eqPeaks: true, eqFalloff: 0.5, eqZoom: "1x", eqThickness: 2,
     scopeStyle: "line", scopeColor: "solid", scopeGrid: false, scopeScan: false, scopeCentered: true, scopeThickness: 2
   }

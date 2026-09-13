@@ -23,6 +23,7 @@ Canvas {
   property color themeTop: "#f59e0b"
   // Oscilloscope feed: 128-point time-domain samples (-1..1, newest last).
   property var wave: []
+  property real scopeLineWidth: 2
   // Winamp skin dressing: dotted backdrop (on) and floor reflection (off).
   property bool dots: true
   property bool reflect: false
@@ -97,6 +98,7 @@ Canvas {
   onVisualChanged: requestPaint()
   onPeaksChanged: requestPaint()
   onPeakFalloffChanged: requestPaint()
+  onScopeLineWidthChanged: requestPaint()
 
   function fillFor(h, a) {
     if (fire) {
@@ -269,7 +271,7 @@ Canvas {
     // True oscilloscope: plots the engine's time-domain snippet when
     // present; falls back to the envelope synth on legacy frames.
     var w = wave
-    ctx.lineWidth = 2
+    ctx.lineWidth = Math.min(5, Math.max(1, scopeLineWidth))
     ctx.strokeStyle = fire ? fireColorAt(0.7) : fillFor(0.8, 0.9)
     ctx.beginPath()
     if (w && w.length > 1) {
