@@ -53,7 +53,9 @@ Window {
       Button {
         anchors.right: parent.right; anchors.verticalCenter: parent.verticalCenter; anchors.rightMargin: 6
         width: 20; height: 16; text: "×"
-        onClicked: win.close()
+        // Release the shared flag BEFORE closing — FileView writes are
+        // async, so give the write time to flush before the window dies.
+        onClicked: { win.setDesktopActive(false); closeTimer.restart() }
       }
     }
 
@@ -84,12 +86,50 @@ Window {
   }
 
   FileView { id: cfgWrite; path: Model.configPath; onFileChanged: {} }
+  // Heartbeat lease: refresh every 2s while open so the bar knows this
+  // window is LIVE. If the process dies without clearing active (crash,
+  // kill -9), the stale flag expires within ~6s and the mini returns.
+  Timer {
+    interval: 2000; repeat: true; running: true
+    onTriggered: win.setDesktopActive(true)
+  }
+  function setDesktopActive(v) {
+    var txt = cfgWrite.text()
+    txt = Model.writeConfigKey(txt, "desktop", "active", v ? "true" : "false")
+    if (v) txt = Model.writeConfigKey(txt, "desktop", "heartbeat", String(Date.now()))
+    cfgWrite.setText(txt)
+  }
+  // Claim the shared flag once config text is available (covers
+  // app-launcher + keybind paths that bypass BarWidget's detach()).
+  property bool _claimed: false
+  property bool _allowClose: false
+  Timer { id: closeTimer; interval: 200; repeat: false; onTriggered: win.close() }
+  Timer {
+    // Delayed quit: FileView.setText is async — quitting instantly in
+    // onClosing can lose the active=false write and leave a stale flag
+    // that hides the mini forever. The 300ms wait lets it flush.
+    id: quitTimer; interval: 300; repeat: false
+    onTriggered: { win._allowClose = true; win.close(); Qt.callLater(Qt.quit) }
+  }
   Timer {
     interval: 100; repeat: true; running: true
-    onTriggered: cfgWrite.reload()
+    onTriggered: {
+      cfgWrite.reload()
+      if (!win._claimed && cfgWrite.text().length > 0) {
+        win._claimed = true
+        win.setDesktopActive(true)
+      }
+    }
   }
 
-  onClosing: {
-    cfgWrite.setText(Model.writeConfigKey(cfgWrite.text(), "desktop", "active", "false"))
+  onClosing: function(close) {
+    // Release the shared flag so the mini returns, then actually quit —
+    // without Qt.quit() the wrapper process lingers windowless and the
+    // mini stays hidden forever (Hyprland killactive only closes the window).
+    win.setDesktopActive(false)
+    if (!win._allowClose) {
+      close.accepted = false
+      quitTimer.restart()
+    }
   }
 }

@@ -14,6 +14,13 @@ BarWidget {
   property var spectrumBands: []
   property bool spectrumSilent: true
   property bool detachedRunning: false
+  // Liveness lease: true only if the flag is set AND the heartbeat is fresh.
+  // A stranded active=true (crash, kill -9, old code) self-heals within ~6s.
+  property bool desktopLive: false
+  function refreshDesktopLive() {
+    var hb = (root.config && root.config.desktopHeartbeat) || 0
+    root.desktopLive = (root.config && root.config.desktopActive === true) && (Date.now() - hb < 6000)
+  }
   readonly property bool paused: Model.isPaused(root.config.desktopActive === true, root.detachedRunning)
   readonly property int barCount: Math.max(8, (root.config && root.config.bands !== undefined) ? root.config.bands : 32)
   property var barModel: buildBarModel(root.barCount)
@@ -101,23 +108,11 @@ BarWidget {
     }
   }
 
-  // Sync detachedRunning with actual process state (every 500ms)
-  Timer {
-    interval: 500; repeat: true; running: true
-    onTriggered: {
-      // If detachProc is not running but detachedRunning is still true, reset it
-      if (!detachProc.running && root.detachedRunning) {
-        root.detachedRunning = false
-        if (root.config.desktopActive === true) {
-          root.writeDesktopActive(false)
-        }
-      }
-      // Also sync: if config says desktop is active but detachProc isn't running, reset
-      if (root.config.desktopActive === true && !detachProc.running && !root.detachedRunning) {
-        root.writeDesktopActive(false)
-      }
-    }
-  }
+  // Shared truth: config desktop.active decides mini visibility,
+  // so EVERY launch path (bar double-click, app launcher, keybind)
+  // converges. detachProc state is only a fallback for close detection.
+  // NOTE: do NOT clear desktop.active here based on detachProc —
+  // that would fight launcher-opened windows this process didn't spawn.
 
   function detach() {
     if (root.config.desktopActive === true) {
@@ -129,6 +124,7 @@ BarWidget {
       if (panelLoader.item) panelLoader.item.close()
       detachProc.command = ["quickshell", "-p", root.pluginDir + "/Desktop.qml"]
       root.writeDesktopActive(true)
+      root.writeDesktopBeat()
       root.detachedRunning = true
       detachProc.running = false
       detachProc.running = true
@@ -142,11 +138,19 @@ BarWidget {
     printErrors: false
     onLoaded: {
       root.config = Model.readConfigFromText(text())
+      root.refreshDesktopLive()
     }
     onFileChanged: {
       root.config = Model.readConfigFromText(text())
+      root.refreshDesktopLive()
     }
     onLoadFailed: root.config = Model.defaultConfig()
+  }
+  // Poll config (watchChanges is unreliable) so shared flags like
+  // desktop.active propagate — this is what hides the mini.
+  Timer {
+    interval: 500; repeat: true; running: true
+    onTriggered: { configFile.reload(); root.refreshDesktopLive() }
   }
 
   FileView {
@@ -160,6 +164,13 @@ BarWidget {
     var txt = Model.writeConfigKey(detachConfigWrite.text(), "desktop", "active", value ? "true" : "false")
     detachConfigWrite.setText(txt)
     root.config = Model.readConfigFromText(txt)
+    root.refreshDesktopLive()
+  }
+  function writeDesktopBeat() {
+    var txt = Model.writeConfigKey(detachConfigWrite.text(), "desktop", "heartbeat", String(Date.now()))
+    detachConfigWrite.setText(txt)
+    root.config = Model.readConfigFromText(txt)
+    root.refreshDesktopLive()
   }
 
   Process {
@@ -186,7 +197,9 @@ BarWidget {
   WidgetButton {
     id: button
     anchors.fill: parent
-    visible: !detachedRunning
+    // Shared flag + fresh heartbeat: hidden whenever a LIVE desktop
+    // window is open, regardless of which path launched it.
+    visible: !root.desktopLive
     bar: root.bar
     tooltipText: root.spectrumSilent ? "Omaviz — no audio" : "Omaviz — click for settings, double-click for desktop"
     text: ""

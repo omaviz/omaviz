@@ -32,6 +32,8 @@ if command -v omarchy >/dev/null; then
 fi
 rm -rf "$PLUGIN_DIR"
 say "removed $PLUGIN_DIR"
+rm -f "$HOME/.local/share/applications/omaviz.desktop"
+say "removed app launcher"
 
 # ---------------------------------------------------------------- config
 if [ "$PURGE" = 1 ]; then

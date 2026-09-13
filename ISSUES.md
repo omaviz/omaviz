@@ -5,12 +5,14 @@
 ### #1 Settings panel toggles
 Peaks toggle and Peak fall buttons may not write to config. `sed` Process approach untested in Quickshell sandbox.
 
-### #4 Right-click / desktop toggle behavior
-- ~~Right-click on mini currently opens desktop window~~ ✅ Fixed
-- **Fix applied:** Removed right-click. Double-click mini or double-click preview opens desktop.
-- When desktop is visible: mini hidden from waybar via `visible: !paused`
-- When desktop closes: mini restores automatically
-- Either mini OR desktop visible at a time, never both
+### #4 ~~Right-click / desktop toggle behavior~~ ✅ Fixed (shared-flag)
+- Right-click removed from mini; double-click mini or preview opens desktop
+- Mini visibility now driven by shared `config desktop.active` flag —
+  works from bar, app launcher, and keybind alike
+- Desktop.qml self-claims `active=true` on open, writes `false` + `Qt.quit()` on close
+- `onClosing → Qt.quit()` fixes the zombie-process loop (killactive only closed the window, process lingered, mini stayed hidden)
+- App launcher fixed: old `Exec=omaviz start` pointed at a CLI that no longer exists → now `quickshell -p …/Desktop.qml`
+- Keybinds fixed: `SUPER+V` launches Desktop.qml directly (dead `omaviz desktop/full/settings` CLI removed)
 
 ### #5 Settings panel needs more options
 Add controls:
@@ -56,7 +58,7 @@ Legacy GL renderer in repo, not used by default.
 
 | Priority | Count |
 |----------|-------|
-| High     | 3     |
+| High     | 2     |
 | Medium   | 5     |
 | Low      | 2     |
-| **Total**| **10**|
+| **Total**| **9** |

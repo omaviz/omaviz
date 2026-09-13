@@ -57,6 +57,17 @@ fi
 chmod +x "$PLUGIN_DIR/bin/omaviz-engine"
 say "plugin -> $PLUGIN_DIR"
 
+# ---------------------------------------------------------------- launcher
+# App-launcher entry: opens the desktop window directly (quickshell -p).
+# Desktop.qml self-claims config desktop.active on open, so the mini hides
+# no matter which path launched it. Replaces any stale `omaviz start` entry
+# that pointed at a CLI that no longer exists.
+step "installing app launcher"
+mkdir -p "$HOME/.local/share/applications"
+cp -f "$SRC/plugin/assets/omaviz.desktop" "$HOME/.local/share/applications/omaviz.desktop"
+rm -f "$HOME/.local/share/applications/omaviz-desktop.desktop"
+say "launcher -> $HOME/.local/share/applications/omaviz.desktop"
+
 # ---------------------------------------------------------------- enable
 # The bar-widget is NOT auto-enabled just by copying files — it must be
 # explicitly enabled or it stays `disabled` and never mounts (no mini, no

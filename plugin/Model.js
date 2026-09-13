@@ -96,6 +96,10 @@ function readConfigFromText(tomlText) {
   if (d.widthScale !== d.widthScale || d.widthScale < 0.5 || d.widthScale > 4) d.widthScale = 1.5
   d.styleDesktop = readTomlValue(tomlText, "desktop", "style") ?? d.style
   d.desktopActive = readTomlValue(tomlText, "desktop", "active") === "true"
+  // Heartbeat lease (epoch ms, written by the open desktop window every 2s).
+  // Guards against a stranded active=true with no live window.
+  d.desktopHeartbeat = parseInt(readTomlValue(tomlText, "desktop", "heartbeat") ?? "0", 10)
+  if (d.desktopHeartbeat !== d.desktopHeartbeat) d.desktopHeartbeat = 0
   d.colorSync = readTomlValue(tomlText, "mini", "color_sync") === "true"
   d.gpu = readTomlValue(tomlText, "desktop", "gpu") !== "false"
   // v7.2 visual options (window)
@@ -141,6 +145,7 @@ function defaultConfig() {
     style: "classic",
     styleDesktop: "classic",
     desktopActive: false,
+    desktopHeartbeat: 0,
     colorSync: false,
     gpu: true,
     border: true,
