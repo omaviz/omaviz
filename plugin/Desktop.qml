@@ -2,6 +2,7 @@ import QtQuick
 import QtQuick.Controls
 import Quickshell
 import Quickshell.Io
+import Quickshell.Services.Mpris
 import "Model.js" as Model
 
 Window {
@@ -22,6 +23,41 @@ Window {
   // so settings-panel changes reflect in the open window within ~100ms.
   property var vizConfig: Model.defaultConfig()
   function refreshVizConfig() { win.vizConfig = Model.readConfigFromText(cfgWrite.text()) }
+  // ---- Now-playing (MPRIS, zero deps — Quickshell built-in) ----
+  // Player pick mirrors the shell media service: prefer a playing source
+  // with track metadata, else the first source that has any.
+  readonly property var mprisPlayers: Mpris.players ? Mpris.players.values : []
+  function pickPlayer() {
+    var fallback = null
+    for (var i = 0; i < win.mprisPlayers.length; i++) {
+      var p = win.mprisPlayers[i]
+      if (!p) continue
+      var hasTrack = !!(p.trackTitle || p.trackArtist)
+      if (p.isPlaying && hasTrack) return p
+      if (!fallback && (hasTrack || p.identity || p.desktopEntry)) fallback = p
+    }
+    return fallback
+  }
+  readonly property var activePlayer: win.pickPlayer()
+  readonly property string trackTitle: win.activePlayer ? (win.activePlayer.trackTitle || "") : ""
+  readonly property string trackArtist: win.activePlayer ? (win.activePlayer.trackArtist || "") : ""
+  readonly property string trackArt: win.activePlayer ? (win.activePlayer.trackArtUrl || "") : ""
+  readonly property string trackKey: win.trackTitle + "\n" + win.trackArtist
+  readonly property string trackLabel: win.trackArtist !== "" ? win.trackArtist + " — " + win.trackTitle : win.trackTitle
+  property bool showTrack: false
+  onTrackKeyChanged: {
+    if (win.trackTitle !== "") {
+      win.showTrack = true
+      trackFade.restart()
+    } else {
+      win.showTrack = false
+    }
+  }
+  Timer {
+    id: trackFade
+    interval: 4000; repeat: false
+    onTriggered: win.showTrack = false
+  }
 
   Process {
     id: bridge
@@ -102,6 +138,23 @@ Window {
         sensitivity: win.vizConfig.sensitivity ?? 1.0
         themeBottom: win.vizConfig.themeBottom || "#e68e0d"
         themeTop: win.vizConfig.themeTop || "#f59e0b"
+      }
+
+      // Now-playing pill: appears on track change, fades after 4s.
+      Rectangle {
+        anchors.left: parent.left; anchors.top: parent.top
+        anchors.leftMargin: 8; anchors.topMargin: 6
+        width: trackText.width + 20; height: 24
+        radius: 12
+        color: Qt.rgba(0, 0, 0, 0.55)
+        opacity: win.showTrack ? 1 : 0
+        Behavior on opacity { NumberAnimation { duration: 600 } }
+        Text {
+          id: trackText
+          anchors.centerIn: parent
+          text: win.trackLabel
+          color: "#f2f2f7"; font.pixelSize: 11; font.family: "monospace"
+        }
       }
     }
   }
