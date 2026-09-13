@@ -140,9 +140,14 @@ Panel {
           color: Color.popups.background
           radius: Style.cornerRadius
           border.width: 1; border.color: Qt.rgba(1,1,1,0.08)
+          DotsCanvas {
+            anchors.fill: parent; anchors.margins: Style.space(6)
+            visible: root.hcfg.dots !== false
+          }
           VisualCanvas {
             id: previewViz
             anchors.fill: parent; anchors.margins: Style.space(6)
+            dots: false   // static underlay above
             // Event-driven: bound straight to the bar's reactive spectrum
             // properties — no poll timer (the old 33ms timer added up to a
             // frame of display lag plus 30 wakeups/sec for nothing).
@@ -151,7 +156,7 @@ Panel {
             wave: root.hostWidget ? root.hostWidget.spectrumWave : []
             visual: root.hostWidget && root.hostWidget.config.scope === true ? "Oscilloscope" : "Bars"
             artMode: root.hcfg.artMode === true
-            dots: root.hcfg.dots !== false
+            dots: false   // static underlay above
             reflect: root.hcfg.reflect === true
             scopeLineWidth: (root.hcfg.scopeThickness ?? 2)
             colorSync: false

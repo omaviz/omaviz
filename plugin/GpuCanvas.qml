@@ -27,7 +27,7 @@ Item {
   property bool mono: false
   property bool monoLight: false
   property bool artMode: false
-  property bool dots: true
+  property bool dots: false   // static DotsCanvas underlay owns the grid
   property bool reflect: false
   property int spikeBars: 0
 
@@ -93,6 +93,10 @@ Item {
     if (!root.visible) return
     var b = displayBands()
     updatePeaks(b)
+    // Explicit capture of the last paint, then schedule the next one.
+    // update() does NOT repaint the source, so this cannot feed back.
+    // NEVER call it from inside onPaint (repaint storm).
+    texSrc.update()
     texCanvas.requestPaint()
   }
   onBandsChanged: root.refresh()
@@ -112,13 +116,18 @@ Item {
 
   Canvas {
     id: texCanvas
-    width: 512; height: 3
-    visible: false
+    width: 512; height: 4
+    // VISIBLE source (hidden ones never paint, so explicit update()
+    // captures stay empty); hideSource keeps it off the display.
+    function byte2(v, scale) {
+      // Exact small-int packing: round(v/scale*255), decoded by floor(*scale+.5).
+      return Math.max(0, Math.min(255, Math.round(v / scale * 255)))
+    }
     onPaint: {
       var ctx = getContext("2d")
       var b = root.displayBands()
       var n = Math.min(b.length, 512)
-      ctx.clearRect(0, 0, 512, 3)
+      ctx.clearRect(0, 0, 512, 4)
       for (var i = 0; i < n; i++) {
         var v = silent ? 0 : Math.min(1, Math.max(0, b[i]) * sensitivity)
         var g = Math.round(v * 255)
@@ -136,16 +145,36 @@ Item {
         ctx.fillStyle = "rgb(" + wg + "," + wg + "," + wg + ")"
         ctx.fillRect(k, 2, 1, 1)
       }
-      // Push the repaint into the (non-live) effect source explicitly —
-      // live:true would re-render the scene continuously.
-      texSrc.update()
+      // Row 3: control cells (exact codes, see gpu.frag header).
+      function cell(x, r, g, b, a) {
+        if (g === undefined) g = 0
+        if (b === undefined) b = 0
+        if (a === undefined) a = 255
+        ctx.fillStyle = "rgba(" + r + "," + g + "," + b + "," + (a / 255) + ")"
+        ctx.fillRect(x, 3, 1, 1)
+      }
+      var vis = (visual === "Wave" || visual === "Oscilloscope") ? 1 : 0
+      cell(0, vis, spikes ? 255 : 0, splits ? 255 : 0, fire ? 255 : 0)
+      cell(1, dots ? 255 : 0, reflect ? 255 : 0, artMode ? 255 : 0, mono ? 255 : 0)
+      cell(2, monoLight ? 255 : 0, colorSync ? 255 : 0,
+           Math.round(Math.min(5, Math.max(1, scopeLineWidth)) / 5 * 255), peaks ? 255 : 0)
+      cell(3, Math.round(themeBottom.r * 255), Math.round(themeBottom.g * 255), Math.round(themeBottom.b * 255))
+      cell(4, Math.round(themeTop.r * 255), Math.round(themeTop.g * 255), Math.round(themeTop.b * 255))
+      cell(5, texCanvas.byte2(Math.min(n, 512), 512))
+      cell(6, texCanvas.byte2(Math.min(6, Math.max(0, spikes ? 0 : gapPx)), 8))
+      var W = Math.min(65535, Math.max(0, Math.round(root.width)))
+      var H = Math.min(65535, Math.max(0, Math.round(root.height)))
+      cell(7, Math.floor(W / 256), W % 256, Math.floor(H / 256), H % 256)
     }
   }
 
   ShaderEffectSource {
     id: texSrc
     sourceItem: texCanvas
-    live: false
+    // live:true re-captures on every source repaint (engine frame
+    // rate). No manual update() anywhere — calling it from onPaint
+    // schedules another repaint and spins the scene at full speed.
+    live: true
     hideSource: true
     smooth: false   // NEAREST: control texels must stay exact
   }
@@ -154,27 +183,6 @@ Item {
     id: fx
     anchors.fill: parent
     property ShaderEffectSource u_tex: texSrc
-    property real u_pxW: root.width
-    property real u_pxH: root.height
-    property real u_nb: {
-      var b = root.displayBands()
-      return b.length > 0 ? Math.min(b.length, 512) : 0
-    }
-    property real u_gap: spikes ? 0 : Math.min(6, Math.max(0, gapPx))
-    property real u_visual: (visual === "Wave" || visual === "Oscilloscope") ? 1 : 0
-    property real u_spikes: spikes ? 1 : 0
-    property real u_splits: splits ? 1 : 0
-    property real u_fire: fire ? 1 : 0
-    property real u_dots: dots ? 1 : 0
-    property real u_reflect: reflect ? 1 : 0
-    property real u_art: artMode ? 1 : 0
-    property real u_mono: mono ? 1 : 0
-    property real u_monoLight: monoLight ? 1 : 0
-    property real u_sync: colorSync ? 1 : 0
-    property vector3d u_bot: Qt.vector3d(themeBottom.r, themeBottom.g, themeBottom.b)
-    property vector3d u_top: Qt.vector3d(themeTop.r, themeTop.g, themeTop.b)
-    property real u_thick: Math.min(5, Math.max(1, scopeLineWidth))
-    property real u_peaks: peaks ? 1 : 0
     fragmentShader: Qt.resolvedUrl("gpu.qsb")
     onStatusChanged: if (status === ShaderEffect.Error) root.gpuFailed()
   }

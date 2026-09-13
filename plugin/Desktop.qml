@@ -138,8 +138,7 @@ Window {
         }
       }
 
-      GpuCanvas {
-        id: desktopGpu
+      DotsCanvas {
         anchors.left: parent.left; anchors.right: parent.right
         anchors.leftMargin: 4; anchors.rightMargin: 4
         anchors.verticalCenter: win.vizConfig.artMode === true ? parent.verticalCenter : undefined
@@ -147,7 +146,25 @@ Window {
         anchors.bottom: win.vizConfig.artMode === true ? undefined : parent.bottom
         anchors.bottomMargin: 4
         height: win.vizConfig.artMode === true ? Math.max(60, parent.height * 0.62) : parent.height - 4
-        visible: win.gpuActive
+        visible: win.vizConfig.dots !== false
+      }
+      // Single active renderer (Loader unloads the other): a hidden
+      // Canvas still runs its paint JS, so dual instantiation doubles
+      // CPU. GPU preferred, Canvas fallback (no-GPU path).
+      Loader {
+        id: vizLoader
+        anchors.left: parent.left; anchors.right: parent.right
+        anchors.leftMargin: 4; anchors.rightMargin: 4
+        anchors.verticalCenter: win.vizConfig.artMode === true ? parent.verticalCenter : undefined
+        anchors.top: win.vizConfig.artMode === true ? undefined : parent.top
+        anchors.bottom: win.vizConfig.artMode === true ? undefined : parent.bottom
+        anchors.bottomMargin: 4
+        height: win.vizConfig.artMode === true ? Math.max(60, parent.height * 0.62) : parent.height - 4
+        sourceComponent: win.gpuActive ? gpuComp : canvasComp
+      }
+      Component {
+        id: gpuComp
+        GpuCanvas {
         onGpuFailed: win.gpuFailed = true
 
         bands: win.spectrumBands
@@ -155,7 +172,7 @@ Window {
         wave: win.spectrumWave
         visual: win.vizConfig.scope === true ? "Oscilloscope" : "Bars"
         artMode: win.vizConfig.artMode === true
-        dots: win.vizConfig.dots !== false
+        dots: false   // static underlay above
         reflect: win.vizConfig.reflect === true
         scopeLineWidth: win.vizConfig.scopeThickness ?? 2
         colorSync: false
@@ -169,20 +186,13 @@ Window {
         sensitivity: win.vizConfig.sensitivity ?? 1.0
         themeBottom: win.vizConfig.themeBottom || "#e68e0d"
         themeTop: win.vizConfig.themeTop || "#f59e0b"
+        }
       }
-
-      VisualCanvas {
-        id: desktopViz
-        visible: !win.gpuActive
-        anchors.left: parent.left; anchors.right: parent.right
-        anchors.leftMargin: 4; anchors.rightMargin: 4
+      Component {
+        id: canvasComp
+        VisualCanvas {
         // Artwork: centered band (min 60px) so short windows keep it
         // visible instead of sliding it out; otherwise full-bleed.
-        anchors.verticalCenter: win.vizConfig.artMode === true ? parent.verticalCenter : undefined
-        anchors.top: win.vizConfig.artMode === true ? undefined : parent.top
-        anchors.bottom: win.vizConfig.artMode === true ? undefined : parent.bottom
-        anchors.bottomMargin: 4
-        height: win.vizConfig.artMode === true ? Math.max(60, parent.height * 0.62) : parent.height - 4
 
         bands: win.spectrumBands
         silent: win.spectrumSilent
@@ -190,7 +200,7 @@ Window {
 
         visual: win.vizConfig.scope === true ? "Oscilloscope" : "Bars"
         artMode: win.vizConfig.artMode === true
-        dots: win.vizConfig.dots !== false
+        dots: false   // static underlay above
         reflect: win.vizConfig.reflect === true
         scopeLineWidth: win.vizConfig.scopeThickness ?? 2
 
@@ -208,6 +218,7 @@ Window {
         sensitivity: win.vizConfig.sensitivity ?? 1.0
         themeBottom: win.vizConfig.themeBottom || "#e68e0d"
         themeTop: win.vizConfig.themeTop || "#f59e0b"
+        }
       }
 
     }

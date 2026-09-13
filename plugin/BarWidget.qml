@@ -249,9 +249,15 @@ BarWidget {
 
       // One shared renderer everywhere: mini uses the same VisualCanvas
       // as preview/desktop, so spikes/splits/fire/peaks look identical.
+      DotsCanvas {
+        anchors.fill: parent
+        anchors.margins: root.config.spikes === true ? 0 : 4
+        visible: root.config.dots !== false && !root.desktopLive
+      }
       VisualCanvas {
         anchors.fill: parent
         anchors.margins: root.config.spikes === true ? 0 : 4
+        dots: false   // static underlay above (per-frame dots = 34K rects)
         bands: root.desktopLive ? [] : root.spectrumBands
         silent: root.desktopLive ? true : root.spectrumSilent
         visual: root.config.scope === true ? "Oscilloscope" : "Bars"

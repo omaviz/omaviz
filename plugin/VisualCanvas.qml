@@ -31,7 +31,7 @@ Canvas {
   // white bars. Foreground is always white; art (desktop-only Image
   // layer) sits behind the wash when available.
   // Winamp skin dressing: dotted backdrop (on) and floor reflection (off).
-  property bool dots: true
+  property bool dots: false   // static DotsCanvas underlay owns the grid
   property bool reflect: false
   // Spike density cap: 0 = auto (~2px per bar across full width).
   // Mini passes 32 to keep its density down.
@@ -137,6 +137,8 @@ Canvas {
   onPaint: {
     var ctx = getContext("2d")
     ctx.clearRect(0, 0, width, height)
+    // NOTE: dots defaults false — surfaces use the static DotsCanvas
+    // underlay (per-frame dots cost ~34K rects on a big desktop).
     if (dots) drawDots(ctx)
     var b = displayBands()
     var n = b.length
