@@ -107,7 +107,7 @@ Canvas {
   onScopeLineWidthChanged: requestPaint()
   onMonoChanged: requestPaint()
   onMonoLightChanged: requestPaint()
-  onArtworkChanged: requestPaint()
+  onArtModeChanged: requestPaint()
 
   function fillFor(h, a) {
     if (artMode) return "#ffffff"
