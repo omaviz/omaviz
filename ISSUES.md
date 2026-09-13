@@ -75,7 +75,7 @@ Mini verified live in amber after rewrite.
 - #11 VisualCanvasGL.qml: kept as documented spare (zero runtime cost)
 - #18 version + spec drift fixed (manifest 7.8.0, spec v7.8.0 documents shared Canvas, options, flag/heartbeat, emit policy)
 - #19 empty plugin/tests/ removed; QML covered by qmllint, engine by cargo test (35 green)
-- #7 multi-channel: deferred by design (needs protocol + UI; not quality-blocking)
+- #7 multi-channel (instrument separation): ❌ won't-do — confirmed with user 2026-09-13. Splitting a mixed stream into instruments needs ML source separation, out of scope for an FFT visualizer. Per-app taps possible later if wanted.
 
 ---
 
