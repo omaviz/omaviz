@@ -3,6 +3,7 @@ import QtQuick.Controls
 import Quickshell
 import Quickshell.Io
 import Quickshell.Services.Mpris
+import Qt5Compat.GraphicalEffects
 import "Model.js" as Model
 
 Window {
@@ -102,28 +103,43 @@ Window {
       // Artwork backdrop (immersive only): downscaled source = free blur,
       // dimmed so the white bars stay readable. Falls back to the
       // canvas wash when no art (radio, browser streams).
-      Image {
+      // Plexamp-style backdrop: heavy gaussian blur (no detail survives,
+      // only color clouds) + vertical scrim for title/bar legibility.
+      // FastBlur caches: static art costs one frame, not per-frame.
+      Item {
         anchors.fill: parent
-        // Always rendered while immersive: empty source draws nothing, so
-        // arrival fades in via the opacity animation instead of popping.
         visible: win.vizConfig.immersive === true && win.vizConfig.artwork !== false
-        source: win.trackArt
-        // Tiny source upscaled = heavy blur: only dominant colors survive.
-        sourceSize.width: 24; sourceSize.height: 24
-        fillMode: Image.PreserveAspectCrop
-        opacity: win.trackArt !== "" ? 0.5 : 0
+        opacity: win.trackArt !== "" ? 1 : 0
         Behavior on opacity { NumberAnimation { duration: 900 } }
-      }
-      Rectangle {
-        anchors.fill: parent
-        visible: win.vizConfig.immersive === true
-        color: Qt.rgba(0, 0, 0, 0.45)
+        Image {
+          id: artSource
+          anchors.fill: parent
+          source: win.trackArt
+          sourceSize.width: 160; sourceSize.height: 160
+          fillMode: Image.PreserveAspectCrop
+          visible: false
+        }
+        FastBlur {
+          anchors.fill: parent
+          source: artSource
+          radius: 100
+        }
+        Rectangle {
+          anchors.fill: parent
+          gradient: Gradient {
+            GradientStop { position: 0.0; color: Qt.rgba(0, 0, 0, 0.62) }
+            GradientStop { position: 0.45; color: Qt.rgba(0, 0, 0, 0.30) }
+            GradientStop { position: 1.0; color: Qt.rgba(0, 0, 0, 0.66) }
+          }
+        }
       }
 
       VisualCanvas {
         id: desktopViz
-        anchors.fill: parent
-        anchors.margins: 4
+        anchors.left: parent.left; anchors.right: parent.right; anchors.bottom: parent.bottom
+        anchors.leftMargin: 4; anchors.rightMargin: 4; anchors.bottomMargin: 4
+        height: win.vizConfig.immersive === true ? parent.height * 0.62 : parent.height - 4
+        anchors.top: win.vizConfig.immersive === true ? undefined : parent.top
 
         bands: win.spectrumBands
         silent: win.spectrumSilent
