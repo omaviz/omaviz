@@ -347,7 +347,8 @@ var spectrumData = {
   energy: 0,
   beat: 0,
   silent: true,
-  source: ""
+  source: "",
+  seq: 0
 }
 
 // Parse a JSON line from spectrum-bridge / omaviz-engine stdout
@@ -359,6 +360,9 @@ function parseSpectrumLine(jsonLine) {
       spectrumData.energy = data.energy !== undefined ? data.energy : 0
       spectrumData.beat = data.beat !== undefined ? data.beat : 0
       spectrumData.silent = data.silent === true
+      // Frame sequence: lets consumers (preview) skip reassignment when
+      // the engine holds a frame to its heartbeat rate.
+      spectrumData.seq++
       // v7: engine reports its resolved backend name. Preserve any prior value
       // when the line omits `source` (e.g. an older/legacy frame).
       if (typeof data.source === "string" && data.source.length > 0) {
@@ -417,20 +421,6 @@ function setVisualFiles(files) {
 // Redirect path helpers the panel references
 function readTomlFile() { return "" }
 
-// ---- Desktop detach / mini-pause resolution ----
-// The mini player freezes while the detached desktop window is open. Pause is
-// derived from TWO signals so a stale on-disk flag can never freeze the mini
-// forever:
-//   - cfgActive:  desktop.active === "true" in config.toml (set on detach)
-//   - detachRunning: the Panel's detachProc is genuinely still running
-// If the desktop window is killed externally (crash / logout / SIGKILL) its
-// onClosing handler never runs, leaving cfgActive stuck true — but the detach
-// process exits, so detachRunning becomes false and we DO NOT pause. This
-// prevents the "mini stuck paused" failure mode.
-function isPaused(cfgActive, detachRunning) {
-  return cfgActive === true && detachRunning === true
-}
-
 // ---- Desktop mode ----
 function isDesktopActiveFromText(tomlText) {
   return readTomlValue(tomlText, "desktop", "active") === "true"
@@ -451,7 +441,6 @@ if (typeof module !== "undefined") {
     parseSpectrumLine: parseSpectrumLine,
     spectrumData: spectrumData,
     isDesktopActiveFromText: isDesktopActiveFromText,
-    isPaused: isPaused,
     readFileText: readFileText,
     cacheFileText: cacheFileText,
     listVisualFiles: listVisualFiles,

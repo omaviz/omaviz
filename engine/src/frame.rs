@@ -17,16 +17,24 @@ pub struct Frame<'a> {
 
 /// Serialize a frame to a single-line JSON string.
 /// Order is fixed: bands, energy, beat, silent, source.
+/// The source name is escaped so it can never break the JSON contract.
 pub fn build_frame(frame: &Frame) -> String {
     // Build manually to guarantee key order + stable numeric formatting.
     let bands_json: Vec<String> = frame.bands.iter().map(|v| format!("{:.4}", v)).collect();
+    let source_escaped = frame
+        .source
+        .replace('\\', "\\\\")
+        .replace('"', "\\\"")
+        .replace('\n', "\\n")
+        .replace('\r', "\\r")
+        .replace('\t', "\\t");
     format!(
         "{{\"bands\":[{}],\"energy\":{:.4},\"beat\":{:.4},\"silent\":{},\"source\":\"{}\"}}",
         bands_json.join(","),
         frame.energy,
         frame.beat,
         frame.silent,
-        frame.source
+        source_escaped
     )
 }
 
@@ -101,5 +109,14 @@ mod tests {
             let s = build_frame(&f);
             assert!(s.contains(&format!("\"source\":\"{src}\"")), "missing source {src}: {s}");
         }
+    }
+
+    #[test]
+    fn source_with_special_chars_stays_valid_json() {
+        let b = vec![0.5];
+        let f = Frame { bands: &b, energy: 0.1, beat: 0.0, silent: false, source: "we\"ird\\name" };
+        let s = build_frame(&f);
+        let v: serde_json::Value = serde_json::from_str(&s).expect("escaped source must parse");
+        assert_eq!(v["source"].as_str().unwrap(), "we\"ird\\name");
     }
 }

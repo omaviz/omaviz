@@ -141,11 +141,17 @@ Panel {
             anchors.fill: parent; anchors.margins: Style.space(6)
             property var _liveBands: []
             property bool _liveSilent: true
+            property int _frameSeq: -1
             Timer {
               interval: 33; repeat: true; running: true
               onTriggered: {
-                var nb = Model.spectrumData.bands
-                previewViz._liveBands = nb
+                // Only push new frames: reassigning the same array forces
+                // a full Canvas repaint + peak churn at 30Hz for nothing.
+                // (Engine tags each emitted frame; see spectrumSeq.)
+                var seq = Model.spectrumData.seq
+                if (seq === previewViz._frameSeq) return
+                previewViz._frameSeq = seq
+                previewViz._liveBands = Model.spectrumData.bands
                 previewViz._liveSilent = Model.spectrumData.silent
               }
             }
@@ -156,7 +162,7 @@ Panel {
             colorSync: false
             barCount: 64
             colourScheme: 0
-            gapPx: 1
+            gapPx: root.hostWidget ? Math.min(6, Math.max(0, root.hostWidget.barGap)) : 1
             minBarHeight: 0
             // Live from bar config — settings below reflect immediately.
             peaks: root.hostWidget ? root.hostWidget.config.peaks !== false : true
@@ -165,6 +171,8 @@ Panel {
             fire: root.hostWidget ? root.hostWidget.config.fire === true : false
             splits: root.hostWidget ? root.hostWidget.config.splits === true : false
             sensitivity: root.hostWidget ? (root.hostWidget.config.sensitivity ?? 1.0) : 1.0
+            themeBottom: root.hostWidget ? (root.hostWidget.config.colorSync === true ? Qt.darker(Color.accent, 1.3) : (root.hostWidget.config.themeBottom || "#e68e0d")) : "#e68e0d"
+            themeTop: root.hostWidget ? (root.hostWidget.config.colorSync === true ? Color.accent : (root.hostWidget.config.themeTop || "#f59e0b")) : "#f59e0b"
           }
           // Double-click on preview opens desktop window
           MouseArea {

@@ -13,7 +13,6 @@ BarWidget {
   property var visuals: []
   property var spectrumBands: []
   property bool spectrumSilent: true
-  property bool detachedRunning: false
   // Liveness lease: true only if the flag is set AND the heartbeat is fresh.
   // A stranded active=true (crash, kill -9, old code) self-heals within ~6s.
   property bool desktopLive: false
@@ -21,7 +20,6 @@ BarWidget {
     var hb = (root.config && root.config.desktopHeartbeat) || 0
     root.desktopLive = (root.config && root.config.desktopActive === true) && (Date.now() - hb < 6000)
   }
-  readonly property bool paused: Model.isPaused(root.config.desktopActive === true, root.detachedRunning)
   readonly property int barCount: Math.max(8, (root.config && root.config.bands !== undefined) ? root.config.bands : 32)
 
   function applyConfig(text) { root.config = Model.readConfigFromText(text) }
@@ -75,14 +73,21 @@ BarWidget {
         }
         root.spectrumBands = Model.spectrumData.bands
         root.spectrumSilent = Model.spectrumData.silent
+        root.noteSpectrumFrame()
       }
     }
     onExited: function(code, status) {
-      if (root._bridgeRetries < 10) { root._bridgeRetries++; bridgeRetryTimer.restart() }
+      // Indefinite backoff retry: engine death must never permanently kill
+      // the mini. Interval grows 1.5s → 30s cap; silence shows meanwhile.
+      root._bridgeRetries++
+      bridgeRetryTimer.interval = Math.min(30000, 1500 * root._bridgeRetries)
+      bridgeRetryTimer.restart()
     }
   }
 
   property int _bridgeRetries: 0
+  // Successful frames reset the backoff so the next failure starts fast.
+  function noteSpectrumFrame() { root._bridgeRetries = 0 }
   Timer { id: bridgeRetryTimer; interval: 1500; repeat: false; onTriggered: { spectrumProc.running = true } }
 
   Process {
@@ -90,8 +95,8 @@ BarWidget {
     running: false
     stdout: StdioCollector { onDataChanged: function() {} }
     onExited: function(code, status) {
-      // Desktop window closed (manual close, Super+W, or crash)
-      root.detachedRunning = false
+      // Bar-spawned desktop closed: release the shared flag (Desktop's own
+      // onClosing also writes it; last write wins, same value).
       if (root.config.desktopActive === true) {
         root.writeDesktopActive(false)
       }
@@ -107,7 +112,6 @@ BarWidget {
   function detach() {
     if (root.config.desktopActive === true) {
       detachProc.running = false
-      root.detachedRunning = false
       root.writeDesktopActive(false)
     } else {
       // Close the settings panel before opening desktop
@@ -115,7 +119,6 @@ BarWidget {
       detachProc.command = ["quickshell", "-p", root.pluginDir + "/Desktop.qml"]
       root.writeDesktopActive(true)
       root.writeDesktopBeat()
-      root.detachedRunning = true
       detachProc.running = false
       detachProc.running = true
     }
@@ -151,7 +154,10 @@ BarWidget {
     Component.onCompleted: reload()
   }
   function writeDesktopActive(value) {
-    var txt = Model.writeConfigKey(detachConfigWrite.text(), "desktop", "active", value ? "true" : "false")
+    // Base the write on configFile (reloaded every 500ms), not the
+    // write-only view — bounds staleness so concurrent writers can't
+    // resurrect each other's flags from ancient caches (#16).
+    var txt = Model.writeConfigKey(configFile.text(), "desktop", "active", value ? "true" : "false")
     detachConfigWrite.setText(txt)
     root.config = Model.readConfigFromText(txt)
     root.refreshDesktopLive()
@@ -163,7 +169,7 @@ BarWidget {
     // Multi-key single write: two sequential setText calls race on the same
     // stale base text and the second clobbers the first (e.g. Spikes+Fire).
     // Apply both keys to ONE base text, then a single setText.
-    var txt = detachConfigWrite.text()
+    var txt = configFile.text()
     txt = Model.writeConfigKey(txt, "desktop", key1, vizVal(value1))
     if (key2) txt = Model.writeConfigKey(txt, "desktop", key2, vizVal(value2))
     detachConfigWrite.setText(txt)
@@ -175,7 +181,7 @@ BarWidget {
     return value
   }
   function writeDesktopBeat() {
-    var txt = Model.writeConfigKey(detachConfigWrite.text(), "desktop", "heartbeat", String(Date.now()))
+    var txt = Model.writeConfigKey(configFile.text(), "desktop", "heartbeat", String(Date.now()))
     detachConfigWrite.setText(txt)
     root.config = Model.readConfigFromText(txt)
     root.refreshDesktopLive()
@@ -232,8 +238,9 @@ BarWidget {
       anchors.left: parent.left
       anchors.right: parent.right
       height: parent.height * 0.90
-      // Spikes: fully transparent, no margins — bars sit directly on waybar.
-      color: root.config.spikes === true ? "transparent" : Qt.rgba(0.08, 0.08, 0.10, 0.75)
+      // Theme-aware container: tracks the shell background so it reads
+      // correctly on light and dark themes (dark theme ≈ previous look).
+      color: root.config.spikes === true ? "transparent" : Qt.rgba(Color.background.r, Color.background.g, Color.background.b, 0.82)
       // Spikes run borderless — the dense spectrum sits directly on the bar.
       border.width: root.config.spikes === true ? 0 : 1
       border.color: Qt.rgba(0.20, 0.20, 0.25, 0.50)
@@ -250,7 +257,8 @@ BarWidget {
         colorSync: root.config.colorSync === true
         barCount: root.barCount
         colourScheme: 0
-        gapPx: 1
+        // Rendered gap follows config (same value that sizes the container).
+        gapPx: Math.min(6, Math.max(0, root.barGap))
         minBarHeight: 0
         peaks: root.config.peaks !== false
         peakFalloff: root.config.peakFalloff ?? 0.5
@@ -261,6 +269,9 @@ BarWidget {
         // Mini holds 32 bars even in spikes (downsampled from the 128 feed).
         spikeBars: 32
         sensitivity: root.config.sensitivity ?? 1.0
+        // colorSync follows the LIVE shell accent; otherwise config colors.
+        themeBottom: root.config.colorSync === true ? Qt.darker(Color.accent, 1.3) : (root.config.themeBottom || "#e68e0d")
+        themeTop: root.config.colorSync === true ? Color.accent : (root.config.themeTop || "#f59e0b")
       }
     }
   }

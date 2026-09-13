@@ -1,7 +1,7 @@
-# omaviz — Application Specification (v7.6.1)
+# omaviz — Application Specification (v7.8.0)
 
 > **Plugin id:** `org.omaviz.visualizer`
-> **Version:** 7.6.1 (spec) · manifest `2.0.0`
+> **Version:** 7.8.0 (spec + manifest, git tag)
 > **Status:** Single-package Omarchy QML plugin. Audio analysis is bundled as
 > one native binary (`plugin/bin/omaviz-engine`) shipped **inside** the plugin
 > directory. No systemd service, no Unix socket, no `~/.local/bin` binaries.
@@ -91,18 +91,28 @@ Only the container size and position change.
 
 | Property | Default | Description |
 |----------|---------|-------------|
-| `gapPx` | `1` | Space between bars in pixels |
+| `gapPx` | config `gap` | Space between bars in pixels (0 in spikes) |
 | `minBarHeight` | `0` | Minimum bar height (0 = allow flat) |
-| `peaks` | `true` | Show peak-hold markers |
-| `peakFalloff` | `0.5` | Peak falloff speed (0=slow, 1=fast) |
+| `peaks` | `true` | Show peak-hold markers (2px white; 1px hot in spikes) |
+| `peakFalloff` | `0.5` | Peak falloff speed (0=holds, 1=falls fast) |
+| `spikes` | `false` | Dense thin gapless flame spikes (~2px, width-derived count) |
+| `spikeBars` | `0` | Spike count cap (0=auto; mini passes 32) |
+| `fire` | `false` | Vertical red→orange→white-hot flame gradient (container-shared) |
+| `splits` | `false` | Winamp segments: 3px blocks + 1px gaps (preview/desktop) |
+| `sensitivity` | `1.0` | Input gain multiplier |
+| `themeBottom`/`themeTop` | amber | Theme-anchored colors; live shell accent when `colorSync` |
 
 ### Bar rendering
 
 1. **Discrete mapping**: `displayBands()` maps source bands to display bars:
    - **Downsampling** (display < source): max-pooling for sharp peaks
-   - **Upsampling** (display > source): nearest-neighbor (blocky, not smooth)
-2. **Fill**: Theme-dominant gradient (amber `#e68e0d` → white) using `Qt.rgba()`
-3. **Peaks**: White 2px horizontal lines at each bar's peak position, falling at configurable rate
+   - **Upsampling** (display > source): linear interpolation (no lockstep banding)
+2. **Fill**: theme-anchored ramp (bottom → white-hot), or bottom→top theme
+   blend when `colorSync`; fire uses the shared vertical flame gradient
+3. **Peaks**: horizontal ticks at each bar's peak, falling at `peakFalloff`
+4. **Engine feeds**: bar 128 bands (mini→32, preview→64), desktop 256;
+   engine emits on fresh audio only + 5Hz heartbeat, explicit zero-silence
+   2s after capture death; `--bands` clamped 4..=512
 
 ### Container differences
 
@@ -114,16 +124,18 @@ Only the container size and position change.
 
 ---
 
-## 5. Settings Panel (v7.6.1)
+## 5. Settings Panel (v7.8.0)
 
-**PREVIEW**: Live visualization (same as mini, larger)
+**PREVIEW**: Live visualization (same renderer, larger) + helper text below
+(left-aligned, muted): double-click opens the desktop window.
 
-**OPTIONS**:
-- **Peaks**: Toggle switch — enable/disable peak-hold markers
-- **Peak fall**: Three buttons (Slow/Med/Fast) — controls falloff speed
-  - Slow = 0.1 (markers hang around)
-  - Med = 0.5 (default)
-  - Fast = 0.9 (markers fall quickly)
+**OPTIONS** (live-wired via `writeVizOption(s)` — disk + instant local update):
+- **Peaks**: Toggle — peak-hold markers on all surfaces (default on)
+- **Peak fall speed**: Slider 0..1, shown only when Peaks on (0=holds, 1=fast)
+- **Spikes**: Toggle — dense gapless flame spikes; auto-enables Fire on
+  select, auto-disables on deselect (single multi-key write)
+- **Fire**: Toggle — vertical flame gradient, all surfaces
+- **Stacks**: Toggle — segmented bars (preview/desktop only)
 
 **SOURCE**: Read-only audio source indicator (e.g., "PipeWire · default sink")
 
@@ -146,6 +158,7 @@ color_sync = false
 
 [desktop]
 active = "false"
+heartbeat = "0"
 gpu = "true"
 color_source = "theme"
 density = 128
@@ -155,17 +168,22 @@ theme_top = "#f59e0b"
 fire = "false"
 peaks = true
 peak_falloff = 0.5
+spikes = "false"
+splits = "false"
 ```
 
 ---
 
 ## 7. Detach / desktop window lifecycle
 
-- **Right-click** on mini → opens detached desktop window
-- **Left-click** on mini → opens settings panel
-- Desktop window uses same `VisualCanvas.qml` renderer
-- Desktop height capped at 300px, bottom-anchained
-- Closing desktop → mini resumes
+- **Double-click** mini or preview → opens detached desktop window
+  (right-click removed); **single-click** mini → settings panel
+- Mini visibility follows shared `desktop.active` + 2s heartbeat lease —
+  any launch path (bar, app launcher, `SUPER+V`) converges; close from any
+  path brings the mini back
+- Desktop self-claims the flag on open; `onClosing` clears it with a flush
+  delay then `Qt.quit()` (no zombie windowless processes)
+- Desktop height capped at 300px, bottom-anchored
 
 ---
 

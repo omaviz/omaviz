@@ -2,6 +2,7 @@ import QtQuick
 import QtQuick.Controls
 import Quickshell
 import Quickshell.Io
+import qs.Commons
 import "Model.js" as Model
 
 Window {
@@ -9,7 +10,8 @@ Window {
   width: 600
   height: 200
   visible: true
-  color: "#0c0c12"
+  // Theme-aware window background (dark theme ≈ previous #0c0c12 look).
+  color: Color.background
   flags: Qt.Window | Qt.WindowStaysOnTopHint
 
   property var spectrumBands: Model.spectrumData.bands
@@ -80,7 +82,7 @@ Window {
         colorSync: false
         barCount: Math.max(16, Math.floor((parent.width - 8) / 10))
         colourScheme: 0
-        gapPx: 1
+        gapPx: Math.min(6, Math.max(0, win.vizConfig.gap ?? 1))
         minBarHeight: 0
 
         // Peak settings — live from config (settings panel writes).
@@ -90,6 +92,8 @@ Window {
         fire: win.vizConfig.fire === true
         splits: win.vizConfig.splits === true
         sensitivity: win.vizConfig.sensitivity ?? 1.0
+        themeBottom: win.vizConfig.themeBottom || "#e68e0d"
+        themeTop: win.vizConfig.themeTop || "#f59e0b"
       }
     }
   }

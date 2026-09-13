@@ -42,6 +42,15 @@ struct Cli {
 fn main() -> anyhow::Result<()> {
     let cli = Cli::parse();
 
+    // Guard the render contract: 0 bands → NaN energy → invalid JSON the
+    // plugin silently drops (dead mini, no error); absurd counts flood stdout.
+    if !(4..=512).contains(&cli.bands) {
+        anyhow::bail!(
+            "--bands must be 4..=512 (got {})",
+            cli.bands
+        );
+    }
+
     // Resolve the backend up-front (errors on unsupported source).
     let backend = source::resolve(&cli.source)?;
     eprintln!(
@@ -54,9 +63,15 @@ fn main() -> anyhow::Result<()> {
     // Sample rate is discovered from the first audio chunk (pipewire/gen).
     let mut analyzer: Option<Analyzer> = None;
     let mut last: Option<Vec<f32>> = None;
+    let mut last_arrival = std::time::Instant::now();
+    let stale_after = Duration::from_secs(2);
     let tick = Duration::from_millis(16); // ~60 Hz frame rate
 
-    let mut out = std::io::stdout();
+    let mut out = std::io::stdout().lock();
+    let mut last_emit = std::time::Instant::now();
+    let idle_heartbeat = Duration::from_millis(200); // 5 Hz keepalive
+    let mut fresh_chunk = false;
+    let mut last_silent = false;
     loop {
         // Drain all pending events, keeping the most recent per kind.
         let mut pending_chunk: Option<dsp::AudioChunk> = None;
@@ -107,15 +122,65 @@ fn main() -> anyhow::Result<()> {
                     _ => {}
                 }
                 last = Some(c.samples.clone());
+                fresh_chunk = true;
+                last_arrival = std::time::Instant::now();
+            }
+            // Capture death: no chunks for 2s (server restart, suspend,
+            // thread error) — drop the stale frame and report silence
+            // instead of freezing mid-motion bars on screen.
+            let stale = last_arrival.elapsed() >= stale_after;
+            if stale {
+                last = None;
+            }
+            // Emit on fresh audio only; otherwise a 5 Hz heartbeat so the
+            // UI stays alive without 60 identical frames/sec of parse+paint.
+            // Steady silence also drops to heartbeat: identical silent
+            // frames carry no information (peaks decay client-side).
+            let due = last_emit.elapsed() >= idle_heartbeat;
+            // Stale source (capture dead): emit explicit zero silence at
+            // heartbeat rate so the UI clears instead of holding old bars.
+            if stale {
+                if due {
+                    last_emit = std::time::Instant::now();
+                    last_silent = true;
+                    let zeros = vec![0.0f32; cli.bands];
+                    let frame = Frame {
+                        bands: &zeros,
+                        energy: 0.0,
+                        beat: 0.0,
+                        silent: true,
+                        source: &backend,
+                    };
+                    let line = build_frame(&frame);
+                    writeln!(out, "{line}")?;
+                    out.flush()?;
+                } else {
+                    std::thread::sleep(tick);
+                }
+                continue;
             }
             if let (Some(a), Some(samples)) = (&mut analyzer, &last) {
+                if !(fresh_chunk || due) {
+                    std::thread::sleep(tick);
+                    continue;
+                }
+                fresh_chunk = false;
                 a.push(samples);
                 a.analyze();
+                let silent_now = a.is_silent();
+                // Steady silence carries no information — hold it to the
+                // heartbeat rate instead of re-emitting 60 identical frames.
+                if (silent_now && last_silent && !due) {
+                    std::thread::sleep(tick);
+                    continue;
+                }
+                last_silent = silent_now;
+                last_emit = std::time::Instant::now();
                 let frame = Frame {
                     bands: &a.bands,
                     energy: a.energy,
                     beat: a.beat,
-                    silent: a.is_silent(),
+                    silent: silent_now,
                     source: &backend,
                 };
                 let line = build_frame(&frame);

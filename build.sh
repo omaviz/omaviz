@@ -42,6 +42,7 @@ if [ -n "$QSB_BIN" ]; then
 elif [ -f "$SHADER_OUT" ]; then
   echo "qsb not found; using existing $SHADER_OUT" >&2
 else
-  echo "qsb not found and no prebuilt $SHADER_OUT; GPU visuals will not render" >&2
-  exit 1
+  # GL renderer is unused (see ISSUES #11) — never fail the engine build
+  # for a missing optional shader tool.
+  echo "qsb not found and no prebuilt $SHADER_OUT; skipping (GPU visuals unused)" >&2
 fi

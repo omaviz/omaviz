@@ -18,6 +18,9 @@ Canvas {
   property bool fire: false
   property bool splits: false
   property real sensitivity: 1.0
+  // Theme-anchored colors (bound from config; no hardcoded palettes).
+  property color themeBottom: "#e68e0d"
+  property color themeTop: "#f59e0b"
   // Spike density cap: 0 = auto (~2px per bar across full width).
   // Mini passes 32 to keep its density down.
   property int spikeBars: 0
@@ -57,11 +60,19 @@ Canvas {
     return up
   }
 
-  // Fire color at height fraction t (0 = base, 1 = tip): deep red at the
-  // bottom rising through orange to hot yellow-white — like a real flame.
+  // Fire color at height fraction t (0 = base, 1 = tip): deep red base,
+  // orange mid, white-hot tip — classic Winamp flame on near-black.
   function fireColorAt(t) {
     t = Math.min(1, Math.max(0, t))
-    return "rgba(255," + Math.round(110 + t * 145) + "," + Math.round(30 + t * 70) + ",1)"
+    var r, g, b
+    if (t < 0.25) {
+      var k = t / 0.25
+      r = Math.round(190 + k * 65); g = Math.round(20 + k * 120); b = Math.round(0 + k * 10)
+    } else {
+      var k2 = (t - 0.25) / 0.75
+      r = 255; g = Math.round(140 + k2 * 110); b = Math.round(10 + k2 * 190)
+    }
+    return "rgba(" + r + "," + g + "," + b + ",1)"
   }
 
   onBandsChanged: requestPaint()
@@ -75,23 +86,9 @@ Canvas {
       // visible on dark containers (dark reds vanish; orange does not).
       return "rgba(255," + Math.round(140 + h * 115) + "," + Math.round(60 + h * 40) + ",1)"
     }
-    if (colorSync) {
-      if (colourScheme === 2) {
-        if (h < 0.33) return "#2a9df4"
-        if (h < 0.66) return "#7b5de5"
-        return "#b15bff"
-      }
-      if (colourScheme === 1) {
-        if (h < 0.33) return "#ff5a1e"
-        if (h < 0.66) return "#ff8c1a"
-        return "#ffd000"
-      }
-      if (h < 0.33) return "#e68e0d"
-      if (h < 0.66) return "#f08e0d"
-      return "#f59e0b"
-    }
-    var bot = Qt.color("#e68e0d")
-    var top = Qt.color("#ffffff")
+    // Theme-anchored: colorSync blends bottom→top theme colors,
+    // otherwise bottom rises toward white-hot with bar height.
+    var bot = themeBottom, top = colorSync ? themeTop : Qt.color("#ffffff")
     var r = bot.r + (top.r - bot.r) * h
     var g = bot.g + (top.g - bot.g) * h
     var b = bot.b + (top.b - bot.b) * h
@@ -157,6 +154,7 @@ Canvas {
         if (fire) {
           var g1 = ctx.createLinearGradient(0, height, 0, 0)
           g1.addColorStop(0, fireColorAt(0))
+          g1.addColorStop(0.25, fireColorAt(0.25))
           g1.addColorStop(1, fireColorAt(1))
           ctx.fillStyle = g1
         } else {
@@ -183,6 +181,7 @@ Canvas {
         if (fire) {
           var g2 = ctx.createLinearGradient(0, height, 0, 0)
           g2.addColorStop(0, fireColorAt(0))
+          g2.addColorStop(0.25, fireColorAt(0.25))
           g2.addColorStop(1, fireColorAt(1))
           ctx.fillStyle = g2
         } else {
