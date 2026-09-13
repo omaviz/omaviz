@@ -44,7 +44,7 @@ Window {
   readonly property string trackArtist: win.activePlayer ? (win.activePlayer.trackArtist || "") : ""
   readonly property string trackArt: win.activePlayer ? (win.activePlayer.trackArtUrl || "") : ""
   readonly property string trackLabel: win.trackArtist !== "" ? win.trackArtist + " — " + win.trackTitle : win.trackTitle
-  readonly property string modeName: win.vizConfig.immersive === true ? "Omaviz (Immersive)" : (win.vizConfig.scope === true ? "Omaviz (Scope)" : "Omaviz")
+  readonly property string modeName: win.vizConfig.artMode === true ? "Omaviz (Artwork)" : (win.vizConfig.scope === true ? "Omaviz (Scope)" : "Omaviz")
 
   Process {
     id: bridge
@@ -100,7 +100,7 @@ Window {
     Rectangle {
       width: parent.width; height: parent.height - 22; color: "#0c0c12"
 
-      // Artwork backdrop (immersive only): downscaled source = free blur,
+      // Artwork backdrop (artMode only): downscaled source = free blur,
       // dimmed so the white bars stay readable. Falls back to the
       // canvas wash when no art (radio, browser streams).
       // Plexamp-style backdrop: heavy gaussian blur (no detail survives,
@@ -108,7 +108,7 @@ Window {
       // FastBlur caches: static art costs one frame, not per-frame.
       Item {
         anchors.fill: parent
-        visible: win.vizConfig.immersive === true && win.vizConfig.artwork !== false
+        visible: win.vizConfig.artMode === true && win.vizConfig.artwork !== false
         opacity: win.trackArt !== "" ? 1 : 0
         Behavior on opacity { NumberAnimation { duration: 900 } }
         Image {
@@ -136,17 +136,22 @@ Window {
 
       VisualCanvas {
         id: desktopViz
-        anchors.left: parent.left; anchors.right: parent.right; anchors.bottom: parent.bottom
-        anchors.leftMargin: 4; anchors.rightMargin: 4; anchors.bottomMargin: 4
-        height: win.vizConfig.immersive === true ? parent.height * 0.62 : parent.height - 4
-        anchors.top: win.vizConfig.immersive === true ? undefined : parent.top
+        anchors.left: parent.left; anchors.right: parent.right
+        anchors.leftMargin: 4; anchors.rightMargin: 4
+        // Artwork: centered band (min 60px) so short windows keep it
+        // visible instead of sliding it out; otherwise full-bleed.
+        anchors.verticalCenter: win.vizConfig.artMode === true ? parent.verticalCenter : undefined
+        anchors.top: win.vizConfig.artMode === true ? undefined : parent.top
+        anchors.bottom: win.vizConfig.artMode === true ? undefined : parent.bottom
+        anchors.bottomMargin: 4
+        height: win.vizConfig.artMode === true ? Math.max(60, parent.height * 0.62) : parent.height - 4
 
         bands: win.spectrumBands
         silent: win.spectrumSilent
         wave: win.spectrumWave
 
         visual: win.vizConfig.scope === true ? "Oscilloscope" : "Bars"
-        immersive: win.vizConfig.immersive === true
+        artMode: win.vizConfig.artMode === true
         dots: win.vizConfig.dots !== false
         reflect: win.vizConfig.reflect === true
         scopeLineWidth: win.vizConfig.scopeThickness ?? 2

@@ -108,7 +108,8 @@ function readConfigFromText(tomlText) {
   d.mono = readTomlValue(tomlText, "desktop", "mono") === "true"
   d.linearFall = readTomlValue(tomlText, "desktop", "linear_fall") === "true"
   d.scope = readTomlValue(tomlText, "desktop", "scope") === "true"
-  d.immersive = readTomlValue(tomlText, "desktop", "immersive") === "true"
+  d.artMode = readTomlValue(tomlText, "desktop", "artwork_mode") === "true"
+    || readTomlValue(tomlText, "desktop", "immersive") === "true"   // pre-rename key
   d.artwork = readTomlValue(tomlText, "desktop", "artwork") !== "false"
   d.scopeThickness = readTomlFloat(tomlText, "desktop", "scope_thickness") ?? 2
   if (d.scopeThickness !== d.scopeThickness || d.scopeThickness < 1) d.scopeThickness = 1
@@ -131,7 +132,7 @@ function defaultConfig() {
     themeTop: "#f59e0b",
     fire: false,
     peaks: true, peakFalloff: 0.5, spikes: false, splits: false, mono: false,
-    linearFall: false, scope: false, immersive: false, artwork: true, scopeThickness: 2, dots: true, reflect: false,
+    linearFall: false, scope: false, artMode: false, artwork: true, scopeThickness: 2, dots: true, reflect: false,
   }
 }
 

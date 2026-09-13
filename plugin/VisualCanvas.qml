@@ -26,8 +26,8 @@ Canvas {
   // Takes precedence over Fire — an explicit monochrome choice.
   property bool mono: false
   property bool monoLight: false
-  property bool immersive: false
-  // Immersive mode (Plexamp-style): reactive glow wash behind quiet
+  property bool artMode: false
+  // Artwork mode (Plexamp-style): reactive glow wash behind quiet
   // white bars. Foreground is always white; art (desktop-only Image
   // layer) sits behind the wash when available.
   // Winamp skin dressing: dotted backdrop (on) and floor reflection (off).
@@ -107,10 +107,10 @@ Canvas {
   onScopeLineWidthChanged: requestPaint()
   onMonoChanged: requestPaint()
   onMonoLightChanged: requestPaint()
-  onImmersiveChanged: requestPaint()
+  onArtworkChanged: requestPaint()
 
   function fillFor(h, a) {
-    if (immersive) return "#ffffff"
+    if (artMode) return "#ffffff"
     if (mono) return monoLight ? "#000000" : "#ffffff"
     if (fire) {
       // Winamp flame, kept luminous at low levels so quiet bars stay
@@ -146,7 +146,7 @@ Canvas {
     // mirror fades below. Otherwise the full height is the bar area.
     var areaH = reflect ? height * 0.62 : height
     var baseY = reflect ? height * 0.68 : height
-    if (immersive) {
+    if (artMode) {
       // Reactive glow wash: wide soft color fields at low alpha behind
       // the white bars. Follows Fire when on, theme gradient otherwise.
       for (var g = 0; g < n; g++) {
@@ -204,7 +204,7 @@ Canvas {
         while (sy > y) {
           var sh = Math.min(segH, sy - y)
           var tMid = 1 - (sy - sh / 2 - (baseY - areaH)) / areaH
-          if (immersive) ctx.fillStyle = "#ffffff";
+          if (artMode) ctx.fillStyle = "#ffffff";
           else if (fire) ctx.fillStyle = fireColorAt(tMid);
           else ctx.fillStyle = fillFor(v, 0.25 + v * 0.75);
           ctx.fillRect(x, sy - sh, bw + spikeOverlap, sh)
@@ -221,11 +221,11 @@ Canvas {
       } else if (spikes) {
         // Pointed tip: sharp triangle apex over a square body.
         // Fire: vertical red-to-hot gradient along the bar area.
-        if (mono || immersive) {
-          if (immersive) ctx.fillStyle = "#ffffff";
+        if (mono || artMode) {
+          if (artMode) ctx.fillStyle = "#ffffff";
           else ctx.fillStyle = monoLight ? "#000000" : "#ffffff";
         }
-        if (!mono && !immersive && fire) {
+        if (!mono && !artMode && fire) {
           var g1 = ctx.createLinearGradient(0, baseY, 0, baseY - areaH)
           g1.addColorStop(0, fireColorAt(0))
           g1.addColorStop(0.25, fireColorAt(0.25))
@@ -252,11 +252,11 @@ Canvas {
           ctx.fill()
         }
       } else {
-        if (mono || immersive) {
-          if (immersive) ctx.fillStyle = "#ffffff";
+        if (mono || artMode) {
+          if (artMode) ctx.fillStyle = "#ffffff";
           else ctx.fillStyle = monoLight ? "#000000" : "#ffffff";
         }
-        else if (!immersive && fire) {
+        else if (!artMode && fire) {
           var g2 = ctx.createLinearGradient(0, baseY, 0, baseY - areaH)
           g2.addColorStop(0, fireColorAt(0))
           g2.addColorStop(0.25, fireColorAt(0.25))
@@ -275,7 +275,7 @@ Canvas {
     if (peaks) {
       // Thin-spike caps: 1px hot ticks (a 2px block would swallow a 2px bar).
       // Mono: caps match the bars (ticks sit on the background above them).
-      if (immersive) ctx.fillStyle = "#ffffff";
+      if (artMode) ctx.fillStyle = "#ffffff";
       else if (mono) ctx.fillStyle = monoLight ? "#000000" : "#ffffff";
       else ctx.fillStyle = spikes ? "#ffe9a8" : "#ffffff";
       var capH = spikes ? 1 : 2
@@ -292,7 +292,7 @@ Canvas {
       // Floor mirror: faded copy of each bar below the baseline.
       ctx.save()
       ctx.globalAlpha = 0.22
-      if (immersive) ctx.fillStyle = "#ffffff";
+      if (artMode) ctx.fillStyle = "#ffffff";
       else if (mono) ctx.fillStyle = monoLight ? "#000000" : "#ffffff";
       else ctx.fillStyle = fire ? fireColorAt(0.12) : themeBottom;
       for (var m = 0; m < n; m++) {

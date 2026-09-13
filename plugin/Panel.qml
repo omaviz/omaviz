@@ -150,7 +150,7 @@ Panel {
             silent: root.hostWidget ? root.hostWidget.spectrumSilent : true
             wave: root.hostWidget ? root.hostWidget.spectrumWave : []
             visual: root.hostWidget && root.hostWidget.config.scope === true ? "Oscilloscope" : "Bars"
-            immersive: root.hcfg.immersive === true
+            artMode: root.hcfg.artMode === true
             dots: root.hcfg.dots !== false
             reflect: root.hcfg.reflect === true
             scopeLineWidth: (root.hcfg.scopeThickness ?? 2)
@@ -194,15 +194,15 @@ Panel {
         Dropdown {
           width: parent.width
           label: "Mode"
-          options: [{ value: "spectrum", label: "Spectrum" }, { value: "scope", label: "Oscilloscope" }, { value: "immersive", label: "Immersive" }]
+          options: [{ value: "spectrum", label: "Spectrum" }, { value: "scope", label: "Oscilloscope" }, { value: "artwork", label: "Artwork" }]
           value: panelOpts.mode
-          onChanged: function(v) { if (root.hostWidget) root.hostWidget.writeVizOptions("scope", v === "scope", "immersive", v === "immersive") }
+          onChanged: function(v) { if (root.hostWidget) root.hostWidget.writeVizOptions("scope", v === "scope", "artwork_mode", v === "artwork") }
         }
         Column {
           id: panelOpts
           width: parent.width
           spacing: Style.space(10)
-          property string mode: root.hcfg.immersive === true ? "immersive" : (root.hcfg.scope === true ? "scope" : "spectrum")
+          property string mode: root.hcfg.artMode === true ? "artwork" : (root.hcfg.scope === true ? "scope" : "spectrum")
           property bool isScope: panelOpts.mode === "scope"
           property bool spikesOn: root.hcfg.spikes === true
 
@@ -310,10 +310,10 @@ Panel {
             }
           }
 
-          // ---- Immersive-only ----
-          PanelSectionHeader { text: "IMMERSIVE"; visible: panelOpts.mode === "immersive" }
+          // ---- Artwork-only ----
+          PanelSectionHeader { text: "ARTWORK"; visible: panelOpts.mode === "artwork" }
           Text {
-            visible: panelOpts.mode === "immersive"
+            visible: panelOpts.mode === "artwork"
             text: "Artwork wash + quiet white bars on preview/desktop (mini: wash only, no art)."
             color: Qt.darker(root.bar ? root.bar.foreground : Color.foreground, 1.4)
             font.family: Style.font.family; font.pixelSize: Style.font.bodySmall
@@ -321,7 +321,7 @@ Panel {
             wrapMode: Text.WordWrap
           }
           Toggle {
-            visible: panelOpts.mode === "immersive"
+            visible: panelOpts.mode === "artwork"
             width: parent.width
             label: "Artwork"
             description: "Album-art backdrop when available (fallback: reactive glow)"
