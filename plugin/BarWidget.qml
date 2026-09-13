@@ -16,6 +16,22 @@ BarWidget {
   // Liveness lease: true only if the flag is set AND the heartbeat is fresh.
   // A stranded active=true (crash, kill -9, old code) self-heals within ~6s.
   property bool desktopLive: false
+  // Last-write-wins guard: setText flushes async, so a file re-read in
+  // the next ~1.5s would resurrect stale text and clobber the fresh
+  // root.config (dropdowns snapping back = select-twice bug).
+  property double _lastWriteAt: 0
+  property string _lastWriteText: ""
+  function noteWrite(txt) {
+    root._lastWriteAt = Date.now()
+    root._lastWriteText = txt
+    root.config = Model.readConfigFromText(txt)
+    root.refreshDesktopLive()
+  }
+  function readGuarded() {
+    if (root._lastWriteText !== "" && Date.now() - root._lastWriteAt < 1500)
+      return root._lastWriteText
+    return configFile.text()
+  }
   function refreshDesktopLive() {
     var hb = (root.config && root.config.desktopHeartbeat) || 0
     root.desktopLive = (root.config && root.config.desktopActive === true) && (Date.now() - hb < 6000)
@@ -133,11 +149,11 @@ BarWidget {
     watchChanges: true
     printErrors: false
     onLoaded: {
-      root.config = Model.readConfigFromText(text())
+      root.config = Model.readConfigFromText(root.readGuarded())
       root.refreshDesktopLive()
     }
     onFileChanged: {
-      root.config = Model.readConfigFromText(text())
+      root.config = Model.readConfigFromText(root.readGuarded())
       root.refreshDesktopLive()
     }
     onLoadFailed: root.config = Model.defaultConfig()
@@ -160,10 +176,9 @@ BarWidget {
     // Base the write on configFile (reloaded every 500ms), not the
     // write-only view — bounds staleness so concurrent writers can't
     // resurrect each other's flags from ancient caches (#16).
-    var txt = Model.writeConfigKey(configFile.text(), "desktop", "active", value ? "true" : "false")
+    var txt = Model.writeConfigKey(root.readGuarded(), "desktop", "active", value ? "true" : "false")
     detachConfigWrite.setText(txt)
-    root.config = Model.readConfigFromText(txt)
-    root.refreshDesktopLive()
+    root.noteWrite(txt)
   }
   function writeVizOption(key, value) {
     writeVizOptions(key, value, null, null)
@@ -179,22 +194,20 @@ BarWidget {
     // Multi-key single write: two sequential setText calls race on the same
     // stale base text and the second clobbers the first (e.g. Spikes+Fire).
     // Apply both keys to ONE base text, then a single setText.
-    var txt = configFile.text()
+    var txt = root.readGuarded()
     txt = Model.writeConfigKey(txt, "desktop", key1, vizVal(value1))
     if (key2) txt = Model.writeConfigKey(txt, "desktop", key2, vizVal(value2))
     detachConfigWrite.setText(txt)
-    root.config = Model.readConfigFromText(txt)
-    root.refreshDesktopLive()
+    root.noteWrite(txt)
   }
   function vizVal(value) {
     if (typeof value === "boolean") return value ? "true" : "false"
     return value
   }
   function writeDesktopBeat() {
-    var txt = Model.writeConfigKey(configFile.text(), "desktop", "heartbeat", String(Date.now()))
+    var txt = Model.writeConfigKey(root.readGuarded(), "desktop", "heartbeat", String(Date.now()))
     detachConfigWrite.setText(txt)
-    root.config = Model.readConfigFromText(txt)
-    root.refreshDesktopLive()
+    root.noteWrite(txt)
   }
 
   WidgetButton {
