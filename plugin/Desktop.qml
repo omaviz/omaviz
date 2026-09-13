@@ -15,11 +15,16 @@ Window {
   property var spectrumBands: Model.spectrumData.bands
   property bool spectrumSilent: Model.spectrumData.silent
   readonly property string visualName: "Bars"
+  // Live viz options (peaks/falloff/spikes/fire) — re-parsed on each poll
+  // so settings-panel changes reflect in the open window within ~100ms.
+  property var vizConfig: Model.defaultConfig()
+  function refreshVizConfig() { win.vizConfig = Model.readConfigFromText(cfgWrite.text()) }
 
   Process {
     id: bridge
     running: false
-    command: [Model.engineBin, "--bands", "64"]
+    // Full-res feed for the big surface: near 1:1 with dense spike bars.
+    command: [Model.engineBin, "--bands", "256"]
     stdout: SplitParser {
       splitMarker: "\n"
       onRead: function(data) {
@@ -78,9 +83,13 @@ Window {
         gapPx: 1
         minBarHeight: 0
 
-        // Peak settings
-        peaks: true
-        peakFalloff: 0.5
+        // Peak settings — live from config (settings panel writes).
+        peaks: win.vizConfig.peaks !== false
+        peakFalloff: win.vizConfig.peakFalloff ?? 0.5
+        spikes: win.vizConfig.spikes === true
+        fire: win.vizConfig.fire === true
+        splits: win.vizConfig.splits === true
+        sensitivity: win.vizConfig.sensitivity ?? 1.0
       }
     }
   }
@@ -115,6 +124,7 @@ Window {
     interval: 100; repeat: true; running: true
     onTriggered: {
       cfgWrite.reload()
+      win.refreshVizConfig()
       if (!win._claimed && cfgWrite.text().length > 0) {
         win._claimed = true
         win.setDesktopActive(true)

@@ -14,12 +14,22 @@ Canvas {
   property int minBarHeight: 0
   property bool peaks: true
   property real peakFalloff: 0.5
+  property bool spikes: false
+  property bool fire: false
+  property bool splits: false
+  property real sensitivity: 1.0
+  // Spike density cap: 0 = auto (~2px per bar across full width).
+  // Mini passes 32 to keep its density down.
+  property int spikeBars: 0
   property var _peakArr: []
 
   function displayBands() {
     var b = bands
     if (b.length === 0) return []
-    var n = barCount > 0 ? barCount : b.length
+    // Spikes mode: dense gapless spectrum (~2px per bar, like the
+    // Winamp thin-bar visualizer) instead of the barCount mapping —
+    // unless spikeBars caps it (mini holds 32).
+    var n = spikes ? (spikeBars > 0 ? spikeBars : Math.max(16, Math.floor(width / 2))) : (barCount > 0 ? barCount : b.length)
     if (n === b.length) return b
     if (n < b.length) {
       var out = []
@@ -35,11 +45,23 @@ Canvas {
       return out
     }
     var up = []
+    // Linear interpolation (not nearest-neighbor): duplicating source bands
+    // makes groups of bars move in lockstep ("5 bars in sync"); blending
+    // between neighbors keeps dense modes looking like a real spectrum.
     for (var k = 0; k < n; k++) {
-      var srcIdx = Math.round(k * (b.length - 1) / (n - 1))
-      up.push(b[srcIdx])
+      var pos = k * (b.length - 1) / (n - 1)
+      var lo = Math.floor(pos), fr = pos - lo
+      var hi = Math.min(b.length - 1, lo + 1)
+      up.push(b[lo] * (1 - fr) + b[hi] * fr)
     }
     return up
+  }
+
+  // Fire color at height fraction t (0 = base, 1 = tip): deep red at the
+  // bottom rising through orange to hot yellow-white — like a real flame.
+  function fireColorAt(t) {
+    t = Math.min(1, Math.max(0, t))
+    return "rgba(255," + Math.round(110 + t * 145) + "," + Math.round(30 + t * 70) + ",1)"
   }
 
   onBandsChanged: requestPaint()
@@ -48,6 +70,11 @@ Canvas {
   onHeightChanged: requestPaint()
 
   function fillFor(h, a) {
+    if (fire) {
+      // Winamp flame, kept luminous at low levels so quiet bars stay
+      // visible on dark containers (dark reds vanish; orange does not).
+      return "rgba(255," + Math.round(140 + h * 115) + "," + Math.round(60 + h * 40) + ",1)"
+    }
     if (colorSync) {
       if (colourScheme === 2) {
         if (h < 0.33) return "#2a9df4"
@@ -79,9 +106,12 @@ Canvas {
     if (!n) return
     if (visual === "Wave") { drawWave(ctx); return }
 
-    var gap = gapPx
+    var gap = spikes ? 0 : gapPx
     var totalGap = gap * (n - 1)
-    var bw = Math.max(2, (width - totalGap) / n)
+    var bw = spikes ? Math.max(1, width / n) : Math.max(2, (width - totalGap) / n)
+    // Spike overlap: fractional widths leave 1px container seams between
+    // bars — draw each spike half a pixel wider to seal them.
+    var spikeOverlap = spikes ? 0.5 : 0
 
     if (_peakArr.length !== n) {
       _peakArr = []
@@ -90,31 +120,91 @@ Canvas {
 
     var f = Math.max(0.05, 1.0 - peakFalloff * 0.12)
     for (var i = 0; i < n; i++) {
-      var v = silent ? 0 : Math.min(1, Math.max(0, b[i]))
+      var v = silent ? 0 : Math.min(1, Math.max(0, b[i]) * sensitivity)
       if (v >= _peakArr[i]) { _peakArr[i] = v } else { _peakArr[i] = _peakArr[i] * f }
     }
 
     for (var i = 0; i < n; i++) {
-      var v = silent ? 0 : Math.min(1, Math.max(0, b[i]))
+      var v = silent ? 0 : Math.min(1, Math.max(0, b[i]) * sensitivity)
       var h = v * height
       if (h > 0 && h < minBarHeight) h = minBarHeight
       var x = i * (bw + gap)
       var y = height - h
-      ctx.fillStyle = fillFor(v, 0.25 + v * 0.75)
-      ctx.beginPath()
-      var r = Math.min(bw * 0.5, 3)
-      if (ctx.roundRect) ctx.roundRect(x, y, bw, h, r); else ctx.rect(x, y, bw, h)
-      ctx.fill()
+      if (h <= 0) continue
+      if (splits) {
+        // Winamp segments: 3px blocks with 1px gaps, stacked from the base.
+        // Each block samples the fire ramp (or flat fill) at its own height
+        // so the red-to-hot gradient climbs the bar like a real flame.
+        var segH = 3, segGap = 1, sy = height
+        while (sy > y) {
+          var sh = Math.min(segH, sy - y)
+          var tMid = 1 - (sy - sh / 2) / height
+          ctx.fillStyle = fire ? fireColorAt(tMid) : fillFor(v, 0.25 + v * 0.75)
+          ctx.fillRect(x, sy - sh, bw + spikeOverlap, sh)
+          sy -= segH + segGap
+        }
+        if (spikes) {
+          ctx.beginPath()
+          ctx.moveTo(x, y)
+          ctx.lineTo(x + bw + spikeOverlap, y)
+          ctx.lineTo(x + bw / 2, Math.max(0, y - Math.min(bw, 5)))
+          ctx.closePath()
+          ctx.fill()
+        }
+      } else if (spikes) {
+        // Pointed tip: sharp triangle apex over a square body.
+        // Fire: vertical red-to-hot gradient along the bar height.
+        if (fire) {
+          var g1 = ctx.createLinearGradient(0, height, 0, 0)
+          g1.addColorStop(0, fireColorAt(0))
+          g1.addColorStop(1, fireColorAt(1))
+          ctx.fillStyle = g1
+        } else {
+          ctx.fillStyle = fillFor(v, 0.25 + v * 0.75)
+        }
+        var tipH = Math.min(Math.max(bw, 3), 7)
+        if (h > tipH + 1) {
+          ctx.fillRect(x, y + tipH, bw + spikeOverlap, h - tipH)
+          ctx.beginPath()
+          ctx.moveTo(x, y + tipH)
+          ctx.lineTo(x + bw + spikeOverlap, y + tipH)
+          ctx.lineTo(x + bw / 2, y)
+          ctx.closePath()
+          ctx.fill()
+        } else {
+          ctx.beginPath()
+          ctx.moveTo(x, y + h)
+          ctx.lineTo(x + bw + spikeOverlap, y + h)
+          ctx.lineTo(x + bw / 2, y)
+          ctx.closePath()
+          ctx.fill()
+        }
+      } else {
+        if (fire) {
+          var g2 = ctx.createLinearGradient(0, height, 0, 0)
+          g2.addColorStop(0, fireColorAt(0))
+          g2.addColorStop(1, fireColorAt(1))
+          ctx.fillStyle = g2
+        } else {
+          ctx.fillStyle = fillFor(v, 0.25 + v * 0.75)
+        }
+        ctx.beginPath()
+        var r = Math.min(bw * 0.5, 3)
+        if (ctx.roundRect) ctx.roundRect(x, y, bw, h, r); else ctx.rect(x, y, bw, h)
+        ctx.fill()
+      }
     }
 
     if (peaks) {
-      ctx.fillStyle = "#ffffff"
+      // Thin-spike caps: 1px hot ticks (a 2px block would swallow a 2px bar).
+      ctx.fillStyle = spikes ? "#ffe9a8" : "#ffffff"
+      var capH = spikes ? 1 : 2
       for (var p = 0; p < n; p++) {
         var pv = _peakArr[p]
         if (pv < 0.02) continue
         var py = height - pv * height
         var px = p * (bw + gap)
-        ctx.fillRect(px, py - 1, bw, 2)
+        ctx.fillRect(px, py - 1, bw, capH)
       }
     }
   }

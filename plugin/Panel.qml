@@ -6,9 +6,11 @@ import qs.Commons
 import qs.Ui
 import "Model.js" as Model
 
-// Omaviz settings panel (bars-minimum ADR-0008: PREVIEW + SOURCE only).
-// The panel writes NOTHING — no viz/fire/detach/density controls. Detach
-// lives on BarWidget right-click; the desktop window closes via its own ×.
+// Omaviz settings panel: PREVIEW + live OPTIONS + SOURCE.
+// OPTIONS (Peaks / fall speed / Spikes / Fire) write through
+// BarWidget.writeVizOption(), which updates disk + bar config immediately —
+// mini, preview and the open desktop window all reflect changes at once.
+// Detach lives on mini/preview double-click; the desktop window closes via ×.
 //
 // Bar-widget contract (verified against live BarWidget.qml):
 //   injectPanel() sets:  t.bar, t.anchorItem, t.hostWidget, t.settings
@@ -129,14 +131,6 @@ Panel {
 
         // ---- Live preview ----
         PanelSectionHeader { text: "PREVIEW" }
-        Text {
-          text: "Double-click to open full-screen visualization"
-          color: Qt.darker(root.bar ? root.bar.foreground : Color.foreground, 1.4)
-          font.family: Style.font.family; font.pixelSize: Style.font.bodySmall
-          font.letterSpacing: 0.5
-          width: parent.width
-          horizontalAlignment: Text.AlignHCenter
-        }
         Rectangle {
           width: parent.width; height: Style.space(60)
           color: Color.popups.background
@@ -164,8 +158,13 @@ Panel {
             colourScheme: 0
             gapPx: 1
             minBarHeight: 0
-            peaks: true
-            peakFalloff: 0.5
+            // Live from bar config — settings below reflect immediately.
+            peaks: root.hostWidget ? root.hostWidget.config.peaks !== false : true
+            peakFalloff: root.hostWidget ? (root.hostWidget.config.peakFalloff ?? 0.5) : 0.5
+            spikes: root.hostWidget ? root.hostWidget.config.spikes === true : false
+            fire: root.hostWidget ? root.hostWidget.config.fire === true : false
+            splits: root.hostWidget ? root.hostWidget.config.splits === true : false
+            sensitivity: root.hostWidget ? (root.hostWidget.config.sensitivity ?? 1.0) : 1.0
           }
           // Double-click on preview opens desktop window
           MouseArea {
@@ -173,7 +172,73 @@ Panel {
             onDoubleClicked: { root.hostWidget.detach() }
           }
         }
+        Text {
+          text: "Double-click preview to open full-screen visualization"
+          color: Qt.darker(root.bar ? root.bar.foreground : Color.foreground, 1.6)
+          font.family: Style.font.family; font.pixelSize: Style.font.bodySmall
+          width: parent.width
+          horizontalAlignment: Text.AlignLeft
+        }
         // (VisualCanvas is a plain Canvas — properties bound inline above.)
+
+        PanelSeparator { }
+
+        // ---- Options (live-wired: writes go through BarWidget, which
+        // updates disk + its own config immediately, so mini, preview
+        // and the open desktop window all reflect the change at once)
+        PanelSectionHeader { text: "OPTIONS" }
+        Toggle {
+          id: peaksTgl
+          width: parent.width
+          label: "Peaks"
+          description: "White peak-hold markers on each bar"
+          checked: root.hostWidget ? root.hostWidget.config.peaks !== false : true
+          onClicked: if (root.hostWidget) root.hostWidget.writeVizOption("peaks", !checked)
+        }
+        Column {
+          width: parent.width
+          spacing: Style.space(4)
+          visible: peaksTgl.checked
+          Text {
+            text: "Peak fall speed (0 holds, 1 falls fast)"
+            color: Qt.darker(root.bar ? root.bar.foreground : Color.foreground, 1.4)
+            font.family: Style.font.family; font.pixelSize: Style.font.bodySmall
+            width: parent.width
+          }
+          PanelSlider {
+            id: fallSlider
+            width: parent.width
+            bar: root.bar
+            minimum: 0; maximum: 1; step: 0.05
+            value: root.hostWidget ? (root.hostWidget.config.peakFalloff ?? 0.5) : 0.5
+            onReleased: function(v) { if (root.hostWidget) root.hostWidget.writeVizOption("peak_falloff", Math.round(v * 20) / 20) }
+          }
+        }
+        Toggle {
+          width: parent.width
+          label: "Spikes"
+          description: "Dense thin flame spikes, no gaps (auto-enables Fire)"
+          checked: root.hostWidget ? root.hostWidget.config.spikes === true : false
+          onClicked: {
+            if (!root.hostWidget) return
+            var v = !checked
+            root.hostWidget.writeVizOptions("spikes", v, "fire", v)
+          }
+        }
+        Toggle {
+          width: parent.width
+          label: "Fire"
+          description: "Red flame gradient from the base"
+          checked: root.hostWidget ? root.hostWidget.config.fire === true : false
+          onClicked: if (root.hostWidget) root.hostWidget.writeVizOption("fire", !checked)
+        }
+        Toggle {
+          width: parent.width
+          label: "Stacks"
+          description: "Segmented bars with gaps, Winamp-style (preview/desktop)"
+          checked: root.hostWidget ? root.hostWidget.config.splits === true : false
+          onClicked: if (root.hostWidget) root.hostWidget.writeVizOption("splits", !checked)
+        }
 
         PanelSeparator { }
 

@@ -114,6 +114,13 @@ function readConfigFromText(tomlText) {
   // v7.4 fire toggle: a top-level visualization option (independent of style)
   // that enables the winamp flame on the desktop renderer. Default OFF.
   d.fire = readTomlValue(tomlText, "desktop", "fire") === "true"
+  // v7.7 settings panel options (live-wired, defaults: peaks on).
+  d.peaks = readTomlValue(tomlText, "desktop", "peaks") !== "false"
+  d.peakFalloff = readTomlFloat(tomlText, "desktop", "peak_falloff") ?? 0.5
+  if (d.peakFalloff !== d.peakFalloff || d.peakFalloff < 0) d.peakFalloff = 0
+  if (d.peakFalloff > 1) d.peakFalloff = 1
+  d.spikes = readTomlValue(tomlText, "desktop", "spikes") === "true"
+  d.splits = readTomlValue(tomlText, "desktop", "splits") === "true"
   // v7.4 Winamp-faithful per-visualization option sets (independent).
   d.eqMode = readTomlValue(tomlText, "visual.equalizer", "mode") || "bars"        // bars|lines
   d.eqColor = readTomlValue(tomlText, "visual.equalizer", "color") || "fire"      // solid|line|fade|fire
@@ -154,6 +161,7 @@ function defaultConfig() {
     themeBottom: "#e68e0d",
     themeTop: "#f59e0b",
     fire: false,
+    peaks: true, peakFalloff: 0.5, spikes: false, splits: false,
     eqMode: "bars", eqColor: "fire", eqGrid: false, eqPeaks: true, eqFalloff: 0.5, eqZoom: "1x", eqThickness: 2,
     scopeStyle: "line", scopeColor: "solid", scopeGrid: false, scopeScan: false, scopeCentered: true, scopeThickness: 2
   }

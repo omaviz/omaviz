@@ -23,18 +23,6 @@ BarWidget {
   }
   readonly property bool paused: Model.isPaused(root.config.desktopActive === true, root.detachedRunning)
   readonly property int barCount: Math.max(8, (root.config && root.config.bands !== undefined) ? root.config.bands : 32)
-  property var barModel: buildBarModel(root.barCount)
-  function buildBarModel(n) { var a = []; for (var i = 0; i < n; i++) a.push(i); return a }
-  onBarCountChanged: root.barModel = buildBarModel(root.barCount)
-
-  function getBarValue(index) {
-    var bands = root.spectrumBands
-    if (!bands || bands.length === 0) return 0
-    var sens = (root.config && root.config.sensitivity !== undefined) ? root.config.sensitivity : 1.0
-    var bandIndex = Math.floor(index * bands.length / root.barCount)
-    bandIndex = Math.min(bandIndex, bands.length - 1)
-    return Math.min(1, bands[bandIndex] * sens)
-  }
 
   function applyConfig(text) { root.config = Model.readConfigFromText(text) }
 
@@ -75,7 +63,9 @@ BarWidget {
   Process {
     id: spectrumProc
     running: true
-    command: [root.engineBin]
+    // High-res feed (128 bands): mini downsamples to 32, preview to 64 —
+    // both map from rich source detail instead of a coarse 32-band feed.
+    command: [root.engineBin, "--bands", "128"]
     stdout: SplitParser {
       onRead: function(data) {
         var lines = String(data).split("\n")
@@ -166,6 +156,24 @@ BarWidget {
     root.config = Model.readConfigFromText(txt)
     root.refreshDesktopLive()
   }
+  function writeVizOption(key, value) {
+    writeVizOptions(key, value, null, null)
+  }
+  function writeVizOptions(key1, value1, key2, value2) {
+    // Multi-key single write: two sequential setText calls race on the same
+    // stale base text and the second clobbers the first (e.g. Spikes+Fire).
+    // Apply both keys to ONE base text, then a single setText.
+    var txt = detachConfigWrite.text()
+    txt = Model.writeConfigKey(txt, "desktop", key1, vizVal(value1))
+    if (key2) txt = Model.writeConfigKey(txt, "desktop", key2, vizVal(value2))
+    detachConfigWrite.setText(txt)
+    root.config = Model.readConfigFromText(txt)
+    root.refreshDesktopLive()
+  }
+  function vizVal(value) {
+    if (typeof value === "boolean") return value ? "true" : "false"
+    return value
+  }
   function writeDesktopBeat() {
     var txt = Model.writeConfigKey(detachConfigWrite.text(), "desktop", "heartbeat", String(Date.now()))
     detachConfigWrite.setText(txt)
@@ -224,61 +232,35 @@ BarWidget {
       anchors.left: parent.left
       anchors.right: parent.right
       height: parent.height * 0.90
-      color: Qt.rgba(0.08, 0.08, 0.10, 0.75)
-      border.width: 1
+      // Spikes: fully transparent, no margins — bars sit directly on waybar.
+      color: root.config.spikes === true ? "transparent" : Qt.rgba(0.08, 0.08, 0.10, 0.75)
+      // Spikes run borderless — the dense spectrum sits directly on the bar.
+      border.width: root.config.spikes === true ? 0 : 1
       border.color: Qt.rgba(0.20, 0.20, 0.25, 0.50)
 
-      Item {
+      // One shared renderer everywhere: mini uses the same VisualCanvas
+      // as preview/desktop, so spikes/splits/fire/peaks look identical.
+      VisualCanvas {
         anchors.fill: parent
-        anchors.margins: 4
-
-        readonly property real gapPx: 1
-        readonly property real slotWidth: Math.max(2,
-          (width - gapPx * (root.barCount - 1)) / root.barCount)
-
-        Repeater {
-          model: root.barModel
-
-          Rectangle {
-            id: bar
-            readonly property real value: getBarValue(modelData)
-
-            x: modelData * (parent.slotWidth + parent.gapPx)
-            width: parent.slotWidth
-            height: parent.height * value
-            y: parent.height - height
-
-            radius: Math.min(width * 0.5, 3)
-            color: {
-              if (root.config.style === "fire") {
-                var v0 = Math.min(1, Math.max(0, value))
-                return "rgba(255," + Math.round(80 + v0 * 175) + "," + Math.round(20 + v0 * 60) + ",1)"
-              }
-              var v = Math.min(1, Math.max(0, value))
-              if (!root.config.colorSync) {
-                var botS2 = String(root.config.themeBottom || "")
-                if (botS2 === "undefined" || botS2 === "null" || botS2 === "") botS2 = "#e68e0d"
-                var bot2 = Qt.color(botS2)
-                var r = bot2.r + (1.0 - bot2.r) * v
-                var g = bot2.g + (1.0 - bot2.g) * v
-                var b = bot2.b + (1.0 - bot2.b) * v
-                return Qt.rgba(r, g, b, 1.0)
-              }
-              var botS = String(root.config.themeBottom || "")
-              var topS = String(root.config.themeTop || "")
-              if (botS === "undefined" || botS === "null" || botS === "") botS = "#e68e0d"
-              if (topS === "undefined" || topS === "null" || topS === "") topS = "#f59e0b"
-              var bot = Qt.color(botS)
-              var top = Qt.color(topS)
-              var r3 = Math.round((bot.r + (top.r - bot.r) * v) * 255)
-              var g3 = Math.round((bot.g + (top.g - bot.g) * v) * 255)
-              var b3 = Math.round((bot.b + (top.b - bot.b) * v) * 255)
-              return "rgb(" + r3 + "," + g3 + "," + b3 + ")"
-            }
-
-            Behavior on height { NumberAnimation { duration: 70; easing.type: Easing.OutCubic } }
-          }
-        }
+        anchors.margins: root.config.spikes === true ? 0 : 4
+        bands: root.spectrumBands
+        silent: root.spectrumSilent
+        visual: "Bars"
+        style: root.config.style || "Classic"
+        colorSync: root.config.colorSync === true
+        barCount: root.barCount
+        colourScheme: 0
+        gapPx: 1
+        minBarHeight: 0
+        peaks: root.config.peaks !== false
+        peakFalloff: root.config.peakFalloff ?? 0.5
+        spikes: root.config.spikes === true
+        fire: root.config.fire === true
+        // Stacks stay off in the mini (segments need taller bars to read).
+        splits: false
+        // Mini holds 32 bars even in spikes (downsampled from the 128 feed).
+        spikeBars: 32
+        sensitivity: root.config.sensitivity ?? 1.0
       }
     }
   }
