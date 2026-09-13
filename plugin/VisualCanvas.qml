@@ -25,6 +25,7 @@ Canvas {
   // Mini passes 32 to keep its density down.
   property int spikeBars: 0
   property var _peakArr: []
+  property var _peakSpeed: []
 
   function displayBands() {
     var b = bands
@@ -115,10 +116,21 @@ Canvas {
       for (var p = 0; p < n; p++) _peakArr.push(0)
     }
 
-    var f = Math.max(0.05, 1.0 - peakFalloff * 0.12)
+    // Winamp peak physics: caught peaks reset a slow drop speed that
+    // accelerates ×1.05/frame — hang, then snap down (not linear decay).
+    // falloff maps to initial drop speed (~1.5/256 → ~8/256 per frame).
+    var speed0 = (1.5 + peakFalloff * 6.5) / 256
+    if (_peakSpeed.length !== n) {
+      _peakSpeed = []
+      for (var s = 0; s < n; s++) _peakSpeed.push(speed0)
+    }
     for (var i = 0; i < n; i++) {
       var v = silent ? 0 : Math.min(1, Math.max(0, b[i]) * sensitivity)
-      if (v >= _peakArr[i]) { _peakArr[i] = v } else { _peakArr[i] = _peakArr[i] * f }
+      if (v >= _peakArr[i]) { _peakArr[i] = v; _peakSpeed[i] = speed0 }
+      else {
+        _peakArr[i] = Math.max(0, _peakArr[i] - _peakSpeed[i])
+        _peakSpeed[i] = _peakSpeed[i] * 1.05
+      }
     }
 
     for (var i = 0; i < n; i++) {

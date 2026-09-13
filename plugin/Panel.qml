@@ -139,24 +139,11 @@ Panel {
           VisualCanvas {
             id: previewViz
             anchors.fill: parent; anchors.margins: Style.space(6)
-            property var _liveBands: []
-            property bool _liveSilent: true
-            property int _frameSeq: -1
-            Timer {
-              interval: 33; repeat: true; running: true
-              onTriggered: {
-                // Only push new frames: reassigning the same array forces
-                // a full Canvas repaint + peak churn at 30Hz for nothing.
-                // (Engine tags each emitted frame; see spectrumSeq.)
-                var seq = Model.spectrumData.seq
-                if (seq === previewViz._frameSeq) return
-                previewViz._frameSeq = seq
-                previewViz._liveBands = Model.spectrumData.bands
-                previewViz._liveSilent = Model.spectrumData.silent
-              }
-            }
-            bands: previewViz._liveBands
-            silent: previewViz._liveSilent
+            // Event-driven: bound straight to the bar's reactive spectrum
+            // properties — no poll timer (the old 33ms timer added up to a
+            // frame of display lag plus 30 wakeups/sec for nothing).
+            bands: root.hostWidget ? root.hostWidget.spectrumBands : []
+            silent: root.hostWidget ? root.hostWidget.spectrumSilent : true
             visual: "Bars"
             style: "Classic"
             colorSync: false
