@@ -211,7 +211,8 @@ Window {
         colorSync: false
         barCount: Math.max(16, Math.floor((parent.width - 8) / 10))
         gapPx: Math.min(6, Math.max(0, win.vizConfig.gap ?? 1))
-        minBarHeight: 0
+        // Min bar height: config toggle (1px floor on silent bars, else 0).
+        minBarHeight: win.vizConfig.minBarHeight === true ? 1 : 0
 
         // Peak settings — live from config (settings panel writes).
         peaks: win.vizConfig.peaks !== false

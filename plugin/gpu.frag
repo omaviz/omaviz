@@ -129,7 +129,7 @@ void main() {
   bool inBar = px.x < x0 + bw + spikeOverlap;
   float v = bandAt(fi);
 
-  float h = v * areaH;
+  float h = max(v * areaH, 1.0);
   float yTop = baseY - h;
 
   vec3 col = vec3(0.0);

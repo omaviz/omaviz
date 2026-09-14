@@ -160,8 +160,8 @@ Panel {
             scopeLineWidth: (root.hcfg.scopeThickness ?? 2)
             colorSync: false
             barCount: 64
-                gapPx: root.hostWidget ? Math.min(6, Math.max(0, root.hostWidget.barGap)) : 1
-            minBarHeight: 0
+            gapPx: root.hostWidget ? Math.min(6, Math.max(0, root.hostWidget.barGap)) : 1
+            minBarHeight: root.hcfg.minBarHeight === true ? 1 : 0
             // Live from bar config — settings below reflect immediately.
             peaks: root.hcfg.peaks !== false
             peakFalloff: (root.hcfg.peakFalloff ?? 0.5)
@@ -268,6 +268,14 @@ Panel {
             description: "Segmented bars with gaps, Winamp-style (preview/desktop)"
             checked: root.hcfg.splits === true
             onClicked: if (root.hostWidget) root.hostWidget.writeVizOption("splits", !checked)
+          }
+          Toggle {
+            visible: panelOpts.mode === "spectrum"
+            width: parent.width
+            label: "Min height"
+            description: "1px floor on silent bars (else invisible)"
+            checked: root.hcfg.minBarHeight === true
+            onClicked: if (root.hostWidget) root.hostWidget.writeVizOption("min_bar_height", !checked)
           }
           Toggle {
             visible: panelOpts.mode === "spectrum"

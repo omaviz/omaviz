@@ -117,6 +117,7 @@ function readConfigFromText(tomlText) {
   if (d.scopeThickness > 5) d.scopeThickness = 5
   d.dots = readTomlValue(tomlText, "desktop", "dots") !== "false"
   d.reflect = readTomlValue(tomlText, "desktop", "reflect") === "true"
+  d.minBarHeight = readTomlValue(tomlText, "desktop", "min_bar_height") === "true"
   return d
 }
 
@@ -133,7 +134,7 @@ function defaultConfig() {
     themeTop: "#f59e0b",
     fire: false,
     peaks: true, peakFalloff: 0.5, spikes: false, splits: false, mono: false,
-    linearFall: false, scope: false, artMode: false, artwork: true, gpu: true, scopeThickness: 2, dots: true, reflect: false,
+    linearFall: false, scope: false, artMode: false, artwork: true, gpu: true, scopeThickness: 2, dots: true, reflect: false, minBarHeight: false,
   }
 }
 

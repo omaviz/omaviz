@@ -9,7 +9,7 @@ Canvas {
   property int barCount: 0
   property color monoColor: "#dce0eb"
   property int gapPx: 1
-  property int minBarHeight: 0
+  property int minBarHeight: 1
   property bool peaks: true
   property real peakFalloff: 0.5
   property bool spikes: false
@@ -194,7 +194,7 @@ Canvas {
     for (var i = 0; i < n; i++) {
       var v = silent ? 0 : Math.min(1, Math.max(0, b[i]) * sensitivity)
       var h = v * areaH
-      if (h > 0 && h < minBarHeight) h = minBarHeight
+      if (h < minBarHeight) h = minBarHeight
       var x = i * (bw + gap)
       var y = baseY - h
       if (h <= 0) continue

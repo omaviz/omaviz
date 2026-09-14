@@ -13,7 +13,7 @@ Item {
   property bool colorSync: false
   property int barCount: 0
   property int gapPx: 1
-  property int minBarHeight: 0
+  property int minBarHeight: 1
   property bool peaks: true
   property real peakFalloff: 0.5
   property bool spikes: false

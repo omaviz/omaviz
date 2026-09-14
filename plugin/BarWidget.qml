@@ -266,9 +266,8 @@ BarWidget {
         barCount: root.barCount
         // Rendered gap follows config (same value that sizes the container).
         gapPx: Math.min(6, Math.max(0, root.barGap))
-        minBarHeight: 0
-        // Paused with the desktop open: no peak animation over the floor.
-        peaks: !root.desktopLive && root.config.peaks !== false
+        // Min bar height: config toggle (1px floor on silent bars, else 0).
+        minBarHeight: root.config.minBarHeight === true ? 1 : 0
         peakFalloff: root.config.peakFalloff ?? 0.5
         spikes: root.config.spikes === true
         fire: root.config.fire === true
