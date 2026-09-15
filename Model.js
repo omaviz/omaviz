@@ -87,7 +87,7 @@ function readConfigFromText(tomlText) {
   d.sensitivity = readTomlFloat(tomlText, "audio", "sensitivity") ?? d.sensitivity
   d.bands = readTomlInt(tomlText, "audio", "bands") ?? d.bands
   d.gap = parseFloat(readTomlValue(tomlText, "mini", "gap") ?? "NaN")
-  if (d.gap !== d.gap || d.gap < 0) d.gap = 3   // NaN/negative → default 3
+  if (d.gap !== d.gap || d.gap < 0) d.gap = 1   // NaN/negative → default 1
   d.widthScale = parseFloat(readTomlValue(tomlText, "mini", "width_scale") ?? "1.5")
   if (d.widthScale !== d.widthScale || d.widthScale < 0.5 || d.widthScale > 4) d.widthScale = 1.5
   d.desktopActive = readTomlValue(tomlText, "desktop", "active") === "true"
@@ -149,7 +149,7 @@ function defaultConfig() {
   return {
     sensitivity: 1.0,
     bands: 32,
-    gap: 3,
+    gap: 1,
     widthScale: 1.5,
     desktopActive: false,
     desktopHeartbeat: 0,
@@ -157,8 +157,8 @@ function defaultConfig() {
     themeBottom: "#e68e0d",
     themeTop: "#f59e0b",
     fire: false,
-    peaks: true, peakFalloff: 0.5, spikes: false, splits: false, mono: false,
-    linearFall: false, scope: false, artMode: false, artwork: true, gpu: true, scopeThickness: 2, dots: true, reflect: false, minBarHeight: false,
+    peaks: true, peakFalloff: 0.1, spikes: false, stacks: false, mono: false,
+    linearFall: true, scope: false, artMode: false, artwork: false, gpu: true, scopeThickness: 2, dots: true, reflect: true, minBarHeight: false,
     barColorCustom: false, barColorFrom: "#e68e0d", barColorTo: "#f59e0b",
     themeAccent: "#f59e0b",
   }
