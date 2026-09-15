@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# omaviz v7 — uninstaller (reverses install.sh).
+# omaviz — uninstaller (reverses install.sh).
 #
 #   ./uninstall.sh          remove plugin (engine included) + config
 #   ./uninstall.sh --purge  also delete ~/.config/omaviz (visuals/config)
@@ -49,4 +49,4 @@ if command -v omarchy-restart-shell >/dev/null; then
 fi
 
 step "done"
-say "omaviz v7 fully removed (no systemd unit, no ~/.local/bin artifacts)."
+say "omaviz fully removed (no systemd unit, no ~/.local/bin artifacts)."

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# omaviz v7 — installer (Omarchy-native, zero-build by default).
+# omaviz — installer (Omarchy-native, zero-build by default).
 #
 #   ./install.sh            full install (idempotent)
 #   ./install.sh --build     also (re)build the Rust engine into plugin/bin

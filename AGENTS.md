@@ -44,11 +44,10 @@ rule below cost a debugging session.
 
 ## Workflow
 
-- Fix one issue at a time from `ISSUES.md`; mark fixed with version + evidence.
+- Track each fix with version + evidence (commit message + tag).
 - `./install.sh` (not `--build`) after QML-only changes; `--build` after
   engine changes. `install.sh` restarts the shell itself.
 - Commit + tag per user request (minor bumps: manifest + spec versions).
-- Keep `APPLICATION_SPEC.md`, `ISSUES.md`, `WINAMP_PARITY.md`,
-  `README.md` in sync with behavior changes.
+- Keep `APP_SPEC.md` and `README.md` in sync with behavior changes.
 - Don't launch/restart quickshell or the shell from agents — tell the user
   to run `omarchy-restart-shell` if a manual reload is ever needed.
