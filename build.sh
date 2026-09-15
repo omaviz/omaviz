@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
-# Build the omaviz-engine and place the binary directly into plugin/bin/
-# (Architecture A: the plugin directory is a self-contained, zero-build
+# Build the omaviz-engine and place the binary directly into bin/
+# (Architecture A: the plugin is a self-contained, zero-build
 # drop-in, so the engine binary is a committed artifact living at
-# plugin/bin/omaviz-engine).
+# bin/omaviz-engine).
 set -euo pipefail
 
 SRC="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ENGINE_DIR="$SRC/engine"
-OUT_DIR="$SRC/plugin/bin"
+OUT_DIR="$SRC/bin"
 OUT_BIN="$OUT_DIR/omaviz-engine"
 
 mkdir -p "$OUT_DIR"
@@ -20,7 +20,7 @@ fi
 echo "== building omaviz-engine (Rust) =="
 ( cd "$ENGINE_DIR" && cargo build --release )
 
-# Output the freshly built binary into plugin/bin/ (atomic: avoids "Text file busy"
+# Output the freshly built binary into bin/ (atomic: avoids "Text file busy"
 # when the engine is currently running and being overwritten in place).
 cp "$ENGINE_DIR/target/release/omaviz-engine" "$OUT_BIN.new"
 mv -f "$OUT_BIN.new" "$OUT_BIN"
@@ -29,8 +29,8 @@ chmod +x "$OUT_BIN"
 echo "engine -> $OUT_BIN"
 
 # ---- GPU shader (Qt6 ShaderEffect needs precompiled .qsb) ----
-SHADER_SRC="$SRC/plugin/gpu.frag"
-SHADER_OUT="$SRC/plugin/gpu.qsb"
+SHADER_SRC="$SRC/gpu.frag"
+SHADER_OUT="$SRC/gpu.qsb"
 QSB_BIN="$(command -v qsb || true)"
 if [ -z "$QSB_BIN" ] && [ -x /usr/lib/qt6/bin/qsb ]; then QSB_BIN=/usr/lib/qt6/bin/qsb; fi
 

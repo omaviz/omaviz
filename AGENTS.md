@@ -8,7 +8,7 @@ rule below cost a debugging session.
 - **NEVER launch the wgpu/Desktop GPU surface or `quickshell -p` windows
   from long-lived agent sessions** — use `timeout N quickshell -p ...`
   for launch smoke tests, then kill. Verify through:
-  - `qmllint plugin/*.qml` (must be exit 0 before install)
+  - `qmllint *.qml` (must be exit 0 before install)
   - `cargo test` in `engine/` (acceptance gate — writing tests ≠ done)
   - `./install.sh` + `journalctl --user` greps for omaviz errors
   - `grim` + vision screenshots of the bar (region `[2900,0,3840,140]`

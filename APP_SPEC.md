@@ -1,9 +1,9 @@
-# omaviz — Application Specification (v8.0.1)
+# omaviz — Application Specification (v8.0.2)
 
 > **Plugin id:** `org.omaviz.visualizer`
-> **Version:** 8.0.1 (spec + manifest, git tag)
+> **Version:** 8.0.2 (spec + manifest, git tag)
 > **Status:** Single-package Omarchy QML plugin. Audio analysis is bundled as
-> one native binary (`plugin/bin/omaviz-engine`) shipped **inside** the plugin
+> one native binary (`bin/omaviz-engine`) shipped **inside** the plugin
 > directory. No systemd service, no Unix socket, no `~/.local/bin` binaries.
 
 This document is the **source of truth** for what ships and how it is verified.
@@ -17,7 +17,7 @@ This document is the **source of truth** for what ships and how it is verified.
 - Ship as a **single plugin directory** — every dependency (QML, JS, native
   engine binary) lives under `~/.config/omarchy/plugins/org.omaviz.visualizer/`.
 - **Zero-build install (Architecture A):** the engine binary is **committed**
-  at `plugin/bin/omaviz-engine`. Installing the plugin is just copying the
+  at `bin/omaviz-engine`. Installing the plugin is just copying the
   directory + `omarchy plugin enable` — no Rust toolchain required.
 - Canvas-2D based rendering (no GL shader dependency for default path).
 - Winamp-style spectrum analyzer with peak-hold markers.
@@ -32,7 +32,7 @@ This document is the **source of truth** for what ships and how it is verified.
 ## 2. Architecture (v7 — single package)
 
 ```
-plugin/  (deployed to ~/.config/omarchy/plugins/org.omaviz.visualizer/)
+repo root = the plugin (deployed to ~/.config/omarchy/plugins/org.omaviz.visualizer/)
 ├── manifest.json
 ├── BarWidget.qml   (spawns bin/omaviz-engine, parses its stdout)
 ├── Panel.qml       (settings: Peaks toggle, Peak fall speed)
@@ -121,7 +121,7 @@ Only the container size and position change.
 
 ---
 
-## 5. Settings Panel (v8.0.1)
+## 5. Settings Panel (v8.0.2)
 
 **VISUALIZATIONS**: Two caps-text cards first (SPECTRUM / OSCILLOSCOPE) —
 workflow starts by picking the viz. Artwork is not a viz anymore: it
@@ -231,19 +231,18 @@ bar_color_to = "#f59e0b"
 ## 9. Repository structure
 
 ```
-omaviz/
-├── APP_SPEC.md  (this file)
+omaviz/  (repo root IS the plugin — manifest.json lives here)
+├── manifest.json, BarWidget.qml, Panel.qml, Desktop.qml
+├── Model.js, VisualCanvas.qml, gpu.frag
+├── assets/omaviz.desktop  (app-launcher entry)
+├── bin/omaviz-engine   (COMMITTED engine binary)
+├── tests/model.test.cjs (node tests)
 ├── engine/              (Rust omaviz-engine source)
-├── plugin/              (QML/JS — copied verbatim to live dir)
-│   ├── manifest.json, BarWidget.qml, Panel.qml, Desktop.qml
-│   ├── Model.js, VisualCanvas.qml, VisualCanvasGL.qml
-│   ├── bin/omaviz-engine   (COMMITTED engine binary)
-│   └── tests/{model,glspectrum}.test.cjs
-├── build.sh             (cargo build → plugin/bin/)
-├── install.sh           (copy plugin dir + omarchy plugin enable)
+├── build.sh             (cargo build → bin/)
+├── install.sh           (copy plugin files + omarchy plugin enable)
 ├── uninstall.sh         (remove plugin)
-├── ADR/                 (Architecture Decision Records)
-└── archive-v6/          (ARCHIVE: prior daemon design)
+├── preview.png          (marketplace preview)
+└── docs/screenshots/    (README tour captures)
 ```
 
 ---

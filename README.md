@@ -1,12 +1,12 @@
 # omaviz — if you liked Winamp, you'll love omaviz even more
 
 The spectrum analyzer you stared at for hours in 1999 — reborn as a
-native citizen of your Linux desktop. Live bars in your bar, a full
+native citizen of your Omarchy desktop. Live bars in your waybar, a full
 desktop visualizer window, and an oscilloscope that dances to whatever
 is playing. Same soul, zero nostalgia tax: buttery Canvas rendering,
 theme-aware, and configured with two clicks.
 
-![version](https://img.shields.io/badge/version-8.0.1-amber) ![license](https://img.shields.io/badge/license-MIT-blue)
+![version](https://img.shields.io/badge/version-8.0.2-amber) ![license](https://img.shields.io/badge/license-MIT-blue)
 
 ## Why omaviz
 
@@ -19,6 +19,9 @@ theme-aware, and configured with two clicks.
 - **Your colors, everywhere.** Follow the Omarchy theme automatically,
   or dial in your own From → To gradient — mini, preview, desktop and
   waveform all stay in sync.
+- **Deaf to players, loyal to sound.** It listens at the PipeWire monitor,
+  so it visualizes *everything* — Spotify, browser, games, calls, local
+  files. No player plugins, no per-app setup, no exceptions.
 - **Winamp physics, not a slideshow.** Peak-hold markers with accelerating
   fall, instant-rise linear mode, flame gradients, segmented stacks —
   the motion language your muscle memory already knows.
@@ -52,8 +55,12 @@ theme-aware, and configured with two clicks.
 
 ## Install
 
+Requires Omarchy (Quickshell) + PipeWire. Zero-build: the engine binary
+ships committed, so no toolchain is needed — only `./install.sh --build`
+needs `cargo` + Qt6 `qsb` (for `gpu.qsb`).
+
 ```bash
-cd ~/workspace/omaviz
+cd ~/omaviz
 ./install.sh            # zero-build: uses the committed engine binary
 ./install.sh --build    # rebuild engine from Rust source first
 ./uninstall.sh          # remove plugin (+ launcher); --purge also config
@@ -64,7 +71,22 @@ Requires: Omarchy (quickshell), PipeWire, `cargo` (only for `--build`).
 Single-click the mini for settings · double-click (or `SUPER+V`) for the
 desktop window · close it and the mini returns by itself.
 
+## Mini
+
+Thirty-two live bars riding in your bar, fed by the 128-band engine —
+with a dotted-skin backdrop and a B&W Mono mode for tiny sizes.
+Single-click the mini for the settings panel below, double-click it
+(or `SUPER+V`) for the desktop window:
+
+![settings panel with mini in the bar](docs/screenshots/Mini.png)
+
 ## Engine
+
+The Rust engine lives *inside* the plugin and is fully managed —
+spawned, restarted and retired by the bar widget itself. There is
+nothing to configure, no service to enable, no socket to babysit:
+install and it just runs. Rebuild from source only if you want to
+hack on it (`./install.sh --build`).
 
 ```bash
 omaviz-engine --bands 128 --fall-mode exp|linear --fft-size 2048 --wave
@@ -76,19 +98,25 @@ t`) plus `{wave:[...]}` lines with `--wave`. Emits on fresh audio with a
 
 ## Layout
 
+Repo root **is** the plugin (`manifest.json` lives here, per the
+marketplace rules) — dev-only baggage (`engine/`, `docs/`, scripts)
+is excluded at install time:
+
 ```
-plugin/          # self-contained drop-in → ~/.config/omarchy/plugins/org.omaviz.visualizer/
-  BarWidget.qml  # bar mini + engine spawn + all config writes
-  Panel.qml      # settings panel (preview + options)
-  Desktop.qml    # detached window (standalone quickshell -p, NO qs.* imports)
-  VisualCanvas.qml  # THE shared renderer (all modes, all options)
-  GpuCanvas.qml + gpu.frag  # GPU path (roadmap: GPU_PLAN.md — Canvas is the verified renderer)
-  Model.js       # config parse/write, spectrum parsing
-  tests/         # node tests (config, migration, keys)
-engine/          # Rust: PipeWire capture → FFT → bands + wave frames
+manifest.json    # plugin identity (id, version, entry points)
+BarWidget.qml    # bar mini + engine spawn + all config writes
+Panel.qml        # settings panel (preview + options)
+Desktop.qml      # detached window (standalone quickshell -p, NO qs.* imports)
+VisualCanvas.qml # THE shared renderer (all modes, all options)
+GpuCanvas.qml + gpu.frag  # GPU path (roadmap: GPU_PLAN.md — Canvas is the verified renderer)
+Model.js         # config parse/write, spectrum parsing
+assets/ bin/ tests/  # launcher entry, COMMITTED engine binary, node tests
+engine/          # Rust source: PipeWire capture → FFT → bands + wave frames
 install.sh / build.sh / uninstall.sh
 APP_SPEC.md  # full spec · GPU_PLAN.md  # GPU renderer roadmap (next version)
 ```
+
+Installs to `~/.config/omarchy/plugins/org.omaviz.visualizer/`.
 
 ## Docs
 
@@ -96,11 +124,15 @@ APP_SPEC.md  # full spec · GPU_PLAN.md  # GPU renderer roadmap (next version)
 - `GPU_PLAN.md` — GPU renderer roadmap (next version)
 - `AGENTS.md` — rules for AI agents working in this repo
 
-## Mini
+## Open source
 
-Thirty-two live bars riding in your bar, fed by the 128-band engine —
-with a dotted-skin backdrop and a B&W Mono mode for tiny sizes.
-Single-click the mini for the settings panel below, double-click it
-(or `SUPER+V`) for the desktop window:
+> **Private by design.** No trackers, no analytics, no network calls —
+> the engine reads your local audio, the panel reads local players, and
+> nothing ever leaves your machine.
 
-![settings panel with mini in the bar](docs/screenshots/Mini.png)
+MIT-licensed and hackable end to end: QML surfaces, shared Canvas
+renderer and the Rust PipeWire engine all live in this repo, with
+`APP_SPEC.md` as the design record and tests for both sides
+(`tests`, `cargo test`). Found a rough edge or a missing
+Winamp-ism? Issues and PRs welcome — the tour screenshots above are
+all taken from the live plugin, so what you see is what runs.

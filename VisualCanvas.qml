@@ -82,26 +82,17 @@ Canvas {
     return up
   }
 
-  // Fire color at height fraction t (0 = base, 1 = tip): deep red base,
-  // orange mid, white-hot tip — classic Winamp flame on near-black.
-  // With custom tones the tip follows the swatch To color (base still
-  // ignites from red); theme mode keeps the classic white-hot tip.
+  // Fire color at height fraction t (0 = base, 1 = tip): the base always
+  // ignites from deep red; the tip lands on the active 2nd color — the
+  // custom swatch To, or the live theme accent in theme mode — so theme
+  // switches stay visible with Fire on.
   function fireColorAt(t) {
     t = Math.min(1, Math.max(0, t))
+    var tipC = Qt.lighter(barColorCustom ? barColorTo : themeTop, 1.2)
+    var tipR = Math.round(tipC.r * 255)
+    var tipG = Math.round(tipC.g * 255)
+    var tipB = Math.round(tipC.b * 255)
     var r, g, b
-    if (!barColorCustom) {
-      if (t < 0.25) {
-        var k = t / 0.25
-        r = Math.round(190 + k * 65); g = Math.round(20 + k * 120); b = Math.round(0 + k * 10)
-      } else {
-        var k2 = (t - 0.25) / 0.75
-        r = 255; g = Math.round(140 + k2 * 115); b = Math.round(60 + k2 * 40)
-      }
-      return "rgba(" + r + "," + g + "," + b + ",1)"
-    }
-    var tipR = Math.round(barColorTo.r * 255)
-    var tipG = Math.round(barColorTo.g * 255)
-    var tipB = Math.round(barColorTo.b * 255)
     if (t < 0.3) {
       var kc = t / 0.3
       r = Math.round(190 + kc * 65); g = Math.round(20 + kc * 110); b = Math.round(0 + kc * 10)
