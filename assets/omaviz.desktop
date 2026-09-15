@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=Omaviz
+Comment=Omarchy audio visualizer (desktop spectrum window)
+GenericName=Audio Visualizer
+Exec=quickshell -p /home/kishan/.config/omarchy/plugins/org.omaviz.visualizer/Desktop.qml
+Icon=omaviz
+Terminal=false
+Categories=AudioVideo;Audio;
+StartupNotify=false

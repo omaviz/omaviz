@@ -1,15 +1,15 @@
 #!/usr/bin/env bash
-# omaviz v7 — installer (Omarchy-native, zero-build by default).
+# omaviz — installer (Omarchy-native, zero-build by default).
 #
 #   ./install.sh            full install (idempotent)
-#   ./install.sh --build     also (re)build the Rust engine into plugin/bin
+#   ./install.sh --build     also (re)build the Rust engine into bin/
 #
 # Architecture A: the plugin directory is a SELF-CONTAINED drop-in. The
-# engine binary (plugin/bin/omaviz-engine) is committed, so a plain copy of
-# the plugin dir + `omarchy plugin enable` is all that's needed — exactly how
+# engine binary (bin/omaviz-engine) is committed, so a plain copy of
+# the plugin files + `omarchy plugin enable` is all that's needed — exactly how
 # every other Omarchy plugin installs. No systemd, no socket, no ~/.local/bin.
 #
-# `./build.sh` produces plugin/bin/omaviz-engine from source; --build here
+# `./build.sh` produces bin/omaviz-engine from source; --build here
 # just delegates to it when you want to rebuild from the Rust source.
 set -euo pipefail
 
@@ -31,31 +31,49 @@ say()  { printf '  %s\n' "$*"; }
 step() { printf '\n== %s ==\n' "$*"; }
 
 # ---------------------------------------------------------------- engine
-# Default: the committed binary in plugin/bin is used as-is (zero-build).
+# Default: the committed binary in bin/ is used as-is (zero-build).
 # Only build if explicitly requested OR the binary is missing.
 if [ "$DO_BUILD" = 1 ]; then
-  step "building omaviz-engine (Rust) -> plugin/bin"
+  step "building omaviz-engine (Rust) -> bin/"
   "$SRC/build.sh"
-elif [ ! -x "$SRC/plugin/bin/omaviz-engine" ]; then
-  step "omaviz-engine missing in plugin/bin — building"
+elif [ ! -x "$SRC/bin/omaviz-engine" ]; then
+  step "omaviz-engine missing in bin/ — building"
   "$SRC/build.sh"
 else
   step "omaviz-engine present (committed) — skipping build"
 fi
 
 # ---------------------------------------------------------------- plugin
-# Copy the self-contained plugin directory. rsync if available for clean
-# updates; otherwise plain cp. The engine binary ships inside plugin/bin.
+# Copy the self-contained plugin files (repo root IS the plugin: manifest.json
+# + QML/JS + assets + bin). rsync excludes keep dev-only baggage (engine
+# source, docs, scripts) out of the live plugin dir; otherwise plain cp.
+# The engine binary ships inside bin/.
 step "installing Omarchy plugin"
 mkdir -p "$PLUGIN_DIR"
 if command -v rsync >/dev/null; then
-  rsync -a --delete "$SRC/plugin/" "$PLUGIN_DIR/"
+  rsync -a --delete \
+    --exclude '/engine/' --exclude '/docs/' --exclude '/.git/' \
+    --exclude '/*.sh' --exclude '/*.md' --exclude '/LICENSE' --exclude '/preview.png' \
+    "$SRC/" "$PLUGIN_DIR/"
 else
   rm -rf "$PLUGIN_DIR"
-  cp -r "$SRC/plugin" "$CFG/omarchy/plugins/$PLUGIN_ID"
+  mkdir -p "$PLUGIN_DIR"
+  cp "$SRC"/manifest.json "$SRC"/*.qml "$SRC"/Model.js "$SRC"/*.frag "$SRC"/*.qsb "$PLUGIN_DIR/"
+  cp -r "$SRC/assets" "$SRC/bin" "$SRC/tests" "$PLUGIN_DIR/"
 fi
 chmod +x "$PLUGIN_DIR/bin/omaviz-engine"
 say "plugin -> $PLUGIN_DIR"
+
+# ---------------------------------------------------------------- launcher
+# App-launcher entry: opens the desktop window directly (quickshell -p).
+# Desktop.qml self-claims config desktop.active on open, so the mini hides
+# no matter which path launched it. Replaces any stale `omaviz start` entry
+# that pointed at a CLI that no longer exists.
+step "installing app launcher"
+mkdir -p "$HOME/.local/share/applications"
+cp -f "$SRC/assets/omaviz.desktop" "$HOME/.local/share/applications/omaviz.desktop"
+rm -f "$HOME/.local/share/applications/omaviz-desktop.desktop"
+say "launcher -> $HOME/.local/share/applications/omaviz.desktop"
 
 # ---------------------------------------------------------------- enable
 # The bar-widget is NOT auto-enabled just by copying files — it must be

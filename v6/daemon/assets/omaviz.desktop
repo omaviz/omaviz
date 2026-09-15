@@ -1,9 +1,0 @@
-[Desktop Entry]
-Type=Application
-Name=Omaviz
-Comment=Omarchy audio visualizer
-GenericName=Audio Visualizer
-Exec=omaviz start
-Icon=omaviz
-Terminal=false
-Categories=AudioVideo;Audio;
