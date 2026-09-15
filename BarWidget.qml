@@ -323,7 +323,7 @@ BarWidget {
         spikes: root.config.spikes === true
         fire: root.config.fire === true
         // Stacks stay off in the mini (segments need taller bars to read).
-        splits: false
+        stacks: false
         // Mini holds 32 bars even in spikes (downsampled from the 128 feed).
         spikeBars: 32
         sensitivity: root.config.sensitivity ?? 1.0

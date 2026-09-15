@@ -187,8 +187,14 @@ Window {
         peakFalloff: win.vizConfig.peakFalloff ?? 0.5
         spikes: win.vizConfig.spikes === true
         fire: win.vizConfig.fire === true
-        splits: win.vizConfig.splits === true
+        stacks: win.vizConfig.stacks === true
+        stackScale: 2
         sensitivity: win.vizConfig.sensitivity ?? 1.0
+        // Custom swatch must reach the fire ramp too (tip = swatch To);
+        // without these the Loader canvas fell back to theme colors.
+        barColorCustom: win.vizConfig.barColorCustom === true
+        barColorFrom: win.vizConfig.barColorFrom || "#e68e0d"
+        barColorTo: win.vizConfig.barColorTo || "#f59e0b"
         themeBottom: win.vizConfig.barColorCustom === true ? (win.vizConfig.barColorFrom || "#e68e0d") : (win.vizConfig.themeBottom || "#e68e0d")
         themeTop: win.vizConfig.barColorCustom === true ? (win.vizConfig.barColorTo || "#f59e0b") : (win.vizConfig.themeTop || "#f59e0b")
         }
@@ -219,7 +225,8 @@ Window {
         peakFalloff: win.vizConfig.peakFalloff ?? 0.5
         spikes: win.vizConfig.spikes === true
         fire: win.vizConfig.fire === true
-        splits: win.vizConfig.splits === true
+        stacks: win.vizConfig.stacks === true
+        stackScale: 2
         sensitivity: win.vizConfig.sensitivity ?? 1.0
         barColorCustom: win.vizConfig.barColorCustom === true
         barColorFrom: win.vizConfig.barColorFrom || "#e68e0d"
@@ -359,13 +366,23 @@ Window {
     }
   }
 
-  FileView { id: cfgWrite; path: Model.configPath; onFileChanged: {} }
+  // Last-external-write guard: the bar also writes this file (option
+  // toggles). If the desktop heartbeat fired on a stale base text it
+  // would clobber a just-written option and the toggle would snap back
+  // (the "needs multiple tries" bug). Skip one beat when another writer
+  // was active in the last 1.5s — the 6s lease tolerates the delay.
+  property double _lastExternalChange: 0
+  FileView { id: cfgWrite; path: Model.configPath; onFileChanged: { win._lastExternalChange = Date.now() } }
   // Heartbeat lease: refresh every 2s while open so the bar knows this
   // window is LIVE. If the process dies without clearing active (crash,
   // kill -9), the stale flag expires within ~6s and the mini returns.
   Timer {
     interval: 2000; repeat: true; running: true
-    onTriggered: win.setDesktopActive(true)
+    onTriggered: {
+      if (Date.now() - win._lastExternalChange < 1500) return
+      win._lastExternalChange = Date.now()
+      win.setDesktopActive(true)
+    }
   }
   function setDesktopActive(v) {
     var txt = cfgWrite.text()

@@ -13,7 +13,9 @@ Canvas {
   property real peakFalloff: 0.5
   property bool spikes: false
   property bool fire: false
-  property bool splits: false
+  property bool stacks: false
+  // Stack segment scale: desktop doubles block size (1 = preview/mini).
+  property int stackScale: 1
   property real sensitivity: 1.0
   // Theme-anchored colors (bound from config; no hardcoded palettes).
   property color themeBottom: "#e68e0d"
@@ -114,7 +116,8 @@ Canvas {
   onReflectChanged: requestPaint()
   onSpikesChanged: requestPaint()
   onFireChanged: requestPaint()
-  onSplitsChanged: requestPaint()
+  onStacksChanged: requestPaint()
+  onStackScaleChanged: requestPaint()
   onSensitivityChanged: requestPaint()
   onThemeBottomChanged: requestPaint()
   onThemeTopChanged: requestPaint()
@@ -224,11 +227,12 @@ Canvas {
       var x = i * (bw + gap)
       var y = baseY - h
       if (h <= 0) continue
-      if (splits) {
+      if (stacks) {
         // Winamp segments: 3px blocks with 1px gaps, stacked from the base.
         // Each block samples the fire ramp (or flat fill) at its own height
         // so the red-to-hot gradient climbs the bar like a real flame.
-        var segH = 3, segGap = 1, sy = baseY
+        // stackScale 2 (desktop) doubles block + gap, keeping proportions.
+        var segH = 3 * stackScale, segGap = 1 * stackScale, sy = baseY
         while (sy > y) {
           var sh = Math.min(segH, sy - y)
           var tMid = 1 - (sy - sh / 2 - (baseY - areaH)) / areaH

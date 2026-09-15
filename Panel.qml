@@ -136,7 +136,7 @@ Panel {
             peakFalloff: (root.hcfg.peakFalloff ?? 0.5)
             spikes: root.spikesOn
             fire: root.hcfg.fire === true
-            splits: root.hcfg.splits === true
+            stacks: root.hcfg.stacks === true
             sensitivity: (root.hcfg.sensitivity ?? 1.0)
             barColorCustom: root.hcfg.barColorCustom === true
             barColorFrom: root.hcfg.barColorFrom || "#e68e0d"
@@ -399,8 +399,8 @@ Panel {
             width: (parent.width - Style.space(14)) / 2
             label: "Stacks"
             description: "Segmented Winamp bars"
-            checked: root.hcfg.splits === true
-            onClicked: if (root.hostWidget) root.hostWidget.writeVizOption("splits", !checked)
+            checked: root.hcfg.stacks === true
+            onClicked: if (root.hostWidget) root.hostWidget.writeVizOption("stacks", !checked)
           }
         }
 

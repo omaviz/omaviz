@@ -114,7 +114,9 @@ function readConfigFromText(tomlText) {
   if (d.peakFalloff !== d.peakFalloff || d.peakFalloff < 0) d.peakFalloff = 0
   if (d.peakFalloff > 1) d.peakFalloff = 1
   d.spikes = readTomlValue(tomlText, "desktop", "spikes") === "true"
-  d.splits = readTomlValue(tomlText, "desktop", "splits") === "true"
+  // "Stacks" UI label, canonical key "stacks"; legacy "splits" migrates.
+  d.stacks = readTomlValue(tomlText, "desktop", "stacks") === "true"
+    || readTomlValue(tomlText, "desktop", "splits") === "true"
   d.mono = readTomlValue(tomlText, "desktop", "mono") === "true"
   d.linearFall = readTomlValue(tomlText, "desktop", "linear_fall") === "true"
   d.scope = readTomlValue(tomlText, "desktop", "scope") === "true"

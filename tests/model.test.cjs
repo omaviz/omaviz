@@ -1,4 +1,4 @@
-// Model.js tests — run: node --test plugin/tests/model.test.cjs
+// Model.js tests — run: node --test tests/model.test.cjs
 // Covers the settings-redesign contract: new bar-color keys, artwork_mode
 // retirement/migration, silent-floor inputs, and keys that stay readable
 // in code after their UI was removed (dots, mono, min_bar_height).
@@ -26,10 +26,19 @@ test("defaultConfig carries the redesign keys with theme defaults", () => {
   assert.equal(d.barColorFrom, "#e68e0d")
   assert.equal(d.barColorTo, "#f59e0b")
   assert.equal(d.artMode, false)
-  assert.equal(d.artwork, true)
+  assert.equal(d.artwork, false) // v8.0.3: backdrop off for fresh installs
   assert.equal(d.mono, false)
   assert.equal(d.dots, true)
   assert.equal(d.minBarHeight, false)
+  // v8.0.3 first-install defaults
+  assert.equal(d.gap, 1)
+  assert.equal(d.peaks, true)
+  assert.equal(d.peakFalloff, 0.1)
+  assert.equal(d.reflect, true)
+  assert.equal(d.linearFall, true)
+  assert.equal(d.stacks, false)
+  assert.equal(d.spikes, false)
+  assert.equal(d.fire, false)
 })
 
 test("isHexColor accepts only strict #rrggbb", () => {
@@ -108,4 +117,58 @@ test("themeAccent snapshot parses with fallback", () => {
   const d2 = Model.readConfigFromText("[desktop]\ntheme_accent = \"blue\"\n")
   assert.equal(d2.themeAccent, "#f59e0b")
   assert.equal(Model.defaultConfig().themeAccent, "#f59e0b")
+})
+
+test("legacy splits migrates to canonical stacks", () => {
+  const d = Model.readConfigFromText("[desktop]\nsplits = true\n")
+  assert.equal(d.stacks, true)
+  const d2 = Model.readConfigFromText("[desktop]\nstacks = true\n")
+  assert.equal(d2.stacks, true)
+  const d3 = Model.readConfigFromText("[desktop]\nstacks = false\n")
+  assert.equal(d3.stacks, false)
+  assert.equal(Model.defaultConfig().stacks, false)
+})
+
+// Every panel option: write the key the panel writes, parse it back.
+// Catches writer/reader key drift (e.g. panel writes X, Model reads Y).
+test("each panel option round-trips through write + parse", () => {
+  const cases = [
+    // [section, key, written value, parsed prop, expected]
+    ["desktop", "peaks", false, "peaks", false],
+    ["desktop", "peak_falloff", 0.1, "peakFalloff", 0.1],
+    ["desktop", "reflect", true, "reflect", true],
+    ["desktop", "artwork", false, "artwork", false],
+    ["desktop", "bar_color_custom", true, "barColorCustom", true],
+    ["desktop", "bar_color_from", "#112233", "barColorFrom", "#112233"],
+    ["desktop", "bar_color_to", "#aabbcc", "barColorTo", "#aabbcc"],
+    ["desktop", "spikes", true, "spikes", true],
+    ["desktop", "stacks", true, "stacks", true],
+    ["desktop", "fire", true, "fire", true],
+    ["desktop", "scope", true, "scope", true],
+    ["desktop", "scope_thickness", 3.5, "scopeThickness", 3.5],
+    ["desktop", "gpu", false, "gpu", false],
+    ["desktop", "linear_fall", true, "linearFall", true],
+    ["desktop", "mono", true, "mono", true],
+    ["desktop", "dots", false, "dots", false],
+    ["desktop", "theme_bottom", "#111111", "themeBottom", "#111111"],
+    ["desktop", "theme_top", "#222222", "themeTop", "#222222"],
+    ["desktop", "theme_accent", "#333333", "themeAccent", "#333333"],
+    ["mini", "gap", 1, "gap", 1],
+    ["audio", "sensitivity", 1.2, "sensitivity", 1.2],
+    ["audio", "bands", 64, "bands", 64],
+  ]
+  for (const [section, key, value, prop, expected] of cases) {
+    const txt = Model.writeConfigKey("", section, key, value)
+    const d = Model.readConfigFromText(txt)
+    assert.equal(d[prop], expected, `${section}.${key} round-trip`)
+  }
+})
+
+test("toggle flip-flop: on then off parses both ways", () => {
+  for (const key of ["peaks", "reflect", "artwork", "spikes", "stacks", "fire", "mono", "gpu", "linear_fall", "bar_color_custom"]) {
+    let txt = Model.writeConfigKey("", "desktop", key, true)
+    assert.equal(Model.readConfigFromText(txt)[key === "linear_fall" ? "linearFall" : key === "bar_color_custom" ? "barColorCustom" : key], true, `${key} on`)
+    txt = Model.writeConfigKey(txt, "desktop", key, false)
+    assert.equal(Model.readConfigFromText(txt)[key === "linear_fall" ? "linearFall" : key === "bar_color_custom" ? "barColorCustom" : key], false, `${key} off`)
+  }
 })

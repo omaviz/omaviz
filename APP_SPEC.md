@@ -95,7 +95,7 @@ Only the container size and position change.
 | `spikes` | `false` | Dense thin gapless flame spikes (~2px, width-derived count) |
 | `spikeBars` | `0` | Spike count cap (0=auto; mini passes 32) |
 | `fire` | `false` | Vertical red→orange→white-hot flame gradient (container-shared) |
-| `splits` | `false` | Winamp segments: 3px blocks + 1px gaps (preview/desktop) |
+| `stacks` | `false` | Winamp segments: 3px blocks + 1px gaps (preview/desktop; desktop doubles via stackScale) |
 | `sensitivity` | `1.0` | Input gain multiplier |
 | `themeBottom`/`themeTop` | amber | Theme-anchored colors; live shell accent when `colorSync` |
 
@@ -193,7 +193,7 @@ fire = "false"
 peaks = true
 peak_falloff = 0.5
 spikes = "false"
-splits = "false"
+stacks = "false"
 bar_color_custom = "false"
 bar_color_from = "#e68e0d"
 bar_color_to = "#f59e0b"
