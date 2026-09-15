@@ -101,6 +101,10 @@ function readConfigFromText(tomlText) {
   // (#19e0d4 / #a45cff) which did NOT match the active theme.
   d.themeBottom = readTomlValue(tomlText, "desktop", "theme_bottom") || "#e68e0d"
   d.themeTop = readTomlValue(tomlText, "desktop", "theme_top") || "#f59e0b"
+  // Live theme accent snapshot (written by the bar on theme switches so
+  // the standalone desktop window can follow themes without qs.*).
+  d.themeAccent = readTomlValue(tomlText, "desktop", "theme_accent") || "#f59e0b"
+  if (!isHexColor(d.themeAccent)) d.themeAccent = "#f59e0b"
   // v7.4 fire toggle: a top-level visualization option (independent of style)
   // that enables the winamp flame on the desktop renderer. Default OFF.
   d.fire = readTomlValue(tomlText, "desktop", "fire") === "true"
@@ -156,6 +160,7 @@ function defaultConfig() {
     peaks: true, peakFalloff: 0.5, spikes: false, splits: false, mono: false,
     linearFall: false, scope: false, artMode: false, artwork: true, gpu: true, scopeThickness: 2, dots: true, reflect: false, minBarHeight: false,
     barColorCustom: false, barColorFrom: "#e68e0d", barColorTo: "#f59e0b",
+    themeAccent: "#f59e0b",
   }
 }
 

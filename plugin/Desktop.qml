@@ -93,7 +93,7 @@ Window {
   }
   Timer {
     id: fadeTimer
-    interval: 200
+    interval: 350
     repeat: false
     onTriggered: trayBox.shown = false
   }
@@ -241,7 +241,7 @@ Window {
     anchors.top: parent.top
     anchors.left: parent.left
     anchors.right: parent.right
-    height: 44
+    height: 68
     property bool shown: false
     opacity: shown ? 1.0 : 0.0
     visible: opacity > 0.01
@@ -258,21 +258,21 @@ Window {
 
     Row {
       anchors.fill: parent
-      anchors.leftMargin: 10
-      anchors.rightMargin: 10
-      anchors.topMargin: 4
-      anchors.bottomMargin: 4
-      spacing: 10
+      anchors.leftMargin: 12
+      anchors.rightMargin: 12
+      anchors.topMargin: 10
+      anchors.bottomMargin: 10
+      spacing: 12
 
-      // Artwork thumbnail (rounded) or bordered placeholder.
+      // Artwork thumbnail (48px) or same-size fallback placeholder.
       Item {
-        width: 36
-        height: 36
+        width: 48
+        height: 48
         anchors.verticalCenter: parent.verticalCenter
 
         Rectangle {
           anchors.fill: parent
-          radius: 6
+          radius: 8
           color: "transparent"
           border.width: 1
           border.color: Qt.rgba(255,255,255,0.15)
@@ -281,7 +281,7 @@ Window {
             anchors.centerIn: parent
             text: "♪"
             color: Qt.rgba(255,255,255,0.4)
-            font.pixelSize: 14
+            font.pixelSize: 18
           }
         }
         Image {
@@ -294,42 +294,43 @@ Window {
         }
       }
 
-      // Track info: monospace title + artist + tiny source line.
+      // Track info: larger monospace title + artist + theme source line.
       Column {
-        width: parent.width - 36 - 10 - 28 - 20
-        spacing: 2
+        width: parent.width - 48 - 12 - 24 - 24
+        spacing: 4
         anchors.verticalCenter: parent.verticalCenter
 
         Text {
           text: win.trackTitle !== "" ? win.trackTitle : win.modeName
           color: "#e8e8f0"
           font.family: "monospace"
-          font.pixelSize: 12
+          font.pixelSize: 14
           font.bold: true
           elide: Text.ElideRight
           width: parent.width
         }
         Text {
           text: win.trackArtist
-          color: Qt.rgba(255,255,255,0.7)
+          color: Qt.rgba(255,255,255,0.75)
           font.family: "monospace"
-          font.pixelSize: 11
+          font.pixelSize: 12
           elide: Text.ElideRight
           width: parent.width
           visible: win.trackArtist !== ""
         }
         Text {
           text: win.playerSource
-          color: Qt.rgba(255,255,255,0.4)
+          color: win.vizConfig.themeAccent || "#f59e0b"
           font.family: "monospace"
-          font.pixelSize: 9
+          font.pixelSize: 10
           elide: Text.ElideRight
           width: parent.width
           visible: win.playerSource !== ""
         }
       }
 
-      // Circular close button (right).
+      // Circular close button: fully steady 16px glyph — no hover
+      // reaction at all, so nothing can flash.
       Rectangle {
         id: closeBtn
         width: 24
@@ -337,22 +338,19 @@ Window {
         radius: 12
         anchors.verticalCenter: parent.verticalCenter
         color: "transparent"
-        border.width: 0
 
         Text {
           anchors.centerIn: parent
           text: "×"
-          color: Qt.rgba(255,255,255,0.6)
-          font.pixelSize: 14
+          color: Qt.rgba(255,255,255,0.75)
+          font.pixelSize: 16
           font.family: "monospace"
         }
 
         MouseArea {
           anchors.fill: parent
           cursorShape: Qt.PointingHandCursor
-          hoverEnabled: true
-          onEntered: { closeBtn.border.width = 1; closeBtn.border.color = Qt.rgba(255,255,255,0.3) }
-          onExited: closeBtn.border.width = 0
+          hoverEnabled: true // hand cursor only — no visual hover reaction
           // Release the shared flag BEFORE closing — FileView writes are
           // async, so give the write time to flush before the window dies.
           onClicked: { win.setDesktopActive(false); closeTimer.restart() }

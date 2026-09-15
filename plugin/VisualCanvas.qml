@@ -84,15 +84,32 @@ Canvas {
 
   // Fire color at height fraction t (0 = base, 1 = tip): deep red base,
   // orange mid, white-hot tip — classic Winamp flame on near-black.
+  // With custom tones the tip follows the swatch To color (base still
+  // ignites from red); theme mode keeps the classic white-hot tip.
   function fireColorAt(t) {
     t = Math.min(1, Math.max(0, t))
     var r, g, b
-    if (t < 0.25) {
-      var k = t / 0.25
-      r = Math.round(190 + k * 65); g = Math.round(20 + k * 120); b = Math.round(0 + k * 10)
+    if (!barColorCustom) {
+      if (t < 0.25) {
+        var k = t / 0.25
+        r = Math.round(190 + k * 65); g = Math.round(20 + k * 120); b = Math.round(0 + k * 10)
+      } else {
+        var k2 = (t - 0.25) / 0.75
+        r = 255; g = Math.round(140 + k2 * 115); b = Math.round(60 + k2 * 40)
+      }
+      return "rgba(" + r + "," + g + "," + b + ",1)"
+    }
+    var tipR = Math.round(barColorTo.r * 255)
+    var tipG = Math.round(barColorTo.g * 255)
+    var tipB = Math.round(barColorTo.b * 255)
+    if (t < 0.3) {
+      var kc = t / 0.3
+      r = Math.round(190 + kc * 65); g = Math.round(20 + kc * 110); b = Math.round(0 + kc * 10)
     } else {
-      var k2 = (t - 0.25) / 0.75
-      r = 255; g = Math.round(140 + k2 * 110); b = Math.round(10 + k2 * 190)
+      var k3 = (t - 0.3) / 0.7
+      r = Math.round(255 + (tipR - 255) * k3)
+      g = Math.round(130 + (tipG - 130) * k3)
+      b = Math.round(10 + (tipB - 10) * k3)
     }
     return "rgba(" + r + "," + g + "," + b + ",1)"
   }
@@ -125,16 +142,15 @@ Canvas {
   function fillFor(h, a) {
     if (artMode) return "#ffffff"
     if (mono) return monoLight ? "#000000" : "#ffffff"
-    if (fire) {
-      // Winamp flame, kept luminous at low levels so quiet bars stay
-      // visible on dark containers (dark reds vanish; orange does not).
-      return "rgba(255," + Math.round(140 + h * 115) + "," + Math.round(60 + h * 40) + ",1)"
-    }
+    // Fire ramp (custom-aware tip) — Winamp flame, kept luminous at low
+    // levels so quiet bars stay visible on dark containers.
+    if (fire) return fireColorAt(h)
     // Custom tones win over theme; otherwise theme-anchored: colorSync
     // blends bottom→top theme colors, otherwise bottom rises toward
-    // white-hot with bar height.
-    var bot = barColorCustom ? barColorFrom : themeBottom
-    var top = barColorCustom ? barColorTo : (colorSync ? themeTop : Qt.color("#ffffff"))
+    // white-hot with bar height. Base pushed darker, tip lighter for a
+    // stronger gradient read.
+    var bot = Qt.darker(barColorCustom ? barColorFrom : themeBottom, 1.25)
+    var top = Qt.lighter(barColorCustom ? barColorTo : (colorSync ? themeTop : Qt.color("#ffffff")), 1.2)
     var r = bot.r + (top.r - bot.r) * h
     var g = bot.g + (top.g - bot.g) * h
     var b = bot.b + (top.b - bot.b) * h
@@ -142,8 +158,8 @@ Canvas {
   }
 
   function fillWash(h) {
-    var bot = barColorCustom ? barColorFrom : themeBottom
-    var top = barColorCustom ? barColorTo : (colorSync ? themeTop : Qt.color("#ffffff"))
+    var bot = Qt.darker(barColorCustom ? barColorFrom : themeBottom, 1.25)
+    var top = Qt.lighter(barColorCustom ? barColorTo : (colorSync ? themeTop : Qt.color("#ffffff")), 1.2)
     var r = Math.round(bot.r + (top.r - bot.r) * h)
     var g = Math.round(bot.g + (top.g - bot.g) * h)
     var b = Math.round(bot.b + (top.b - bot.b) * h)
@@ -310,12 +326,14 @@ Canvas {
     }
 
     if (reflect) {
-      // Floor mirror: faded copy of each bar below the baseline.
+      // Floor mirror: faded copy of each bar below the baseline, tinted
+      // with the bar base color (custom From, else theme) so it tracks
+      // the bars. Mono/artMode mirrors match their white/black bars.
       ctx.save()
       ctx.globalAlpha = 0.22
       if (artMode) ctx.fillStyle = "#ffffff";
       else if (mono) ctx.fillStyle = monoLight ? "#000000" : "#ffffff";
-      else ctx.fillStyle = fire ? fireColorAt(0.12) : themeBottom;
+      else ctx.fillStyle = fire ? fireColorAt(0.12) : Qt.darker(barColorCustom ? barColorFrom : themeBottom, 1.25);
       for (var m = 0; m < n; m++) {
         var mv = silent ? 0 : Math.min(1, Math.max(0, b[m]) * sensitivity)
         var mh = mv * areaH * 0.5

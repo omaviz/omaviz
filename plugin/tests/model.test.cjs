@@ -101,3 +101,11 @@ test("writeConfigKey round-trips the new keys", () => {
   assert.equal(d.barColorTo, "#aabbcc")
   assert.equal(d.sensitivity, 1.5)
 })
+
+test("themeAccent snapshot parses with fallback", () => {
+  const d = Model.readConfigFromText("[desktop]\ntheme_accent = \"#38bdf8\"\n")
+  assert.equal(d.themeAccent, "#38bdf8")
+  const d2 = Model.readConfigFromText("[desktop]\ntheme_accent = \"blue\"\n")
+  assert.equal(d2.themeAccent, "#f59e0b")
+  assert.equal(Model.defaultConfig().themeAccent, "#f59e0b")
+})

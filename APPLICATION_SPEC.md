@@ -1,7 +1,7 @@
-# omaviz — Application Specification (v7.15.0)
+# omaviz — Application Specification (v8.0.0)
 
 > **Plugin id:** `org.omaviz.visualizer`
-> **Version:** 7.15.0 (spec + manifest, git tag)
+> **Version:** 8.0.0 (spec + manifest, git tag)
 > **Status:** Single-package Omarchy QML plugin. Audio analysis is bundled as
 > one native binary (`plugin/bin/omaviz-engine`) shipped **inside** the plugin
 > directory. No systemd service, no Unix socket, no `~/.local/bin` binaries.
@@ -121,30 +121,32 @@ Only the container size and position change.
 
 ---
 
-## 5. Settings Panel (v7.15.0)
+## 5. Settings Panel (v8.0.0)
 
-**VISUALIZATIONS**: Two cards first (Spectrum / Scope) — workflow starts
-by picking the viz. Artwork is not a viz anymore: it merged into Spectrum
-as an **Artwork backdrop** toggle (album-cover behind bars, reactive-glow
-fallback). No auto-white rule — the Color setting governs bars everywhere.
+**VISUALIZATIONS**: Two caps-text cards first (SPECTRUM / OSCILLOSCOPE) —
+workflow starts by picking the viz. Artwork is not a viz anymore: it
+merged into Spectrum as an **Artwork backdrop** toggle (album-cover behind
+bars, reactive-glow fallback). No auto-white rule — the Color setting
+governs bars everywhere.
 
 **PREVIEW**: Live visualization (same renderer, larger) + helper text below
 (left-aligned, muted): double-click opens the desktop window.
 
-**BARS** (spectrum): Peaks + Peak fall speed pair · Spikes + Stacks pair ·
-Reflection + Artwork backdrop pair.
+**OPTIONS main**: Peaks + Peak fall speed · Reflection + Artwork backdrop ·
+BAR COLOR · **Advanced »** link (slides to sub-view, « Back returns; viz
+cards + preview stay put).
 
 **BAR COLOR** (all viz; mini + preview + desktop in sync): Custom colors
-switch (off = theme dominant colors) + From (base) / To (tip) hex fields
-with swatches. Mini Mono overrides this on the mini only.
+switch (off = theme colors) + preset swatch row (tap applies both tones)
++ From (base) / To (tip) hex fields with swatches. Base rendered darker,
+tip lighter for contrast. Fire ignites from red into the custom tip.
+Reflection mirror is tinted with the base color. Theme mode always
+follows the LIVE Omarchy accent (bar snapshots accent triple to config
+for the standalone desktop window). Mini Mono overrides this on mini only.
 
-**OSCILLOSCOPE** (scope): Line thickness slider only.
-
-**COMMON** (all viz): GPU renderer · Fire (bars gradient, wash + wave) ·
-Linear fall (engine restart) · Sensitivity slider (writes `[audio]`,
-applied QML-side, no restart).
-
-**MINI ONLY**: Mono toggle — B&W mini bars (waybar readability override).
+**ADVANCED**: Spikes + Stacks (spectrum) · Fire · Line thickness (scope) ·
+GPU renderer · Linear fall (engine restart) · Sensitivity slider (writes
+`[audio]`, applied QML-side, no restart) · Mono (mini only).
 
 **Retired from UI, still honored in code**: Dots, Min height (now
 automatic: 1px floor while playing, 0 when silent), `artwork_mode`
@@ -210,6 +212,10 @@ bar_color_to = "#f59e0b"
 - Desktop self-claims the flag on open; `onClosing` clears it with a flush
   delay then `Qt.quit()` (no zombie windowless processes)
 - Desktop height capped at 300px, bottom-anchored
+- No title bar: 68px hover tray fades in on mouse-over (48px artwork
+  thumbnail or same-size fallback, larger monospace track/artist/theme
+  source lines) with a steady 16px × close button; fades out ~200ms
+  after the cursor leaves
 
 ---
 

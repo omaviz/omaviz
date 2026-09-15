@@ -37,6 +37,8 @@ Panel {
   readonly property bool isSpectrum: !root.isScope
   readonly property bool peaksOn: root.hcfg.peaks !== false
   readonly property bool spikesOn: root.hcfg.spikes === true
+  // Main <-> Advanced options views (top viz cards + preview stay put).
+  property bool showAdvanced: false
 
   // ---- Popup lifecycle (Panel base owns controller; do NOT override opened/open/close/toggle) ----
   KeyboardPanel {
@@ -50,7 +52,7 @@ Panel {
     focusTarget: keyCatcher
     property bool _sizeLocked: false
     property int _frozenH: 0
-    contentWidth: panel.fittedContentWidth(Style.space(460))
+    contentWidth: panel.fittedContentWidth(Style.space(560))
     contentHeight: _sizeLocked ? _frozenH : panel.fittedContentHeight(column.implicitHeight)
 
     PanelKeyCatcher {
@@ -84,17 +86,13 @@ Panel {
           spacing: Style.space(8)
 
           VizCard {
-            labelText: "Spectrum"
-            iconText: "B"
-            iconBg: "#e68e0d"
+            labelText: "SPECTRUM"
             selected: root.isSpectrum
             onCardClicked: if (root.hostWidget) root.hostWidget.writeVizOption("scope", false)
           }
 
           VizCard {
-            labelText: "Scope"
-            iconText: "~"
-            iconBg: "#6b7280"
+            labelText: "OSCILLOSCOPE"
             selected: root.isScope
             onCardClicked: if (root.hostWidget) root.hostWidget.writeVizOption("scope", true)
           }
@@ -143,8 +141,8 @@ Panel {
             barColorCustom: root.hcfg.barColorCustom === true
             barColorFrom: root.hcfg.barColorFrom || "#e68e0d"
             barColorTo: root.hcfg.barColorTo || "#f59e0b"
-            themeBottom: root.hostWidget ? (root.hostWidget.config.themeBottom || "#e68e0d") : "#e68e0d"
-            themeTop: root.hostWidget ? (root.hostWidget.config.themeTop || "#f59e0b") : "#f59e0b"
+            themeBottom: Qt.darker(Color.accent, 1.3)
+            themeTop: Color.accent
           }
           MouseArea {
             anchors.fill: parent
@@ -167,6 +165,24 @@ Panel {
         // ============================================================
         PanelSectionHeader { text: "OPTIONS" }
 
+        // ---- Options stage: main <-> advanced slide (top stays intact) ----
+        Item {
+          id: optStage
+          width: parent.width
+          height: root.showAdvanced ? advView.implicitHeight : mainView.implicitHeight
+          Behavior on height { NumberAnimation { duration: 160; easing.type: Easing.OutCubic } }
+          clip: true
+
+          Column {
+            id: mainView
+            width: parent.width
+            spacing: Style.space(8)
+            x: root.showAdvanced ? -40 : 0
+            opacity: root.showAdvanced ? 0 : 1
+            enabled: !root.showAdvanced
+            Behavior on x { NumberAnimation { duration: 160; easing.type: Easing.OutCubic } }
+            Behavior on opacity { NumberAnimation { duration: 160 } }
+
         // ---- Bars (spectrum) ----
         PanelSectionHeader { text: "BARS"; visible: root.isSpectrum }
 
@@ -178,7 +194,7 @@ Panel {
           Toggle {
             width: (parent.width - Style.space(14)) / 2
             label: "Peaks"
-            description: "White peak-hold markers on each bar"
+            description: "Peak-hold markers"
             checked: root.peaksOn
             onClicked: if (root.hostWidget) root.hostWidget.writeVizOption("peaks", !checked)
           }
@@ -195,7 +211,7 @@ Panel {
               elide: Text.ElideRight
             }
             Text {
-              text: "0 holds · 1 falls fast"
+              text: "0 holds · 1 fast"
               color: Qt.darker(root.bar ? root.bar.foreground : Color.foreground, 1.4)
               font.family: Style.font.family
               font.pixelSize: Style.font.bodySmall
@@ -220,34 +236,8 @@ Panel {
 
           Toggle {
             width: (parent.width - Style.space(14)) / 2
-            label: "Spikes"
-            description: "Dense thin flame spikes, no gaps (auto-enables Fire)"
-            checked: root.spikesOn
-            onClicked: {
-              if (!root.hostWidget) return
-              var v = !checked
-              root.hostWidget.writeVizOptions("spikes", v, "fire", v)
-            }
-          }
-
-          Toggle {
-            width: (parent.width - Style.space(14)) / 2
-            label: "Stacks"
-            description: "Segmented bars with gaps, Winamp-style"
-            checked: root.hcfg.splits === true
-            onClicked: if (root.hostWidget) root.hostWidget.writeVizOption("splits", !checked)
-          }
-        }
-
-        Row {
-          visible: root.isSpectrum
-          width: parent.width
-          spacing: Style.space(14)
-
-          Toggle {
-            width: (parent.width - Style.space(14)) / 2
             label: "Reflection"
-            description: "Faded floor mirror below the bars"
+            description: "Floor mirror"
             checked: root.hcfg.reflect === true
             onClicked: if (root.hostWidget) root.hostWidget.writeVizOption("reflect", !checked)
           }
@@ -255,7 +245,7 @@ Panel {
           Toggle {
             width: (parent.width - Style.space(14)) / 2
             label: "Artwork backdrop"
-            description: "Album-cover behind bars (fallback: glow)"
+            description: "Album art behind bars (else glow)"
             checked: root.hcfg.artwork !== false
             onClicked: if (root.hostWidget) root.hostWidget.writeVizOption("artwork", !checked)
           }
@@ -271,7 +261,7 @@ Panel {
           Toggle {
             width: (parent.width - Style.space(14)) / 2
             label: "Custom colors"
-            description: "Off = theme dominant colors"
+            description: "Off = theme colors"
             checked: root.hcfg.barColorCustom === true
             onClicked: if (root.hostWidget) root.hostWidget.writeVizOption("bar_color_custom", !checked)
           }
@@ -315,8 +305,32 @@ Panel {
             }
           }
         }
+        Row {
+          id: presetRow
+          width: parent.width
+          spacing: Style.space(6)
+          Repeater {
+            model: [["#e68e0d","#f59e0b"],["#ef4444","#f59e0b"],["#0369a1","#38bdf8"],["#7c3aed","#c4b5fd"],["#65a30d","#d9f99d"],["#e11d48","#fda4af"],["#06b6d4","#a5f3fc"],["#6b7280","#f8fafc"]]
+            Rectangle {
+              width: (presetRow.width - Style.space(42)) / 8
+              height: 22
+              radius: 5
+              gradient: Gradient {
+                GradientStop { position: 0.0; color: modelData[0] }
+                GradientStop { position: 1.0; color: modelData[1] }
+              }
+              border.width: (root.hcfg.barColorFrom === modelData[0] && root.hcfg.barColorTo === modelData[1]) ? 2 : 0
+              border.color: Color.accent
+              MouseArea {
+                anchors.fill: parent
+                cursorShape: Qt.PointingHandCursor
+                onClicked: if (root.hostWidget) root.hostWidget.writeVizOptions3("bar_color_custom", true, "bar_color_from", modelData[0], "bar_color_to", modelData[1])
+              }
+            }
+          }
+        }
         Text {
-          text: "Theme (default): theme dominant colors. Custom: your From → To gradient on mini, preview, desktop + wave. Mini Mono overrides this on the mini only."
+          text: "Tap a preset for both tones, or type hex. Custom tones apply to mini, preview, desktop + wave."
           color: Qt.darker(root.bar ? root.bar.foreground : Color.foreground, 1.4)
           font.family: Style.font.family
           font.pixelSize: Style.font.bodySmall
@@ -324,14 +338,86 @@ Panel {
           wrapMode: Text.WordWrap
         }
 
-        // ---- Oscilloscope-only ----
-        PanelSectionHeader { text: "OSCILLOSCOPE"; visible: root.isScope }
+        // ---- Advanced link ----
+        Text {
+          text: "Advanced »"
+          color: Color.accent
+          font.family: Style.font.family
+          font.pixelSize: Style.font.body
+          font.bold: true
+          MouseArea {
+            anchors.fill: parent
+            cursorShape: Qt.PointingHandCursor
+            onClicked: root.showAdvanced = true
+          }
+        }
+      }
+
+      // ---- Advanced view (slides in; top viz cards + preview stay put) ----
+      Column {
+        id: advView
+        width: parent.width
+        spacing: Style.space(8)
+        x: root.showAdvanced ? 0 : 40
+        opacity: root.showAdvanced ? 1 : 0
+        enabled: root.showAdvanced
+        Behavior on x { NumberAnimation { duration: 160; easing.type: Easing.OutCubic } }
+        Behavior on opacity { NumberAnimation { duration: 160 } }
+
+        Text {
+          text: "« Back"
+          color: Color.accent
+          font.family: Style.font.family
+          font.pixelSize: Style.font.body
+          font.bold: true
+          MouseArea {
+            anchors.fill: parent
+            cursorShape: Qt.PointingHandCursor
+            onClicked: root.showAdvanced = false
+          }
+        }
+        PanelSectionHeader { text: "ADVANCED" }
+
+        Row {
+          visible: root.isSpectrum
+          width: parent.width
+          spacing: Style.space(14)
+
+          Toggle {
+            width: (parent.width - Style.space(14)) / 2
+            label: "Spikes"
+            description: "Thin dense spikes (enables Fire)"
+            checked: root.spikesOn
+            onClicked: {
+              if (!root.hostWidget) return
+              var v = !checked
+              root.hostWidget.writeVizOptions("spikes", v, "fire", v)
+            }
+          }
+
+          Toggle {
+            width: (parent.width - Style.space(14)) / 2
+            label: "Stacks"
+            description: "Segmented Winamp bars"
+            checked: root.hcfg.splits === true
+            onClicked: if (root.hostWidget) root.hostWidget.writeVizOption("splits", !checked)
+          }
+        }
+
+        Toggle {
+          width: parent.width
+          label: "Fire"
+          description: "Flame gradient everywhere"
+          checked: root.hcfg.fire === true
+          onClicked: if (root.hostWidget) root.hostWidget.writeVizOption("fire", !checked)
+        }
+
         Column {
           width: parent.width
           spacing: Style.space(4)
           visible: root.isScope
           Text {
-            text: "Waveform on mini, preview and desktop. Follows Bar color and Sensitivity."
+            text: "Waveform. Follows color + sensitivity."
             color: Qt.darker(root.bar ? root.bar.foreground : Color.foreground, 1.4)
             font.family: Style.font.family
             font.pixelSize: Style.font.bodySmall
@@ -354,8 +440,6 @@ Panel {
           }
         }
 
-        // ---- Common (all modes) ----
-        PanelSectionHeader { text: "COMMON" }
         Row {
           width: parent.width
           spacing: Style.space(14)
@@ -370,19 +454,11 @@ Panel {
 
           Toggle {
             width: (parent.width - Style.space(14)) / 2
-            label: "Fire"
-            description: "Flame gradient: bars, wash + wave"
-            checked: root.hcfg.fire === true
-            onClicked: if (root.hostWidget) root.hostWidget.writeVizOption("fire", !checked)
+            label: "Linear fall"
+            description: "Fixed-rate drop (restarts engine)"
+            checked: root.hcfg.linearFall === true
+            onClicked: if (root.hostWidget) root.hostWidget.writeEngineOption("linear_fall", !checked)
           }
-        }
-
-        Toggle {
-          width: parent.width
-          label: "Linear fall"
-          description: "Winamp-style instant rise, fixed-rate drop (restarts engine)"
-          checked: root.hcfg.linearFall === true
-          onClicked: if (root.hostWidget) root.hostWidget.writeEngineOption("linear_fall", !checked)
         }
 
         Column {
@@ -397,7 +473,7 @@ Panel {
             elide: Text.ElideRight
           }
           Text {
-            text: "Overall response (affects all viz)"
+            text: "Response for all viz"
             color: Qt.darker(root.bar ? root.bar.foreground : Color.foreground, 1.4)
             font.family: Style.font.family
             font.pixelSize: Style.font.bodySmall
@@ -413,44 +489,17 @@ Panel {
           }
         }
 
-        PanelSeparator { }
-
-        // ---- Mini-only: Mono (waybar readability override) ----
-        Rectangle {
+        Toggle {
           width: parent.width
-          height: miniCol.implicitHeight + Style.space(16)
-          color: "transparent"
-          border.width: 1
-          border.color: Qt.rgba(1,1,1,0.15)
-          radius: Style.cornerRadius
-
-          Column {
-            id: miniCol
-            anchors.left: parent.left
-            anchors.right: parent.right
-            anchors.top: parent.top
-            anchors.margins: Style.space(8)
-            spacing: Style.space(4)
-
-            Text {
-              text: "MINI ONLY"
-              font.family: Style.font.family
-              font.pixelSize: Style.font.bodySmall
-              font.letterSpacing: 1
-              color: Qt.darker(root.bar ? root.bar.foreground : Color.foreground, 1.4)
-            }
-
-            Toggle {
-              width: parent.width
-              label: "Mono (mini)"
-              description: "B&W mini bars: black on light, white on dark (overrides Bar color)"
-              checked: root.hcfg.mono === true
-              onClicked: if (root.hostWidget) root.hostWidget.writeVizOption("mono", !checked)
-            }
-          }
+          label: "Mono (mini only)"
+          description: "B&W mini bars (overrides color)"
+          checked: root.hcfg.mono === true
+          onClicked: if (root.hostWidget) root.hostWidget.writeVizOption("mono", !checked)
         }
+      }
+    }
 
-        PanelSeparator { }
+    PanelSeparator { }
 
         // ---- Footer: read-only source ----
         Row {
@@ -511,13 +560,11 @@ Panel {
   component VizCard: Item {
     id: card
     property string labelText: ""
-    property string iconText: ""
-    property string iconBg: "#e68e0d"
     property bool selected: false
     signal cardClicked()
 
     width: (parent ? (parent.width - Style.space(8)) / 2 : 200)
-    height: 66
+    height: 46
 
     Rectangle {
       anchors.fill: parent
@@ -526,34 +573,13 @@ Panel {
       border.color: card.selected ? Color.accent : Qt.rgba(1,1,1,0.08)
       color: card.selected ? Qt.rgba(Color.accent.r, Color.accent.g, Color.accent.b, 0.14) : Color.popups.background
 
-      Rectangle {
-        width: 32
-        height: 32
-        radius: 7
-        color: card.iconBg
-        anchors.horizontalCenter: parent.horizontalCenter
-        anchors.top: parent.top
-        anchors.topMargin: Style.space(6)
-
-        Text {
-          anchors.fill: parent
-          text: card.iconText
-          font.pixelSize: 14
-          font.bold: true
-          color: "#1b1b24"
-          horizontalAlignment: Text.AlignHCenter
-          verticalAlignment: Text.AlignVCenter
-        }
-      }
-
       Text {
-        anchors.horizontalCenter: parent.horizontalCenter
-        anchors.bottom: parent.bottom
-        anchors.bottomMargin: Style.space(6)
+        anchors.centerIn: parent
         text: card.labelText
         font.family: Style.font.family
-        font.pixelSize: 12
+        font.pixelSize: 13
         font.bold: true
+        font.letterSpacing: 1.5
         color: card.selected ? Color.accent : (root.bar ? root.bar.foreground : Color.foreground)
       }
     }

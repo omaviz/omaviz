@@ -10,6 +10,40 @@ BarWidget {
   moduleName: "org.omaviz.visualizer"
 
   property var config: Model.defaultConfig()
+  // Live theme snapshot: persists the current Omarchy accent triple to
+  // config whenever the theme changes, so the standalone desktop window
+  // (no qs.* context) follows theme switches within its 100ms poll.
+  // Writes only on actual change — never a loop (source is Color.accent,
+  // not the config being written).
+  property color accentSnap: Color.accent
+  property string _snappedAccent: ""
+  // _ready gates the snapshot until BarWidget (incl. the write-only
+  // FileView) completes: setText during construction warns "no path"
+  // and drops the write.
+  property bool _ready: false
+  Component.onCompleted: { root._ready = true; root.snapThemeColors() }
+  onAccentSnapChanged: root.snapThemeColors()
+  onConfigChanged: root.snapThemeColors()
+  function colorHex(c) {
+    function h2(v) {
+      var s = Math.round(Math.min(1, Math.max(0, v)) * 255).toString(16)
+      return s.length === 1 ? "0" + s : s
+    }
+    return "#" + h2(c.r) + h2(c.g) + h2(c.b)
+  }
+  function snapThemeColors() {
+    if (!root._ready) return
+    if (!root.config) return
+    var top = root.colorHex(Color.accent)
+    if (top === root._snappedAccent) return
+    var curTop = Model.readConfigFromText(root.readGuarded()).themeAccent || ""
+    // File already fresh: adopt without writing (avoids a mount-time
+    // setText, which FileView can drop with a "no path" warning).
+    if (curTop === top) { root._snappedAccent = top; return }
+    var bottom = root.colorHex(Qt.darker(Color.accent, 1.3))
+    root._snappedAccent = top
+    root.writeVizOptions3("theme_bottom", bottom, "theme_top", top, "theme_accent", top)
+  }
   property var spectrumBands: []
   property var spectrumWave: []
   property bool spectrumSilent: true
@@ -208,6 +242,16 @@ BarWidget {
     detachConfigWrite.setText(txt)
     root.noteWrite(txt)
   }
+  // Three-key single write (preset swatches, theme snapshot): same
+  // one-base-text rule as writeVizOptions.
+  function writeVizOptions3(key1, value1, key2, value2, key3, value3) {
+    var txt = root.readGuarded()
+    txt = Model.writeConfigKey(txt, "desktop", key1, vizVal(value1))
+    if (key2) txt = Model.writeConfigKey(txt, "desktop", key2, vizVal(value2))
+    if (key3) txt = Model.writeConfigKey(txt, "desktop", key3, vizVal(value3))
+    detachConfigWrite.setText(txt)
+    root.noteWrite(txt)
+  }
   function vizVal(value) {
     if (typeof value === "boolean") return value ? "true" : "false"
     return value
@@ -274,6 +318,7 @@ BarWidget {
         barCount: root.barCount
         // Rendered gap follows config (same value that sizes the container).
         gapPx: Math.min(6, Math.max(0, root.barGap))
+        peaks: root.config.peaks !== false
         peakFalloff: root.config.peakFalloff ?? 0.5
         spikes: root.config.spikes === true
         fire: root.config.fire === true
@@ -282,13 +327,13 @@ BarWidget {
         // Mini holds 32 bars even in spikes (downsampled from the 128 feed).
         spikeBars: 32
         sensitivity: root.config.sensitivity ?? 1.0
-        // Bar color: custom From→To wins; otherwise colorSync follows the
-        // LIVE shell accent, otherwise config theme colors.
+        // Bar color: custom From→To wins; otherwise LIVE theme accent
+        // (Theme mode always follows the Omarchy theme — no stale snapshot).
         barColorCustom: root.config.barColorCustom === true
         barColorFrom: root.config.barColorFrom || "#e68e0d"
         barColorTo: root.config.barColorTo || "#f59e0b"
-        themeBottom: root.config.colorSync === true ? Qt.darker(Color.accent, 1.3) : (root.config.themeBottom || "#e68e0d")
-        themeTop: root.config.colorSync === true ? Color.accent : (root.config.themeTop || "#f59e0b")
+        themeBottom: Qt.darker(Color.accent, 1.3)
+        themeTop: Color.accent
         wave: root.desktopLive ? [] : root.spectrumWave
         reflect: false
         // Mono: B&W bars by theme luminance (black on light, white on dark).
