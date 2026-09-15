@@ -9,7 +9,6 @@ Canvas {
   property int barCount: 0
   property color monoColor: "#dce0eb"
   property int gapPx: 1
-  property int minBarHeight: 1
   property bool peaks: true
   property real peakFalloff: 0.5
   property bool spikes: false
@@ -19,6 +18,12 @@ Canvas {
   // Theme-anchored colors (bound from config; no hardcoded palettes).
   property color themeBottom: "#e68e0d"
   property color themeTop: "#f59e0b"
+  // Bar color override (new): when barColorCustom is true the From→To pair
+  // replaces the theme gradient on every surface (mini unless mono,
+  // preview, desktop, wave). Off = theme dominant colors (default).
+  property bool barColorCustom: false
+  property color barColorFrom: "#e68e0d"
+  property color barColorTo: "#f59e0b"
   // Oscilloscope feed: 128-point time-domain samples (-1..1, newest last).
   property var wave: []
   property real scopeLineWidth: 2
@@ -27,6 +32,10 @@ Canvas {
   property bool mono: false
   property bool monoLight: false
   property bool artMode: false
+  // Glow wash without the retired white-bar forcing: bound from the
+  // Artwork-backdrop toggle (preview/desktop). artMode above stays for
+  // old configs; new code sets wash instead.
+  property bool wash: false
   // Artwork mode (Plexamp-style): reactive glow wash behind quiet
   // white bars. Foreground is always white; art (desktop-only Image
   // layer) sits behind the wash when available.
@@ -108,6 +117,10 @@ Canvas {
   onMonoChanged: requestPaint()
   onMonoLightChanged: requestPaint()
   onArtModeChanged: requestPaint()
+  onWashChanged: requestPaint()
+  onBarColorCustomChanged: requestPaint()
+  onBarColorFromChanged: requestPaint()
+  onBarColorToChanged: requestPaint()
 
   function fillFor(h, a) {
     if (artMode) return "#ffffff"
@@ -117,9 +130,11 @@ Canvas {
       // visible on dark containers (dark reds vanish; orange does not).
       return "rgba(255," + Math.round(140 + h * 115) + "," + Math.round(60 + h * 40) + ",1)"
     }
-    // Theme-anchored: colorSync blends bottom→top theme colors,
-    // otherwise bottom rises toward white-hot with bar height.
-    var bot = themeBottom, top = colorSync ? themeTop : Qt.color("#ffffff")
+    // Custom tones win over theme; otherwise theme-anchored: colorSync
+    // blends bottom→top theme colors, otherwise bottom rises toward
+    // white-hot with bar height.
+    var bot = barColorCustom ? barColorFrom : themeBottom
+    var top = barColorCustom ? barColorTo : (colorSync ? themeTop : Qt.color("#ffffff"))
     var r = bot.r + (top.r - bot.r) * h
     var g = bot.g + (top.g - bot.g) * h
     var b = bot.b + (top.b - bot.b) * h
@@ -127,7 +142,8 @@ Canvas {
   }
 
   function fillWash(h) {
-    var bot = themeBottom, top = colorSync ? themeTop : Qt.color("#ffffff")
+    var bot = barColorCustom ? barColorFrom : themeBottom
+    var top = barColorCustom ? barColorTo : (colorSync ? themeTop : Qt.color("#ffffff"))
     var r = Math.round(bot.r + (top.r - bot.r) * h)
     var g = Math.round(bot.g + (top.g - bot.g) * h)
     var b = Math.round(bot.b + (top.b - bot.b) * h)
@@ -148,9 +164,9 @@ Canvas {
     // mirror fades below. Otherwise the full height is the bar area.
     var areaH = reflect ? height * 0.62 : height
     var baseY = reflect ? height * 0.68 : height
-    if (artMode) {
+    if (artMode || wash) {
       // Reactive glow wash: wide soft color fields at low alpha behind
-      // the white bars. Follows Fire when on, theme gradient otherwise.
+      // the bars. Follows Fire when on, theme/custom gradient otherwise.
       for (var g = 0; g < n; g++) {
         var gv = silent ? 0 : Math.min(1, Math.max(0, b[g]) * sensitivity)
         var gw = width / n
@@ -194,7 +210,10 @@ Canvas {
     for (var i = 0; i < n; i++) {
       var v = silent ? 0 : Math.min(1, Math.max(0, b[i]) * sensitivity)
       var h = v * areaH
-      if (h < minBarHeight) h = minBarHeight
+      // Auto floor (Min-height toggle retired): 1px while playing so
+      // quiet bars stay visible, 0 when silent so idle bars vanish.
+      var floorH = silent ? 0 : 1
+      if (h < floorH) h = floorH
       var x = i * (bw + gap)
       var y = baseY - h
       if (h <= 0) continue

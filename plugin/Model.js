@@ -63,6 +63,12 @@ function readTomlTopKey(tomlText, key) {
   return readTomlValue(tomlText, "", key)
 }
 
+// Strict #rrggbb validator for user-supplied custom bar tones.
+// Anything else falls back to the theme pair (never throws in QML).
+function isHexColor(s) {
+  return typeof s === "string" && /^#[0-9a-fA-F]{6}$/.test(s)
+}
+
 function readTomlFloat(tomlText, section, key) {
   var v = readTomlValue(tomlText, section, key)
   return v !== null ? parseFloat(v) : null
@@ -108,10 +114,24 @@ function readConfigFromText(tomlText) {
   d.mono = readTomlValue(tomlText, "desktop", "mono") === "true"
   d.linearFall = readTomlValue(tomlText, "desktop", "linear_fall") === "true"
   d.scope = readTomlValue(tomlText, "desktop", "scope") === "true"
-  d.artMode = readTomlValue(tomlText, "desktop", "artwork_mode") === "true"
+  // artwork_mode RETIRED (merged into Spectrum + Artwork-backdrop toggle):
+  // an old artwork_mode=true means "spectrum bars with the backdrop on".
+  // The key stays readable so old configs don't break; the panel never
+  // writes it anymore.
+  var _artMode = readTomlValue(tomlText, "desktop", "artwork_mode") === "true"
     || readTomlValue(tomlText, "desktop", "immersive") === "true"   // pre-rename key
+  d.artMode = false
+  if (_artMode) d._migrateArtwork = true
+  // Bar color (new): off = theme dominant colors, on = custom From→To tones.
+  // Invalid values fall back to the theme pair (never break rendering).
+  d.barColorCustom = readTomlValue(tomlText, "desktop", "bar_color_custom") === "true"
+  d.barColorFrom = readTomlValue(tomlText, "desktop", "bar_color_from") || "#e68e0d"
+  d.barColorTo = readTomlValue(tomlText, "desktop", "bar_color_to") || "#f59e0b"
+  if (!isHexColor(d.barColorFrom)) d.barColorFrom = "#e68e0d"
+  if (!isHexColor(d.barColorTo)) d.barColorTo = "#f59e0b"
   d.gpu = readTomlValue(tomlText, "desktop", "gpu") !== "false"
   d.artwork = readTomlValue(tomlText, "desktop", "artwork") !== "false"
+  if (d._migrateArtwork) { d.artwork = true; delete d._migrateArtwork }
   d.scopeThickness = readTomlFloat(tomlText, "desktop", "scope_thickness") ?? 2
   if (d.scopeThickness !== d.scopeThickness || d.scopeThickness < 1) d.scopeThickness = 1
   if (d.scopeThickness > 5) d.scopeThickness = 5
@@ -135,6 +155,7 @@ function defaultConfig() {
     fire: false,
     peaks: true, peakFalloff: 0.5, spikes: false, splits: false, mono: false,
     linearFall: false, scope: false, artMode: false, artwork: true, gpu: true, scopeThickness: 2, dots: true, reflect: false, minBarHeight: false,
+    barColorCustom: false, barColorFrom: "#e68e0d", barColorTo: "#f59e0b",
   }
 }
 
@@ -260,6 +281,7 @@ if (typeof module !== "undefined") {
     spectrumData: spectrumData,
     isDesktopActiveFromText: isDesktopActiveFromText,
     readTomlTopKey: readTomlTopKey,
+    isHexColor: isHexColor,
     engineBin: engineBin
   }
 }

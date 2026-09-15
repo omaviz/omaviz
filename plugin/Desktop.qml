@@ -48,7 +48,10 @@ Window {
   readonly property string trackArtist: win.activePlayer ? (win.activePlayer.trackArtist || "") : ""
   readonly property string trackArt: win.activePlayer ? (win.activePlayer.trackArtUrl || "") : ""
   readonly property string trackLabel: win.trackArtist !== "" ? win.trackArtist + " — " + win.trackTitle : win.trackTitle
-  readonly property string modeName: win.vizConfig.artMode === true ? "Omaviz (Artwork)" : (win.vizConfig.scope === true ? "Omaviz (Scope)" : "Omaviz")
+  readonly property string modeName: win.vizConfig.scope === true ? "Omaviz (Scope)" : "Omaviz"
+  // Artwork available: MPRIS art URL present and backdrop toggle on.
+  readonly property bool hasArt: win.trackArt !== "" && win.vizConfig.artwork !== false
+  readonly property string playerSource: win.activePlayer ? (win.activePlayer.identity || win.activePlayer.desktopEntry || "") : ""
 
   Process {
     id: bridge
@@ -78,41 +81,39 @@ Window {
 
   Component.onCompleted: { bridge.running = true }
 
+  // Window hover tracking: shows the tray on enter, fades it after
+  // a short delay on exit (moving within the window keeps it alive).
+  MouseArea {
+    id: hoverArea
+    anchors.fill: parent
+    hoverEnabled: true
+    acceptedButtons: Qt.NoButton
+    onEntered: { fadeTimer.stop(); trayBox.shown = true }
+    onExited: fadeTimer.restart()
+  }
+  Timer {
+    id: fadeTimer
+    interval: 200
+    repeat: false
+    onTriggered: trayBox.shown = false
+  }
+
   Column {
     anchors.fill: parent
     spacing: 0
 
     Rectangle {
-      width: parent.width; height: 22; color: "#16161f"
-      Text {
-        anchors.left: parent.left; anchors.right: parent.right
-        anchors.verticalCenter: parent.verticalCenter
-        anchors.leftMargin: 10; anchors.rightMargin: 30
-        text: win.modeName + (win.trackLabel !== "" ? " · " + win.trackLabel : "")
-        color: "#e8e8f0"; font.pixelSize: 11; font.family: "monospace"
-        elide: Text.ElideRight
-      }
-      Button {
-        anchors.right: parent.right; anchors.verticalCenter: parent.verticalCenter; anchors.rightMargin: 6
-        width: 20; height: 16; text: "×"
-        // Release the shared flag BEFORE closing — FileView writes are
-        // async, so give the write time to flush before the window dies.
-        onClicked: { win.setDesktopActive(false); closeTimer.restart() }
-      }
-    }
+      width: parent.width; height: parent.height; color: "#0c0c12"
 
-    Rectangle {
-      width: parent.width; height: parent.height - 22; color: "#0c0c12"
-
-      // Artwork backdrop (artMode only): downscaled source = free blur,
-      // dimmed so the white bars stay readable. Falls back to the
+      // Artwork backdrop (backdrop toggle): downscaled source = free blur,
+      // dimmed so the bars stay readable. Falls back to the
       // canvas wash when no art (radio, browser streams).
       // Plexamp-style backdrop: heavy gaussian blur (no detail survives,
       // only color clouds) + vertical scrim for title/bar legibility.
       // FastBlur caches: static art costs one frame, not per-frame.
       Item {
         anchors.fill: parent
-        visible: win.vizConfig.artMode === true && win.vizConfig.artwork !== false
+        visible: win.vizConfig.artwork !== false
         opacity: win.trackArt !== "" ? 1 : 0
         Behavior on opacity { NumberAnimation { duration: 900 } }
         Image {
@@ -141,10 +142,10 @@ Window {
       DotsCanvas {
         anchors.left: parent.left; anchors.right: parent.right
         anchors.leftMargin: 4; anchors.rightMargin: 4
-        anchors.top: win.vizConfig.artMode === true ? undefined : parent.top
-        anchors.bottom: win.vizConfig.artMode === true ? undefined : parent.bottom
+        anchors.top: parent.top
+        anchors.bottom: parent.bottom
         anchors.bottomMargin: 4
-        height: win.vizConfig.artMode === true ? Math.max(60, parent.height * 0.62) : parent.height - 4
+        height: parent.height - 4
         visible: win.vizConfig.dots !== false
       }
       // Single active renderer (Loader unloads the other): a hidden
@@ -175,7 +176,7 @@ Window {
         silent: win.spectrumSilent
         wave: win.spectrumWave
         visual: win.vizConfig.scope === true ? "Oscilloscope" : "Bars"
-        artMode: win.vizConfig.artMode === true
+        artMode: false
         dots: false   // static underlay above
         reflect: win.vizConfig.reflect === true
         scopeLineWidth: win.vizConfig.scopeThickness ?? 2
@@ -188,8 +189,8 @@ Window {
         fire: win.vizConfig.fire === true
         splits: win.vizConfig.splits === true
         sensitivity: win.vizConfig.sensitivity ?? 1.0
-        themeBottom: win.vizConfig.themeBottom || "#e68e0d"
-        themeTop: win.vizConfig.themeTop || "#f59e0b"
+        themeBottom: win.vizConfig.barColorCustom === true ? (win.vizConfig.barColorFrom || "#e68e0d") : (win.vizConfig.themeBottom || "#e68e0d")
+        themeTop: win.vizConfig.barColorCustom === true ? (win.vizConfig.barColorTo || "#f59e0b") : (win.vizConfig.themeTop || "#f59e0b")
         }
       }
       Component {
@@ -203,7 +204,8 @@ Window {
         wave: win.spectrumWave
 
         visual: win.vizConfig.scope === true ? "Oscilloscope" : "Bars"
-        artMode: win.vizConfig.artMode === true
+        artMode: false
+        wash: win.vizConfig.artwork !== false
         dots: false   // static underlay above
         reflect: win.vizConfig.reflect === true
         scopeLineWidth: win.vizConfig.scopeThickness ?? 2
@@ -211,8 +213,6 @@ Window {
         colorSync: false
         barCount: Math.max(16, Math.floor((parent.width - 8) / 10))
         gapPx: Math.min(6, Math.max(0, win.vizConfig.gap ?? 1))
-        // Min bar height: config toggle (1px floor on silent bars, else 0).
-        minBarHeight: win.vizConfig.minBarHeight === true ? 1 : 0
 
         // Peak settings — live from config (settings panel writes).
         peaks: win.vizConfig.peaks !== false
@@ -221,11 +221,143 @@ Window {
         fire: win.vizConfig.fire === true
         splits: win.vizConfig.splits === true
         sensitivity: win.vizConfig.sensitivity ?? 1.0
+        barColorCustom: win.vizConfig.barColorCustom === true
+        barColorFrom: win.vizConfig.barColorFrom || "#e68e0d"
+        barColorTo: win.vizConfig.barColorTo || "#f59e0b"
         themeBottom: win.vizConfig.themeBottom || "#e68e0d"
         themeTop: win.vizConfig.themeTop || "#f59e0b"
         }
       }
 
+    }
+  }
+
+  // ---- Hover tray (Option A): no title bar. Fades in on window hover,
+  // out ~200ms after the cursor leaves. Left: artwork thumbnail +
+  // monospace track title/artist/source. Right: circular close button,
+  // which stays clickable through the fade.
+  Item {
+    id: trayBox
+    anchors.top: parent.top
+    anchors.left: parent.left
+    anchors.right: parent.right
+    height: 44
+    property bool shown: false
+    opacity: shown ? 1.0 : 0.0
+    visible: opacity > 0.01
+    Behavior on opacity { NumberAnimation { duration: 250; easing.type: Easing.OutCubic } }
+
+    Rectangle {
+      anchors.fill: parent
+      gradient: Gradient {
+        GradientStop { position: 0.0; color: Qt.rgba(0, 0, 0, 0.55) }
+        GradientStop { position: 0.6; color: Qt.rgba(0, 0, 0, 0.10) }
+        GradientStop { position: 1.0; color: Qt.rgba(0, 0, 0, 0.0) }
+      }
+    }
+
+    Row {
+      anchors.fill: parent
+      anchors.leftMargin: 10
+      anchors.rightMargin: 10
+      anchors.topMargin: 4
+      anchors.bottomMargin: 4
+      spacing: 10
+
+      // Artwork thumbnail (rounded) or bordered placeholder.
+      Item {
+        width: 36
+        height: 36
+        anchors.verticalCenter: parent.verticalCenter
+
+        Rectangle {
+          anchors.fill: parent
+          radius: 6
+          color: "transparent"
+          border.width: 1
+          border.color: Qt.rgba(255,255,255,0.15)
+          visible: !win.hasArt
+          Text {
+            anchors.centerIn: parent
+            text: "♪"
+            color: Qt.rgba(255,255,255,0.4)
+            font.pixelSize: 14
+          }
+        }
+        Image {
+          anchors.fill: parent
+          source: win.trackArt
+          fillMode: Image.PreserveAspectCrop
+          cache: true
+          asynchronous: true
+          visible: win.hasArt
+        }
+      }
+
+      // Track info: monospace title + artist + tiny source line.
+      Column {
+        width: parent.width - 36 - 10 - 28 - 20
+        spacing: 2
+        anchors.verticalCenter: parent.verticalCenter
+
+        Text {
+          text: win.trackTitle !== "" ? win.trackTitle : win.modeName
+          color: "#e8e8f0"
+          font.family: "monospace"
+          font.pixelSize: 12
+          font.bold: true
+          elide: Text.ElideRight
+          width: parent.width
+        }
+        Text {
+          text: win.trackArtist
+          color: Qt.rgba(255,255,255,0.7)
+          font.family: "monospace"
+          font.pixelSize: 11
+          elide: Text.ElideRight
+          width: parent.width
+          visible: win.trackArtist !== ""
+        }
+        Text {
+          text: win.playerSource
+          color: Qt.rgba(255,255,255,0.4)
+          font.family: "monospace"
+          font.pixelSize: 9
+          elide: Text.ElideRight
+          width: parent.width
+          visible: win.playerSource !== ""
+        }
+      }
+
+      // Circular close button (right).
+      Rectangle {
+        id: closeBtn
+        width: 24
+        height: 24
+        radius: 12
+        anchors.verticalCenter: parent.verticalCenter
+        color: "transparent"
+        border.width: 0
+
+        Text {
+          anchors.centerIn: parent
+          text: "×"
+          color: Qt.rgba(255,255,255,0.6)
+          font.pixelSize: 14
+          font.family: "monospace"
+        }
+
+        MouseArea {
+          anchors.fill: parent
+          cursorShape: Qt.PointingHandCursor
+          hoverEnabled: true
+          onEntered: { closeBtn.border.width = 1; closeBtn.border.color = Qt.rgba(255,255,255,0.3) }
+          onExited: closeBtn.border.width = 0
+          // Release the shared flag BEFORE closing — FileView writes are
+          // async, so give the write time to flush before the window dies.
+          onClicked: { win.setDesktopActive(false); closeTimer.restart() }
+        }
+      }
     }
   }
 

@@ -6,27 +6,13 @@ import qs.Commons
 import qs.Ui
 import "Model.js" as Model
 
-// Omaviz settings panel: PREVIEW + live OPTIONS + SOURCE.
-// OPTIONS (Peaks / fall speed / Spikes / Fire) write through
-// BarWidget.writeVizOption(), which updates disk + bar config immediately —
-// mini, preview and the open desktop window all reflect changes at once.
-// Detach lives on mini/preview double-click; the desktop window closes via ×.
-//
-// Bar-widget contract (verified against live BarWidget.qml):
-//   injectPanel() sets:  t.bar, t.anchorItem, t.hostWidget, t.settings
-//   the widget reads:    panelLoader.item.opened / open() / close() / toggle()
-//
-// We build on the shared `Panel` base (qs.Ui/Panel.qml) which owns the
-// PanelController show/hide lifecycle, so opened/open/close/toggle resolve to
-// the controller's open state — exactly what BarWidget.qml expects. The
-// KeyboardPanel renders the popup surface (anchorItem + owner + open: root.opened).
-// manageIpc is false so the panel does NOT register a second IpcHandler for the
-// same target (BarWidget already owns it).
-//
-// Left-click on the bar button -> root.toggle() -> controller show/hide.
-// Everything here is GPU-free: the panel never launches a window. The preview
-// uses the Canvas-2D VisualCanvas (not the GL ShaderEffect) so it is safe to
-// load inside the bar process.
+// Omaviz settings panel: VISUALIZATIONS → PREVIEW → OPTIONS.
+// Visual workflow: pick Spectrum/Scope cards first, live preview below,
+// then per-section options. Artwork is a backdrop toggle (merged into
+// Spectrum); Dots/Min-height have no UI (still honored in code).
+// Bar color: Theme (default) or custom From→To tones, mini+preview+
+// desktop in sync; Mono stays as the mini-only override.
+// All writes go through BarWidget (disk + live config at once).
 
 Panel {
   id: root
@@ -35,39 +21,24 @@ Panel {
   manageIpc: false
 
   // Config alias: live bar config once injected, sane defaults before.
-  // Kills the 14x `hostWidget ? ... : default` guard repetition below.
   property var hcfg: root.hostWidget ? root.hostWidget.config : Model.defaultConfig()
 
   // ---- Injected by BarWidget.injectPanel() ----
   property var anchorItem: null
   property var hostWidget: null
   // `bar` and `settings` are provided by the Panel base and overwritten by
-  // injectPanel(); declared here so the base binding does not error pre-injection.
-  // NOTE (ADR-0008): the panel is read-only. There is no config buffer, no
-  // commit()/readCfg()/reloadCfg() — the preview follows the live feed and
-  // the footer is a SOURCE readout. All config reads live on BarWidget/Desktop.
+  // injectPanel(); the base binding covers pre-injection.
 
-  // ---- Popup lifecycle ----
-  // IMPORTANT: do NOT override opened/open/close/toggle here. The `Panel`
-  // base (qs.Ui/Panel.qml) owns a PanelController and drives the popup surface
-  // through it: `opened` === panelController.open, and open()/close()/toggle()
-  // call panelController.show()/hide(). The KeyboardPanel below binds its
-  // `open` to `root.opened` (= panelController.open), so the show path is:
-  //   BarWidget.toggle() -> panelLoader.item.toggle() -> Panel base toggle()
-  //     -> panelController.show() -> panelController.open=true -> KeyboardPanel
-  //        shows.
-  // The earlier (broken) version overrode these to set panel.open directly,
-  // which never invoked panelController.show(), so the panel never appeared.
-
-  // ---- Live Bars preview (Canvas-2D, GPU-free, locked to Bars) ----
-  // ADR-0008: no viz/style selector feeds it. The preview follows the live
-  // feed (Model.spectrumData) and always renders Bars in the theme gradient.
-
-  // ---- Source (read-only, from the engine's stdout) ----
   readonly property string sourceLabelText:
     Model.sourceLabel(Model.spectrumData.source || "")
 
-  // surface
+  // Two visualizations only (Artwork merged into Spectrum as a backdrop).
+  readonly property bool isScope: root.hcfg.scope === true
+  readonly property bool isSpectrum: !root.isScope
+  readonly property bool peaksOn: root.hcfg.peaks !== false
+  readonly property bool spikesOn: root.hcfg.spikes === true
+
+  // ---- Popup lifecycle (Panel base owns controller; do NOT override opened/open/close/toggle) ----
   KeyboardPanel {
     id: panel
     anchorItem: root.anchorItem
@@ -75,12 +46,8 @@ Panel {
     bar: root.bar
     open: root.opened
     centerOnBar: false
-    // Extra breathing room around the content (base default is
-    // Style.spacing.popupPadding; we widen it for this panel).
     padding: Math.round(Style.spacing.popupPadding * 2)
     focusTarget: keyCatcher
-    // Fixed size captured once at open — re-fitting on every control change
-    // made the dialog jump/jitter when toggles altered implicit sizes.
     property bool _sizeLocked: false
     property int _frozenH: 0
     contentWidth: panel.fittedContentWidth(Style.space(460))
@@ -96,273 +63,390 @@ Panel {
     Flickable {
       id: scroll
       anchors.fill: parent
-      contentWidth: width          // vertical movement only — no horizontal
+      contentWidth: width
       contentHeight: column.implicitHeight
       clip: true
       boundsBehavior: Flickable.StopAtBounds
-      // Only interactive when content genuinely overflows — otherwise the
-      // Flickable would eat drag gestures meant for sliders.
       interactive: contentHeight > height
 
       Column {
         id: column
-        // Fill the padded viewport exactly like the shell's own panels
-        // (kishan.clock): the KeyboardPanel's contentHolder already applies
-        // the card's default padding, so NO extra x-offset or width fudge here.
         width: parent.width
-        spacing: Style.space(10)
+        spacing: Style.space(8)
 
-        // Helper: label at natural width, control takes ALL remaining space.
-        // (Replaces the old `parent.width - Style.space(110)` hardcodes that
-        // mis-sized controls and clipped their right edge.)
-        component LabeledRow: Row {
-          default property alias controlItem: holder.data
-          property string label: ""
-          width: parent ? parent.width : 0
-          spacing: Style.space(10)
-          Text {
-            text: parent.label
-            color: root.bar ? root.bar.foreground : Color.foreground
-            font.family: Style.font.family; font.pixelSize: Style.font.body
-            anchors.verticalCenter: parent.verticalCenter
+        // ============================================================
+        //  VISUALIZATIONS — two cards (Spectrum / Scope)
+        // ============================================================
+        PanelSectionHeader { text: "VISUALIZATIONS" }
+
+        Row {
+          width: parent.width
+          spacing: Style.space(8)
+
+          VizCard {
+            labelText: "Spectrum"
+            iconText: "B"
+            iconBg: "#e68e0d"
+            selected: root.isSpectrum
+            onCardClicked: if (root.hostWidget) root.hostWidget.writeVizOption("scope", false)
           }
-          Item {
-            id: holder
-            height: parent.height
-            width: parent.width - (parent.children[0].implicitWidth + parent.spacing)
+
+          VizCard {
+            labelText: "Scope"
+            iconText: "~"
+            iconBg: "#6b7280"
+            selected: root.isScope
+            onCardClicked: if (root.hostWidget) root.hostWidget.writeVizOption("scope", true)
           }
         }
 
-        // ---- Live preview ----
+        // ============================================================
+        //  PREVIEW — live canvas between Visualizations and Options
+        // ============================================================
         PanelSectionHeader { text: "PREVIEW" }
+
         Rectangle {
-          width: parent.width; height: Style.space(60)
+          width: parent.width
+          height: Style.space(60)
           color: Color.popups.background
           radius: Style.cornerRadius
-          border.width: 1; border.color: Qt.rgba(1,1,1,0.08)
+          border.width: 1
+          border.color: Qt.rgba(1,1,1,0.08)
+
           DotsCanvas {
-            anchors.fill: parent; anchors.margins: Style.space(6)
+            anchors.fill: parent
+            anchors.margins: Style.space(6)
             visible: root.hcfg.dots !== false
           }
           VisualCanvas {
             id: previewViz
-            anchors.fill: parent; anchors.margins: Style.space(6)
-            dots: false   // static underlay above
-            // Event-driven: bound straight to the bar's reactive spectrum
-            // properties — no poll timer (the old 33ms timer added up to a
-            // frame of display lag plus 30 wakeups/sec for nothing).
+            anchors.fill: parent
+            anchors.margins: Style.space(6)
+            dots: false
             bands: root.hostWidget ? root.hostWidget.spectrumBands : []
             silent: root.hostWidget ? root.hostWidget.spectrumSilent : true
             wave: root.hostWidget ? root.hostWidget.spectrumWave : []
-            visual: root.hostWidget && root.hostWidget.config.scope === true ? "Oscilloscope" : "Bars"
-            artMode: root.hcfg.artMode === true
+            visual: root.isScope ? "Oscilloscope" : "Bars"
+            artMode: false
+            wash: root.hcfg.artwork !== false
             reflect: root.hcfg.reflect === true
             scopeLineWidth: (root.hcfg.scopeThickness ?? 2)
             colorSync: false
             barCount: 64
             gapPx: root.hostWidget ? Math.min(6, Math.max(0, root.hostWidget.barGap)) : 1
-            minBarHeight: root.hcfg.minBarHeight === true ? 1 : 0
-            // Live from bar config — settings below reflect immediately.
-            peaks: root.hcfg.peaks !== false
+            peaks: root.peaksOn
             peakFalloff: (root.hcfg.peakFalloff ?? 0.5)
-            spikes: root.hcfg.spikes === true
+            spikes: root.spikesOn
             fire: root.hcfg.fire === true
             splits: root.hcfg.splits === true
             sensitivity: (root.hcfg.sensitivity ?? 1.0)
-            themeBottom: root.hostWidget ? (root.hostWidget.config.colorSync === true ? Qt.darker(Color.accent, 1.3) : (root.hostWidget.config.themeBottom || "#e68e0d")) : "#e68e0d"
-            themeTop: root.hostWidget ? (root.hostWidget.config.colorSync === true ? Color.accent : (root.hostWidget.config.themeTop || "#f59e0b")) : "#f59e0b"
+            barColorCustom: root.hcfg.barColorCustom === true
+            barColorFrom: root.hcfg.barColorFrom || "#e68e0d"
+            barColorTo: root.hcfg.barColorTo || "#f59e0b"
+            themeBottom: root.hostWidget ? (root.hostWidget.config.themeBottom || "#e68e0d") : "#e68e0d"
+            themeTop: root.hostWidget ? (root.hostWidget.config.themeTop || "#f59e0b") : "#f59e0b"
           }
-          // Double-click on preview opens desktop window
           MouseArea {
             anchors.fill: parent
-            onDoubleClicked: { root.hostWidget.detach() }
+            onDoubleClicked: { if (root.hostWidget) root.hostWidget.detach() }
           }
         }
         Text {
           text: "Double-click preview to open full-screen visualization"
           color: Qt.darker(root.bar ? root.bar.foreground : Color.foreground, 1.6)
-          font.family: Style.font.family; font.pixelSize: Style.font.bodySmall
+          font.family: Style.font.family
+          font.pixelSize: Style.font.bodySmall
           width: parent.width
           horizontalAlignment: Text.AlignLeft
         }
-        // (VisualCanvas is a plain Canvas — properties bound inline above.)
 
         PanelSeparator { }
 
-        // ---- Options (live-wired: writes go through BarWidget, which
-        // updates disk + its own config immediately, so mini, preview
-        // and the open desktop window all reflect the change at once)
+        // ============================================================
+        //  OPTIONS
+        // ============================================================
         PanelSectionHeader { text: "OPTIONS" }
-        // Mode selector + per-mode sections. Scope mode renders the
-        // waveform on mini, preview and desktop alike.
-        Dropdown {
-          width: parent.width
-          label: "Mode"
-          options: [{ value: "spectrum", label: "Spectrum" }, { value: "scope", label: "Oscilloscope" }, { value: "artwork", label: "Artwork" }]
-          value: panelOpts.mode
-          onChanged: function(v) { if (root.hostWidget) root.hostWidget.writeVizOptions("scope", v === "scope", "artwork_mode", v === "artwork") }
-        }
-        Column {
-          id: panelOpts
-          width: parent.width
-          spacing: Style.space(10)
-          property string mode: root.hcfg.artMode === true ? "artwork" : (root.hcfg.scope === true ? "scope" : "spectrum")
-          property bool isScope: panelOpts.mode === "scope"
-          property bool spikesOn: root.hcfg.spikes === true
 
-          // ---- Spectrum-only ----
-          PanelSectionHeader { text: "SPECTRUM"; visible: panelOpts.mode === "spectrum" }
+        // ---- Bars (spectrum) ----
+        PanelSectionHeader { text: "BARS"; visible: root.isSpectrum }
+
+        Row {
+          visible: root.isSpectrum
+          width: parent.width
+          spacing: Style.space(14)
+
           Toggle {
-            visible: panelOpts.mode === "spectrum"
-            id: peaksTgl
-            width: parent.width
+            width: (parent.width - Style.space(14)) / 2
             label: "Peaks"
             description: "White peak-hold markers on each bar"
-            checked: root.hcfg.peaks !== false
+            checked: root.peaksOn
             onClicked: if (root.hostWidget) root.hostWidget.writeVizOption("peaks", !checked)
           }
+
           Column {
-            width: parent.width
+            width: (parent.width - Style.space(14)) / 2
             spacing: Style.space(4)
-            visible: panelOpts.mode === "spectrum" && peaksTgl.checked
             Text {
-              text: "Peak fall speed (0 holds, 1 falls fast)"
-              color: Qt.darker(root.bar ? root.bar.foreground : Color.foreground, 1.4)
-              font.family: Style.font.family; font.pixelSize: Style.font.bodySmall
+              text: "Peak fall speed"
+              color: root.bar ? root.bar.foreground : Color.foreground
+              font.family: Style.font.family
+              font.pixelSize: Style.font.body
               width: parent.width
+              elide: Text.ElideRight
+            }
+            Text {
+              text: "0 holds · 1 falls fast"
+              color: Qt.darker(root.bar ? root.bar.foreground : Color.foreground, 1.4)
+              font.family: Style.font.family
+              font.pixelSize: Style.font.bodySmall
+              width: parent.width
+              elide: Text.ElideRight
             }
             PanelSlider {
-              id: fallSlider
               width: parent.width
               bar: root.bar
+              enabled: root.peaksOn
               minimum: 0; maximum: 1; step: 0.05
               value: (root.hcfg.peakFalloff ?? 0.5)
               onReleased: function(v) { if (root.hostWidget) root.hostWidget.writeVizOption("peak_falloff", Math.round(v * 20) / 20) }
             }
           }
+        }
+
+        Row {
+          visible: root.isSpectrum
+          width: parent.width
+          spacing: Style.space(14)
+
           Toggle {
-            visible: panelOpts.mode === "spectrum"
-            width: parent.width
+            width: (parent.width - Style.space(14)) / 2
             label: "Spikes"
             description: "Dense thin flame spikes, no gaps (auto-enables Fire)"
-            checked: panelOpts.spikesOn
+            checked: root.spikesOn
             onClicked: {
               if (!root.hostWidget) return
               var v = !checked
               root.hostWidget.writeVizOptions("spikes", v, "fire", v)
             }
           }
+
           Toggle {
-            // Auto-managed by Spikes — hidden while spikes own it.
-            visible: panelOpts.mode === "spectrum" && !panelOpts.spikesOn
-            width: parent.width
-            label: "Fire"
-            description: "Red flame gradient from the base"
-            checked: root.hcfg.fire === true
-            onClicked: if (root.hostWidget) root.hostWidget.writeVizOption("fire", !checked)
-          }
-          Toggle {
-            visible: panelOpts.mode === "spectrum"
-            width: parent.width
+            width: (parent.width - Style.space(14)) / 2
             label: "Stacks"
-            description: "Segmented bars with gaps, Winamp-style (preview/desktop)"
+            description: "Segmented bars with gaps, Winamp-style"
             checked: root.hcfg.splits === true
             onClicked: if (root.hostWidget) root.hostWidget.writeVizOption("splits", !checked)
           }
+        }
+
+        Row {
+          visible: root.isSpectrum
+          width: parent.width
+          spacing: Style.space(14)
+
           Toggle {
-            visible: panelOpts.mode === "spectrum"
-            width: parent.width
-            label: "Min height"
-            description: "1px floor on silent bars (else invisible)"
-            checked: root.hcfg.minBarHeight === true
-            onClicked: if (root.hostWidget) root.hostWidget.writeVizOption("min_bar_height", !checked)
-          }
-          Toggle {
-            visible: panelOpts.mode === "spectrum"
-            width: parent.width
-            label: "Linear fall"
-            description: "Winamp-style instant rise, fixed-rate drop (restarts engine)"
-            checked: root.hcfg.linearFall === true
-            onClicked: if (root.hostWidget) root.hostWidget.writeEngineOption("linear_fall", !checked)
-          }
-          Toggle {
-            visible: panelOpts.mode === "spectrum"
-            width: parent.width
-            label: "Mono"
-            description: "B&W mini bars: black on light themes, white on dark (overrides Fire)"
-            checked: root.hcfg.mono === true
-            onClicked: if (root.hostWidget) root.hostWidget.writeVizOption("mono", !checked)
+            width: (parent.width - Style.space(14)) / 2
+            label: "Reflection"
+            description: "Faded floor mirror below the bars"
+            checked: root.hcfg.reflect === true
+            onClicked: if (root.hostWidget) root.hostWidget.writeVizOption("reflect", !checked)
           }
 
-          // ---- Oscilloscope-only ----
-          PanelSectionHeader { text: "OSCILLOSCOPE"; visible: panelOpts.isScope }
-          Column {
-            width: parent.width
-            spacing: Style.space(4)
-            visible: panelOpts.isScope
-            Text {
-              text: "Waveform on mini, preview and desktop. Follows Fire color and Sensitivity."
-              color: Qt.darker(root.bar ? root.bar.foreground : Color.foreground, 1.4)
-              font.family: Style.font.family; font.pixelSize: Style.font.bodySmall
-              width: parent.width
-              wrapMode: Text.WordWrap
-            }
-            Text {
-              text: "Line thickness"
-              color: Qt.darker(root.bar ? root.bar.foreground : Color.foreground, 1.4)
-              font.family: Style.font.family; font.pixelSize: Style.font.bodySmall
-              width: parent.width
-            }
-            PanelSlider {
-              width: parent.width
-              bar: root.bar
-              minimum: 1; maximum: 5; step: 0.5
-              value: (root.hcfg.scopeThickness ?? 2)
-              onReleased: function(v) { if (root.hostWidget) root.hostWidget.writeVizOption("scope_thickness", Math.round(v * 2) / 2) }
-            }
-          }
-
-          // ---- Artwork-only ----
-          PanelSectionHeader { text: "ARTWORK"; visible: panelOpts.mode === "artwork" }
-          Text {
-            visible: panelOpts.mode === "artwork"
-            text: "Artwork wash + quiet white bars on preview/desktop (mini: wash only, no art)."
-            color: Qt.darker(root.bar ? root.bar.foreground : Color.foreground, 1.4)
-            font.family: Style.font.family; font.pixelSize: Style.font.bodySmall
-            width: parent.width
-            wrapMode: Text.WordWrap
-          }
           Toggle {
-            visible: panelOpts.mode === "artwork"
-            width: parent.width
-            label: "Artwork"
-            description: "Album-art backdrop when available (fallback: reactive glow)"
+            width: (parent.width - Style.space(14)) / 2
+            label: "Artwork backdrop"
+            description: "Album-cover behind bars (fallback: glow)"
             checked: root.hcfg.artwork !== false
             onClicked: if (root.hostWidget) root.hostWidget.writeVizOption("artwork", !checked)
           }
+        }
 
-          // ---- Common (all modes) ----
-          PanelSectionHeader { text: "COMMON" }
+        // ---- Bar color (always visible; mini+preview+desktop in sync) ----
+        PanelSectionHeader { text: "BAR COLOR" }
+
+        Row {
+          width: parent.width
+          spacing: Style.space(14)
+
           Toggle {
+            width: (parent.width - Style.space(14)) / 2
+            label: "Custom colors"
+            description: "Off = theme dominant colors"
+            checked: root.hcfg.barColorCustom === true
+            onClicked: if (root.hostWidget) root.hostWidget.writeVizOption("bar_color_custom", !checked)
+          }
+
+          Column {
+            width: (parent.width - Style.space(14)) / 2
+            spacing: Style.space(4)
+            enabled: root.hcfg.barColorCustom === true
+            opacity: root.hcfg.barColorCustom === true ? 1.0 : 0.45
+
+            Text {
+              text: "Custom tones"
+              color: root.bar ? root.bar.foreground : Color.foreground
+              font.family: Style.font.family
+              font.pixelSize: Style.font.body
+              width: parent.width
+              elide: Text.ElideRight
+            }
+            Text {
+              text: "From (base) · To (tip)"
+              color: Qt.darker(root.bar ? root.bar.foreground : Color.foreground, 1.4)
+              font.family: Style.font.family
+              font.pixelSize: Style.font.bodySmall
+              width: parent.width
+              elide: Text.ElideRight
+            }
+            Row {
+              width: parent.width
+              spacing: Style.space(8)
+
+              HexField {
+                width: (parent.width - Style.space(8)) / 2
+                value: root.hcfg.barColorFrom || "#e68e0d"
+                onAccept: function(v) { if (root.hostWidget) root.hostWidget.writeVizOption("bar_color_from", v) }
+              }
+              HexField {
+                width: (parent.width - Style.space(8)) / 2
+                value: root.hcfg.barColorTo || "#f59e0b"
+                onAccept: function(v) { if (root.hostWidget) root.hostWidget.writeVizOption("bar_color_to", v) }
+              }
+            }
+          }
+        }
+        Text {
+          text: "Theme (default): theme dominant colors. Custom: your From → To gradient on mini, preview, desktop + wave. Mini Mono overrides this on the mini only."
+          color: Qt.darker(root.bar ? root.bar.foreground : Color.foreground, 1.4)
+          font.family: Style.font.family
+          font.pixelSize: Style.font.bodySmall
+          width: parent.width
+          wrapMode: Text.WordWrap
+        }
+
+        // ---- Oscilloscope-only ----
+        PanelSectionHeader { text: "OSCILLOSCOPE"; visible: root.isScope }
+        Column {
+          width: parent.width
+          spacing: Style.space(4)
+          visible: root.isScope
+          Text {
+            text: "Waveform on mini, preview and desktop. Follows Bar color and Sensitivity."
+            color: Qt.darker(root.bar ? root.bar.foreground : Color.foreground, 1.4)
+            font.family: Style.font.family
+            font.pixelSize: Style.font.bodySmall
             width: parent.width
+            wrapMode: Text.WordWrap
+          }
+          Text {
+            text: "Line thickness"
+            color: Qt.darker(root.bar ? root.bar.foreground : Color.foreground, 1.4)
+            font.family: Style.font.family
+            font.pixelSize: Style.font.bodySmall
+            width: parent.width
+          }
+          PanelSlider {
+            width: parent.width
+            bar: root.bar
+            minimum: 1; maximum: 5; step: 0.5
+            value: (root.hcfg.scopeThickness ?? 2)
+            onReleased: function(v) { if (root.hostWidget) root.hostWidget.writeVizOption("scope_thickness", Math.round(v * 2) / 2) }
+          }
+        }
+
+        // ---- Common (all modes) ----
+        PanelSectionHeader { text: "COMMON" }
+        Row {
+          width: parent.width
+          spacing: Style.space(14)
+
+          Toggle {
+            width: (parent.width - Style.space(14)) / 2
             label: "GPU renderer"
-            description: "Desktop uses the GPU shader (falls back to CPU automatically)"
+            description: "Desktop GPU shader (auto CPU fallback)"
             checked: root.hcfg.gpu !== false
             onClicked: if (root.hostWidget) root.hostWidget.writeVizOption("gpu", !checked)
           }
+
           Toggle {
-            width: parent.width
-            label: "Dots"
-            description: "Dotted skin backdrop behind the bars"
-            checked: root.hcfg.dots !== false
-            onClicked: if (root.hostWidget) root.hostWidget.writeVizOption("dots", !checked)
+            width: (parent.width - Style.space(14)) / 2
+            label: "Fire"
+            description: "Flame gradient: bars, wash + wave"
+            checked: root.hcfg.fire === true
+            onClicked: if (root.hostWidget) root.hostWidget.writeVizOption("fire", !checked)
           }
-          Toggle {
+        }
+
+        Toggle {
+          width: parent.width
+          label: "Linear fall"
+          description: "Winamp-style instant rise, fixed-rate drop (restarts engine)"
+          checked: root.hcfg.linearFall === true
+          onClicked: if (root.hostWidget) root.hostWidget.writeEngineOption("linear_fall", !checked)
+        }
+
+        Column {
+          width: parent.width
+          spacing: Style.space(4)
+          Text {
+            text: "Sensitivity"
+            color: root.bar ? root.bar.foreground : Color.foreground
+            font.family: Style.font.family
+            font.pixelSize: Style.font.body
             width: parent.width
-            label: "Reflection"
-            description: "Faded floor mirror below the bars (preview/desktop)"
-            checked: root.hcfg.reflect === true
-            onClicked: if (root.hostWidget) root.hostWidget.writeVizOption("reflect", !checked)
+            elide: Text.ElideRight
+          }
+          Text {
+            text: "Overall response (affects all viz)"
+            color: Qt.darker(root.bar ? root.bar.foreground : Color.foreground, 1.4)
+            font.family: Style.font.family
+            font.pixelSize: Style.font.bodySmall
+            width: parent.width
+            elide: Text.ElideRight
+          }
+          PanelSlider {
+            width: parent.width
+            bar: root.bar
+            minimum: 0.5; maximum: 2; step: 0.1
+            value: (root.hcfg.sensitivity ?? 1.0)
+            onReleased: function(v) { if (root.hostWidget) root.hostWidget.writeAudioOption("sensitivity", Math.round(v * 10) / 10) }
+          }
+        }
+
+        PanelSeparator { }
+
+        // ---- Mini-only: Mono (waybar readability override) ----
+        Rectangle {
+          width: parent.width
+          height: miniCol.implicitHeight + Style.space(16)
+          color: "transparent"
+          border.width: 1
+          border.color: Qt.rgba(1,1,1,0.15)
+          radius: Style.cornerRadius
+
+          Column {
+            id: miniCol
+            anchors.left: parent.left
+            anchors.right: parent.right
+            anchors.top: parent.top
+            anchors.margins: Style.space(8)
+            spacing: Style.space(4)
+
+            Text {
+              text: "MINI ONLY"
+              font.family: Style.font.family
+              font.pixelSize: Style.font.bodySmall
+              font.letterSpacing: 1
+              color: Qt.darker(root.bar ? root.bar.foreground : Color.foreground, 1.4)
+            }
+
+            Toggle {
+              width: parent.width
+              label: "Mono (mini)"
+              description: "B&W mini bars: black on light, white on dark (overrides Bar color)"
+              checked: root.hcfg.mono === true
+              onClicked: if (root.hostWidget) root.hostWidget.writeVizOption("mono", !checked)
+            }
           }
         }
 
@@ -375,14 +459,16 @@ Panel {
           Text {
             text: "SOURCE"
             color: Qt.darker(root.bar ? root.bar.foreground : Color.foreground, 1.4)
-            font.family: Style.font.family; font.pixelSize: Style.font.bodySmall
+            font.family: Style.font.family
+            font.pixelSize: Style.font.bodySmall
             font.letterSpacing: 1
             anchors.verticalCenter: parent.verticalCenter
           }
           Text {
             text: root.sourceLabelText + " · default sink"
             color: Color.accent
-            font.family: Style.font.family; font.pixelSize: Style.font.body
+            font.family: Style.font.family
+            font.pixelSize: Style.font.body
             anchors.verticalCenter: parent.verticalCenter
           }
         }
@@ -419,4 +505,124 @@ Panel {
     }
   }
 
+  // ---- Reusable inline components (inside Panel root: file-scope
+  // `component` declarations fail to load in this shell context) ----
+
+  component VizCard: Item {
+    id: card
+    property string labelText: ""
+    property string iconText: ""
+    property string iconBg: "#e68e0d"
+    property bool selected: false
+    signal cardClicked()
+
+    width: (parent ? (parent.width - Style.space(8)) / 2 : 200)
+    height: 66
+
+    Rectangle {
+      anchors.fill: parent
+      radius: Style.cornerRadius
+      border.width: 1
+      border.color: card.selected ? Color.accent : Qt.rgba(1,1,1,0.08)
+      color: card.selected ? Qt.rgba(Color.accent.r, Color.accent.g, Color.accent.b, 0.14) : Color.popups.background
+
+      Rectangle {
+        width: 32
+        height: 32
+        radius: 7
+        color: card.iconBg
+        anchors.horizontalCenter: parent.horizontalCenter
+        anchors.top: parent.top
+        anchors.topMargin: Style.space(6)
+
+        Text {
+          anchors.fill: parent
+          text: card.iconText
+          font.pixelSize: 14
+          font.bold: true
+          color: "#1b1b24"
+          horizontalAlignment: Text.AlignHCenter
+          verticalAlignment: Text.AlignVCenter
+        }
+      }
+
+      Text {
+        anchors.horizontalCenter: parent.horizontalCenter
+        anchors.bottom: parent.bottom
+        anchors.bottomMargin: Style.space(6)
+        text: card.labelText
+        font.family: Style.font.family
+        font.pixelSize: 12
+        font.bold: true
+        color: card.selected ? Color.accent : (root.bar ? root.bar.foreground : Color.foreground)
+      }
+    }
+
+    MouseArea {
+      anchors.fill: parent
+      cursorShape: Qt.PointingHandCursor
+      onClicked: card.cardClicked()
+    }
+  }
+
+  // Hex color field with swatch: validates #rrggbb on accept, reverts
+  // to the bound value on invalid input. Callback via plain var prop
+  // (signals named on* collide with handler syntax — never again).
+  component HexField: Item {
+    id: hexField
+    property string value: "#e68e0d"
+    property var onAccept: null
+
+    height: 26
+
+    function submit(raw) {
+      var v = String(raw).trim()
+      if (/^#[0-9a-fA-F]{6}$/.test(v)) {
+        if (hexField.onAccept) hexField.onAccept(v)
+      } else {
+        hexInput.text = hexField.value
+      }
+    }
+
+    Rectangle {
+      anchors.fill: parent
+      radius: 5
+      color: Qt.rgba(1,1,1,0.04)
+      border.width: 1
+      border.color: Qt.rgba(1,1,1,0.12)
+
+      Row {
+        anchors.fill: parent
+        anchors.leftMargin: 6
+        anchors.rightMargin: 6
+        spacing: 6
+
+        Rectangle {
+          width: 14
+          height: 14
+          radius: 3
+          color: hexField.value
+          border.width: 1
+          border.color: Qt.rgba(1,1,1,0.2)
+          anchors.verticalCenter: parent.verticalCenter
+        }
+
+        TextInput {
+          id: hexInput
+          width: parent.width - 26
+          anchors.verticalCenter: parent.verticalCenter
+          text: hexField.value
+          color: root.bar ? root.bar.foreground : Color.foreground
+          font.family: "monospace"
+          font.pixelSize: Style.font.bodySmall
+          maximumLength: 7
+          validator: RegularExpressionValidator {
+            regularExpression: /^#[0-9a-fA-F]{0,6}$/
+          }
+          onAccepted: hexField.submit(text)
+          onEditingFinished: hexField.submit(text)
+        }
+      }
+    }
+  }
 }

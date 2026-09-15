@@ -190,6 +190,14 @@ BarWidget {
     spectrumProc.running = false
     spectrumProc.running = true
   }
+  // Audio-section options (e.g. sensitivity): same single-write pattern as
+  // writeVizOptions but targeting [audio]. Applied QML-side, so every
+  // surface picks it up live through the config poll — no restart needed.
+  function writeAudioOption(key, value) {
+    var txt = Model.writeConfigKey(root.readGuarded(), "audio", key, vizVal(value))
+    detachConfigWrite.setText(txt)
+    root.noteWrite(txt)
+  }
   function writeVizOptions(key1, value1, key2, value2) {
     // Multi-key single write: two sequential setText calls race on the same
     // stale base text and the second clobbers the first (e.g. Spikes+Fire).
@@ -266,8 +274,6 @@ BarWidget {
         barCount: root.barCount
         // Rendered gap follows config (same value that sizes the container).
         gapPx: Math.min(6, Math.max(0, root.barGap))
-        // Min bar height: config toggle (1px floor on silent bars, else 0).
-        minBarHeight: root.config.minBarHeight === true ? 1 : 0
         peakFalloff: root.config.peakFalloff ?? 0.5
         spikes: root.config.spikes === true
         fire: root.config.fire === true
@@ -276,7 +282,11 @@ BarWidget {
         // Mini holds 32 bars even in spikes (downsampled from the 128 feed).
         spikeBars: 32
         sensitivity: root.config.sensitivity ?? 1.0
-        // colorSync follows the LIVE shell accent; otherwise config colors.
+        // Bar color: custom From→To wins; otherwise colorSync follows the
+        // LIVE shell accent, otherwise config theme colors.
+        barColorCustom: root.config.barColorCustom === true
+        barColorFrom: root.config.barColorFrom || "#e68e0d"
+        barColorTo: root.config.barColorTo || "#f59e0b"
         themeBottom: root.config.colorSync === true ? Qt.darker(Color.accent, 1.3) : (root.config.themeBottom || "#e68e0d")
         themeTop: root.config.colorSync === true ? Color.accent : (root.config.themeTop || "#f59e0b")
         wave: root.desktopLive ? [] : root.spectrumWave

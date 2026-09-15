@@ -1,7 +1,7 @@
-# omaviz — Application Specification (v7.14.1)
+# omaviz — Application Specification (v7.15.0)
 
 > **Plugin id:** `org.omaviz.visualizer`
-> **Version:** 7.14.1 (spec + manifest, git tag)
+> **Version:** 7.15.0 (spec + manifest, git tag)
 > **Status:** Single-package Omarchy QML plugin. Audio analysis is bundled as
 > one native binary (`plugin/bin/omaviz-engine`) shipped **inside** the plugin
 > directory. No systemd service, no Unix socket, no `~/.local/bin` binaries.
@@ -121,12 +121,37 @@ Only the container size and position change.
 
 ---
 
-## 5. Settings Panel (v7.8.0)
+## 5. Settings Panel (v7.15.0)
+
+**VISUALIZATIONS**: Two cards first (Spectrum / Scope) — workflow starts
+by picking the viz. Artwork is not a viz anymore: it merged into Spectrum
+as an **Artwork backdrop** toggle (album-cover behind bars, reactive-glow
+fallback). No auto-white rule — the Color setting governs bars everywhere.
 
 **PREVIEW**: Live visualization (same renderer, larger) + helper text below
 (left-aligned, muted): double-click opens the desktop window.
 
-**OPTIONS** (live-wired via `writeVizOption(s)` — disk + instant local update):
+**BARS** (spectrum): Peaks + Peak fall speed pair · Spikes + Stacks pair ·
+Reflection + Artwork backdrop pair.
+
+**BAR COLOR** (all viz; mini + preview + desktop in sync): Custom colors
+switch (off = theme dominant colors) + From (base) / To (tip) hex fields
+with swatches. Mini Mono overrides this on the mini only.
+
+**OSCILLOSCOPE** (scope): Line thickness slider only.
+
+**COMMON** (all viz): GPU renderer · Fire (bars gradient, wash + wave) ·
+Linear fall (engine restart) · Sensitivity slider (writes `[audio]`,
+applied QML-side, no restart).
+
+**MINI ONLY**: Mono toggle — B&W mini bars (waybar readability override).
+
+**Retired from UI, still honored in code**: Dots, Min height (now
+automatic: 1px floor while playing, 0 when silent), `artwork_mode`
+(migrates to spectrum + backdrop on).
+
+**OPTIONS** (live-wired via `writeVizOption(s)` / `writeAudioOption` —
+disk + instant local update):
 - **Peaks**: Toggle — peak-hold markers on all surfaces (default on)
 - **Peak fall speed**: Slider 0..1, shown only when Peaks on (0=holds, 1=fast)
 - **Spikes**: Toggle — dense gapless flame spikes; auto-enables Fire on
@@ -167,6 +192,10 @@ peaks = true
 peak_falloff = 0.5
 spikes = "false"
 splits = "false"
+bar_color_custom = "false"
+bar_color_from = "#e68e0d"
+bar_color_to = "#f59e0b"
+# retired from UI (still parsed): dots, mono, min_bar_height, artwork_mode
 ```
 
 ---
