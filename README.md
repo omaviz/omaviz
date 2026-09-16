@@ -122,7 +122,7 @@ Installs to `~/.config/omarchy/plugins/org.omaviz.visualizer/`.
 
 - `APP_SPEC.md` — architecture, config keys, lifecycle
 - `GPU_PLAN.md` — GPU renderer roadmap (next version)
-- `AGENTS.md` — rules for AI agents working in this repo
+- `docs/AGENTS.md` — rules for AI agents working in this repo
 
 ## Open source
 

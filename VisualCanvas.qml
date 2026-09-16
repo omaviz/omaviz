@@ -52,7 +52,7 @@ Canvas {
 
   function displayBands() {
     var b = bands
-    if (b.length === 0) return []
+    if (!b || b.length === 0) return []
     // Spikes mode: dense gapless spectrum (~2px per bar, like the
     // Winamp thin-bar visualizer) instead of the barCount mapping —
     // unless spikeBars caps it (mini holds 32).

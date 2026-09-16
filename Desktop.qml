@@ -165,7 +165,10 @@ Window {
         // is window height 200px; use proportion instead of fixed min)
         height: Math.max(100, parent.height * 0.95)
         // Visual area occupies 95% of container height
-        sourceComponent: win.gpuActive ? gpuComp : canvasComp
+        // GPU path parked (Canvas-only for now): ShaderEffect matched
+        // feature-for-feature but doubled every renderer change; revisit
+        // under GPU_PLAN.md when the viz catalog grows.
+        sourceComponent: canvasComp
       }
       Component {
         id: gpuComp

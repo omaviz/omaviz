@@ -10,61 +10,90 @@ layout(location = 0) in vec2 qt_TexCoord0;
 layout(binding = 1) uniform sampler2D u_tex;
 layout(location = 0) out vec4 fragColor;
 
-// Control cells packed into row 3 of the 512x4 data texture:
-// x0: visual type flag (0=Bars, 1=Wave, 2=Oscilloscope, and reserved)
-// x1: spikes/ splits/ fire/ dots/ reflect/ mono/ monoLight/ artMode as individual flags
-// x2: monoLight/ sync/ thickness/ peaks as flags
-// x3: themeBottom.rgb, x4: themeTop.rgb, x5: barCount, x6: gapPx, x7: width/height hi+lo bytes
+// Control cells packed into row 3 of the 512x4 data texture (must match
+// GpuCanvas.qml cell() writers exactly — opaque rgb(), alpha unused):
+// x0: r=visual(0=Bars,255=Wave/Scope) g=spikes b=stacks
+// x1: r=dots g=reflect b=artMode
+// x2: r=mono g=peaks b=fire
+// x3: r=monoLight g=colorSync b=thickness/5*255
+// x4: themeBottom.rgb  x5: themeTop.rgb
+// x6: r=barCount(0..512)  x7: r=gapPx(0..6)
+// x8: r=W/256 g=W%256  x9: r=H/256 g=H%256
+// x10: r=customFlag g=from.r b=from.g
+// x11: r=from.b g=to.r b=to.g
+// x12: r=to.b g=stackScale b=sensitivity*100
 
 const float TEXW = 512.0;
+// Row map: control cells live in Canvas row 3, sampled at v=3.5/4;
+// bands/peaks/wave in rows 0/1/2 at v=0.5/1.5/2.5/4 (writer order).
 vec4 cell(float x) { return texture(u_tex, vec2((x + 0.5) / TEXW, 3.5 / 4.0)); }
 float cR(float x) { return cell(x).r; }
-float cG(float x) { return cell(x).g; }
-float cB(float x) { return cell(x).b; }
-float cA(float x) { return cell(x).a; }
 float flag(float x, int ch) {
   vec4 c = cell(x);
-  if (ch == 0) return c.r; if (ch == 1) return c.g; if (ch == 2) return c.b;
-  return c.a;
+  if (ch == 0) return c.r; if (ch == 1) return c.g; return c.b;
 }
-float u_pxW() { vec4 c = cell(7.0); return floor(c.r * 255.0 + 0.5) * 256.0 + floor(c.g * 255.0 + 0.5); }
-float u_pxH() { vec4 c = cell(7.0); return floor(c.b * 255.0 + 0.5) * 256.0 + floor(c.a * 255.0 + 0.5); }
-float u_nb() { return floor(cR(5.0) * 512.0 + 0.5); }
-float u_gap() { return floor(cR(6.0) * 8.0 + 0.5); }
+float u_pxW() { vec4 c = cell(8.0); return floor(c.r * 255.0 + 0.5) * 256.0 + floor(c.g * 255.0 + 0.5); }
+float u_pxH() { vec4 c = cell(9.0); return floor(c.r * 255.0 + 0.5) * 256.0 + floor(c.g * 255.0 + 0.5); }
+float u_nb() { return floor(cR(6.0) * 255.0 + 0.5); }
+float u_gap() { return floor(cR(7.0) * 255.0 + 0.5); }
 float u_visual() { return floor(cR(0.0) * 255.0 + 0.5); }
 float u_spikes() { return flag(0.0, 1); }
-float u_splits() { return flag(0.0, 2); }
-float u_fire() { return flag(0.0, 3); }
+float u_stacks() { return flag(0.0, 2); }
+float u_fire() { return flag(2.0, 2); }
 float u_dots() { return flag(1.0, 0); }
 float u_reflect() { return flag(1.0, 1); }
 float u_art() { return flag(1.0, 2); }
-float u_mono() { return flag(1.0, 3); }
-float u_monoLight() { return flag(2.0, 0); }
-float u_sync() { return flag(2.0, 1); }
-float u_thick() { return clamp(cell(2.0).b * 5.0, 1.0, 5.0); }
-float u_peaks() { return flag(2.0, 3); }
-vec3 u_bot() { return cell(3.0).rgb; }
-vec3 u_top() { return cell(4.0).rgb; }
+float u_mono() { return flag(2.0, 0); }
+float u_monoLight() { return flag(3.0, 0); }
+float u_sync() { return flag(3.0, 1); }
+float u_thick() { return clamp(cell(3.0).b * 5.0, 1.0, 5.0); }
+float u_peaks() { return flag(2.0, 1); }
+vec3 u_bot() { return cell(4.0).rgb; }
+vec3 u_top() { return cell(5.0).rgb; }
+float u_custom() { return flag(10.0, 0); }
+vec3 u_from() { return vec3(cell(10.0).g, cell(10.0).b, cell(11.0).r); }
+vec3 u_to() { return vec3(cell(11.0).g, cell(11.0).b, cell(12.0).r); }
+float u_stackScale() { return max(1.0, floor(cell(12.0).g + 0.5)); }
+float u_sens() { return clamp(cell(12.0).b * 2.55, 0.0, 2.55); }
+// Qt.darker(c,1.25) ~= c/1.25 ; Qt.lighter(c,1.2) ~= mix(c,white,1-1/1.2)
+vec3 darker125(vec3 c) { return c / 1.25; }
+vec3 lighter12(vec3 c) { return mix(c, vec3(1.0), 0.1667); }
 
-// Band/peak/wave lookup from texture rows
+// Band/peak/wave lookup from texture rows (same order as writers)
 float bandAt(float i)  { return texture(u_tex, vec2((i + 0.5) / TEXW, 0.5 / 4.0)).r; }
 float peakAt(float i)  { return texture(u_tex, vec2((i + 0.5) / TEXW, 1.5 / 4.0)).r; }
 float waveAt(float i)  { return texture(u_tex, vec2(clamp(i, 0.0, 127.0) + 0.5, 2.5 / 4.0)).r * 2.0 - 1.0; }
 
-// Fire color at height fraction t (0 = base, 1 = tip)
+// Fire color at height fraction t (0 = base, 1 = tip): base always
+// ignites red; tip lands on the custom swatch To, else the lightened
+// theme accent — mirrors VisualCanvas.fireColorAt.
+vec3 fireTip() {
+  vec3 tt = (u_custom() > 0.5) ? u_to() : u_top();
+  return lighter12(tt);
+}
 vec3 fireColorAt(float t) {
   t = clamp(t, 0.0, 1.0);
-  if (t < 0.25) { float k = t / 0.25; return vec3(190.0 + k * 65.0, 20.0 + k * 120.0, k * 10.0) / 255.0; }
-  float k2 = (t - 0.25) / 0.75; return vec3(255.0, 140.0 + k2 * 110.0, 10.0 + k2 * 190.0) / 255.0;
+  vec3 tip = fireTip();
+  vec3 ignite = vec3(255.0, 130.0, 10.0) / 255.0;
+  vec3 base = vec3(190.0, 20.0, 0.0) / 255.0;
+  if (t < 0.3) { float k = t / 0.3; return mix(base, ignite, k); }
+  float k3 = (t - 0.3) / 0.7; return mix(ignite, tip, k3);
 }
 
-// Flat fill color (matches VisualCanvas.fillFor when not fire)
+vec3 ignite0() { return vec3(255.0, 140.0, 60.0) / 255.0; }
+
+// Flat fill color (matches VisualCanvas.fillFor when not fire):
+// base darkened, tip lightened; custom From→To wins over theme.
 vec3 flatFill(float v) {
   if (u_art() > 0.5) return vec3(1.0);
   if (u_mono() > 0.5) return (u_monoLight() > 0.5) ? vec3(0.0) : vec3(1.0);
-  if (u_fire() > 0.5) return vec3(255.0, 140.0 + v * 115.0, 60.0 + v * 40.0) / 255.0;
-  vec3 top = (u_sync() > 0.5) ? u_top() : vec3(1.0);
-  return mix(u_bot(), top, v);
+  if (u_fire() > 0.5) {
+    vec3 tip = fireTip();
+    return mix(ignite0(), tip, v);
+  }
+  vec3 bot = darker125((u_custom() > 0.5) ? u_from() : u_bot());
+  vec3 top = lighter12((u_custom() > 0.5) ? u_to() : ((u_sync() > 0.5) ? u_top() : vec3(1.0)));
+  return mix(bot, top, v);
 }
 
 // Bar ink color (pixel-perfect match to VisualCanvas fillFor/fillWash logic)
@@ -88,13 +117,13 @@ void main() {
   // ---- Oscilloscope ----
   if (u_visual() > 0.5) {
     float mid = H * 0.5, amp = H * 0.42;
-    float best = 1.0e9;
+    float best = 1000000000.0;
     vec2 prev = vec2(0.0, mid - clamp(waveAt(0.0), -1.0, 1.0) * amp);
     for (int s = 1; s < 128; s++) {
       float fi = float(s);
       vec2 cur = vec2(fi / 127.0 * W, mid - clamp(waveAt(fi), -1.0, 1.0) * amp);
       vec2 pa = px - prev, ba = cur - prev;
-      float h2 = clamp(dot(pa, ba) / max(dot(ba, ba), 1.0e-6), 0.0, 1.0);
+      float h2 = clamp(dot(pa, ba) / max(dot(ba, ba), 0.000001), 0.0, 1.0);
       best = min(best, length(pa - ba * h2));
       prev = cur;
     }
@@ -127,7 +156,7 @@ void main() {
   float fi = clamp(floor(px.x / step_), 0.0, nb - 1.0);
   float x0 = fi * step_;
   bool inBar = px.x < x0 + bw + spikeOverlap;
-  float v = bandAt(fi);
+  float v = clamp(bandAt(fi) * u_sens(), 0.0, 1.0);
 
   float h = max(v * areaH, 1.0);
   float yTop = baseY - h;
@@ -136,16 +165,17 @@ void main() {
   float alpha = 0.0;
 
   if (inBar && h > 0.0 && px.y >= yTop && px.y <= baseY) {
-    float t = clamp((baseY - px.y) / max(areaH, 1.0e-3), 0.0, 1.0);
-    if (u_splits() > 0.5) {
-      // 3px blocks + 1px gaps stacked from base.
+    float t = clamp((baseY - px.y) / max(areaH, 0.001), 0.0, 1.0);
+    if (u_stacks() > 0.5) {
+      // 3px blocks + 1px gaps stacked from base, scaled on desktop.
+      float ss = u_stackScale();
       float rel = baseY - px.y;
-      if (mod(rel, 4.0) < 3.0) { col = barInk(v, t); alpha = 1.0; }
+      if (mod(rel, 4.0 * ss) < 3.0 * ss) { col = barInk(v, t); alpha = 1.0; }
       // Spikes combo: pointed tip quad above the top segment.
       if (u_spikes() > 0.5) {
         float apex = min(bw, 5.0);
         if (px.y < yTop && px.y >= yTop - apex) {
-          float hw = (bw * 0.5 + 0.25) * (yTop - px.y) / max(apex, 1.0e-3);
+          float hw = (bw * 0.5 + 0.25) * (yTop - px.y) / max(apex, 0.001);
           if (abs(px.x - (x0 + bw * 0.5)) <= hw) { col = barInk(v, t); alpha = 1.0; }
         }
       }
@@ -160,7 +190,7 @@ void main() {
           if (abs(px.x - (x0 + bw * 0.5)) <= hw) alpha = 1.0;
         }
       } else {
-        float hw = (bw * 0.5 + 0.25) * (px.y - yTop) / max(h, 1.0e-3);
+        float hw = (bw * 0.5 + 0.25) * (px.y - yTop) / max(h, 0.001);
         if (abs(px.x - (x0 + bw * 0.5)) <= hw) alpha = 1.0;
       }
     } else {

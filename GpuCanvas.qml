@@ -18,7 +18,11 @@ Item {
   property real peakFalloff: 0.5
   property bool spikes: false
   property bool fire: false
-  property bool splits: false
+  property bool stacks: false
+  property int stackScale: 1
+  property bool barColorCustom: false
+  property color barColorFrom: "#e68e0d"
+  property color barColorTo: "#f59e0b"
   property real sensitivity: 1.0
   property color themeBottom: "#e68e0d"
   property color themeTop: "#f59e0b"
@@ -49,7 +53,7 @@ Item {
 
   function displayBands() {
     var b = bands
-    if (b.length === 0) return []
+    if (!b || b.length === 0) return []
     var n = spikes ? (spikeBars > 0 ? spikeBars : Math.max(16, Math.floor(width / 2))) : (barCount > 0 ? barCount : b.length)
     if (n > 512) n = 512
     if (n === b.length) return b
@@ -196,7 +200,7 @@ Item {
         ctx.fillRect(x, 3, 1, 1)
       }
       var vis = (root.visual === "Wave" || root.visual === "Oscilloscope") ? 255 : 0
-      cell(0, vis, root.spikes ? 255 : 0, root.splits ? 255 : 0)
+      cell(0, vis, root.spikes ? 255 : 0, root.stacks ? 255 : 0)
       cell(1, root.dots ? 255 : 0, root.reflect ? 255 : 0, root.artMode ? 255 : 0)
       cell(2, mono ? 255 : 0, peaks ? 255 : 0, fire ? 255 : 0)
       cell(3, monoLight ? 255 : 0, colorSync ? 255 : 0,
@@ -209,6 +213,15 @@ Item {
       var H = Math.min(65535, Math.max(0, Math.round(root.height)))
       cell(8, Math.floor(W / 256), W % 256)
       cell(9, Math.floor(H / 256), H % 256)
+      // Custom swatch + stack scale + sensitivity (shader mirrors the
+      // Canvas ramp: base ignites red under fire, tip lands on To/accent).
+      cell(10, root.barColorCustom ? 255 : 0,
+           Math.round(root.barColorFrom.r * 255), Math.round(root.barColorFrom.g * 255))
+      cell(11, Math.round(root.barColorFrom.b * 255),
+           Math.round(root.barColorTo.r * 255), Math.round(root.barColorTo.g * 255))
+      cell(12, Math.round(root.barColorTo.b * 255),
+           Math.max(1, Math.round(root.stackScale)),
+           Math.min(255, Math.max(0, Math.round(root.sensitivity * 100))))
     }
   }
 
@@ -224,7 +237,7 @@ Item {
     id: fx
     anchors.fill: parent
     property ShaderEffectSource u_tex: texSrc
-    fragmentShader: Qt.resolvedUrl("gpu.frag")
+    fragmentShader: Qt.resolvedUrl("gpu.qsb")
     onStatusChanged: if (status === ShaderEffect.Error) root.gpuFailed()
   }
 }
