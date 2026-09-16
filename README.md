@@ -50,14 +50,13 @@ theme-aware, and configured with two clicks.
 - **Motion** — exponential easing by default, Winamp-style linear fall
   on demand, adjustable sensitivity
 - **Robust** — shared-flag + heartbeat desktop lifecycle (no zombies),
-  engine auto-retry, one shared Canvas renderer everywhere
-  (GPU path planned next — see `GPU_PLAN.md`)
+  engine auto-retry, one shared Canvas renderer everywhere.
 
 ## Install
 
 Requires Omarchy (Quickshell) + PipeWire. Zero-build: the engine binary
 ships committed, so no toolchain is needed — only `./install.sh --build`
-needs `cargo` + Qt6 `qsb` (for `gpu.qsb`).
+needs `cargo`.
 
 ```bash
 cd ~/omaviz
@@ -108,12 +107,11 @@ BarWidget.qml    # bar mini + engine spawn + all config writes
 Panel.qml        # settings panel (preview + options)
 Desktop.qml      # detached window (standalone quickshell -p, NO qs.* imports)
 VisualCanvas.qml # THE shared renderer (all modes, all options)
-GpuCanvas.qml + gpu.frag  # GPU path (roadmap: GPU_PLAN.md — Canvas is the verified renderer)
 Model.js         # config parse/write, spectrum parsing
 assets/ bin/ tests/  # launcher entry, COMMITTED engine binary, node tests
 engine/          # Rust source: PipeWire capture → FFT → bands + wave frames
 install.sh / build.sh / uninstall.sh
-APP_SPEC.md  # full spec · GPU_PLAN.md  # GPU renderer roadmap (next version)
+APP_SPEC.md  # full spec
 ```
 
 Installs to `~/.config/omarchy/plugins/org.omaviz.visualizer/`.
@@ -121,7 +119,6 @@ Installs to `~/.config/omarchy/plugins/org.omaviz.visualizer/`.
 ## Docs
 
 - `APP_SPEC.md` — architecture, config keys, lifecycle
-- `GPU_PLAN.md` — GPU renderer roadmap (next version)
 - `docs/AGENTS.md` — rules for AI agents working in this repo
 
 ## Open source

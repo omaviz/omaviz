@@ -446,14 +446,6 @@ Panel {
 
           Toggle {
             width: (parent.width - Style.space(14)) / 2
-            label: "GPU renderer"
-            description: "Desktop GPU shader (auto CPU fallback)"
-            checked: root.hcfg.gpu !== false
-            onClicked: if (root.hostWidget) root.hostWidget.writeVizOption("gpu", !checked)
-          }
-
-          Toggle {
-            width: (parent.width - Style.space(14)) / 2
             label: "Linear fall"
             description: "Fixed-rate drop (restarts engine)"
             checked: root.hcfg.linearFall === true

@@ -38,9 +38,7 @@ repo root = the plugin (deployed to ~/.config/omarchy/plugins/org.omaviz.visuali
 ├── Panel.qml       (settings: Peaks toggle, Peak fall speed)
 ├── Desktop.qml     (detached window)
 ├── Model.js        (.pragma library: config IO, spectrum parse)
-├── VisualCanvas.qml  (Canvas-2D renderer — DEFAULT)
-├── shaders/visual.frag
-├── visuals/*.toml  (equalizer / wave / fire)
+├── VisualCanvas.qml  (Canvas-2D renderer)
 ├── bin/
 │   └── omaviz-engine   (Rust: capture → FFT/DSP → JSON lines on stdout;
 │                         COMMITTED artifact — see Architecture A, §2)
@@ -73,8 +71,7 @@ VisualCanvas (Canvas-2D) — used by mini, preview, AND desktop
 | `BarWidget.qml` | Waybar mini widget. Spawns engine, renders spectrum, handles detach/attach. |
 | `Panel.qml` | Settings panel. Shows PREVIEW, Peaks toggle, Peak fall speed (Slow/Med/Fast), SOURCE readout. |
 | `Desktop.qml` | Detached visualization window. Same VisualCanvas renderer, larger. |
-| `VisualCanvas.qml` | **DEFAULT** Canvas-2D renderer. Used by mini, preview, and desktop. |
-| `VisualCanvasGL.qml` | Legacy GPU/ShaderEffect renderer. Not used by default. |
+| `VisualCanvas.qml` | Canvas-2D renderer. Used by mini, preview, and desktop. |
 | `Model.js` | Config I/O, spectrum parsing, default config with peaks/peakFalloff. |
 
 ---
@@ -145,7 +142,7 @@ follows the LIVE Omarchy accent (bar snapshots accent triple to config
 for the standalone desktop window). Mini Mono overrides this on mini only.
 
 **ADVANCED**: Spikes + Stacks (spectrum) · Fire · Line thickness (scope) ·
-GPU renderer · Linear fall (engine restart) · Sensitivity slider (writes
+Linear fall (engine restart) · Sensitivity slider (writes
 `[audio]`, applied QML-side, no restart) · Mono (mini only).
 
 **Retired from UI, still honored in code**: Dots, Min height (now
@@ -183,7 +180,6 @@ color_sync = false
 [desktop]
 active = "false"
 heartbeat = "0"
-gpu = "true"
 color_source = "theme"
 density = 128
 custom_color = "#5ec8ff"
@@ -233,7 +229,7 @@ bar_color_to = "#f59e0b"
 ```
 omaviz/  (repo root IS the plugin — manifest.json lives here)
 ├── manifest.json, BarWidget.qml, Panel.qml, Desktop.qml
-├── Model.js, VisualCanvas.qml, gpu.frag
+├── Model.js, VisualCanvas.qml
 ├── assets/omaviz.desktop  (app-launcher entry)
 ├── bin/omaviz-engine   (COMMITTED engine binary)
 ├── tests/model.test.cjs (node tests)
@@ -262,5 +258,5 @@ omaviz/  (repo root IS the plugin — manifest.json lives here)
 | 9 | Peak-hold markers with configurable falloff | Shipped | 100% |
 | 10 | Theme-dominant gradient colors | Shipped | 100% |
 | 11 | TDD: engine (Rust) + plugin (node) suites green | Shipped | 100% |
-| 12 | GPU/ShaderEffect visuals | Next version (see GPU_PLAN.md) | 0% |
+| 12 | GPU/ShaderEffect visuals | Removed (Canvas-only) | — |
 | 13 | Additional backends (PulseAudio/JACK/ALSA) | Planned | 0% |

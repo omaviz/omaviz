@@ -24,10 +24,6 @@ Window {
   // so settings-panel changes reflect in the open window within ~100ms.
   property var vizConfig: Model.defaultConfig()
   function refreshVizConfig() { win.vizConfig = Model.readConfigFromText(cfgWrite.text()) }
-  // GPU renderer: wanted by config (default on), tripped off if the GL
-  // pipeline errors — the Canvas fallback then takes over (no-GPU path).
-  property bool gpuFailed: false
-  readonly property bool gpuActive: win.vizConfig.gpu !== false && !win.gpuFailed
   // ---- Now-playing (MPRIS, zero deps — Quickshell built-in) ----
   // Player pick mirrors the shell media service: prefer a playing source
   // with track metadata, else the first source that has any.
@@ -169,38 +165,6 @@ Window {
         // feature-for-feature but doubled every renderer change; revisit
         // under GPU_PLAN.md when the viz catalog grows.
         sourceComponent: canvasComp
-      }
-      Component {
-        id: gpuComp
-        GpuCanvas {
-        onGpuFailed: win.gpuFailed = true
-
-        bands: win.spectrumBands
-        silent: win.spectrumSilent
-        wave: win.spectrumWave
-        visual: win.vizConfig.scope === true ? "Oscilloscope" : "Bars"
-        artMode: false
-        dots: false   // static underlay above
-        reflect: win.vizConfig.reflect === true
-        scopeLineWidth: win.vizConfig.scopeThickness ?? 2
-        colorSync: false
-        barCount: Math.max(16, Math.floor((parent.width - 8) / 10))
-        gapPx: Math.min(6, Math.max(0, win.vizConfig.gap ?? 1))
-        peaks: win.vizConfig.peaks !== false
-        peakFalloff: win.vizConfig.peakFalloff ?? 0.5
-        spikes: win.vizConfig.spikes === true
-        fire: win.vizConfig.fire === true
-        stacks: win.vizConfig.stacks === true
-        stackScale: 2
-        sensitivity: win.vizConfig.sensitivity ?? 1.0
-        // Custom swatch must reach the fire ramp too (tip = swatch To);
-        // without these the Loader canvas fell back to theme colors.
-        barColorCustom: win.vizConfig.barColorCustom === true
-        barColorFrom: win.vizConfig.barColorFrom || "#e68e0d"
-        barColorTo: win.vizConfig.barColorTo || "#f59e0b"
-        themeBottom: win.vizConfig.barColorCustom === true ? (win.vizConfig.barColorFrom || "#e68e0d") : (win.vizConfig.themeBottom || "#e68e0d")
-        themeTop: win.vizConfig.barColorCustom === true ? (win.vizConfig.barColorTo || "#f59e0b") : (win.vizConfig.themeTop || "#f59e0b")
-        }
       }
       Component {
         id: canvasComp

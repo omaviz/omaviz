@@ -146,7 +146,6 @@ test("each panel option round-trips through write + parse", () => {
     ["desktop", "fire", true, "fire", true],
     ["desktop", "scope", true, "scope", true],
     ["desktop", "scope_thickness", 3.5, "scopeThickness", 3.5],
-    ["desktop", "gpu", false, "gpu", false],
     ["desktop", "linear_fall", true, "linearFall", true],
     ["desktop", "mono", true, "mono", true],
     ["desktop", "dots", false, "dots", false],
@@ -165,7 +164,7 @@ test("each panel option round-trips through write + parse", () => {
 })
 
 test("toggle flip-flop: on then off parses both ways", () => {
-  for (const key of ["peaks", "reflect", "artwork", "spikes", "stacks", "fire", "mono", "gpu", "linear_fall", "bar_color_custom"]) {
+  for (const key of ["peaks", "reflect", "artwork", "spikes", "stacks", "fire", "mono", "linear_fall", "bar_color_custom"]) {
     let txt = Model.writeConfigKey("", "desktop", key, true)
     assert.equal(Model.readConfigFromText(txt)[key === "linear_fall" ? "linearFall" : key === "bar_color_custom" ? "barColorCustom" : key], true, `${key} on`)
     txt = Model.writeConfigKey(txt, "desktop", key, false)

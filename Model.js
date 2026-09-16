@@ -160,7 +160,7 @@ function defaultConfig() {
     themeTop: "#f59e0b",
     fire: false,
     peaks: true, peakFalloff: 0.1, spikes: false, stacks: false, mono: false,
-    linearFall: true, scope: false, artMode: false, artwork: false, gpu: true, scopeThickness: 2, dots: true, reflect: true, minBarHeight: false,
+    linearFall: true, scope: false, artMode: false, artwork: false, scopeThickness: 2, dots: true, reflect: true, minBarHeight: false,
     barColorCustom: false, barColorFrom: "#e68e0d", barColorTo: "#f59e0b",
     themeAccent: "#f59e0b",
   }
