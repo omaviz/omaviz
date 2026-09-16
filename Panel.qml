@@ -163,7 +163,37 @@ Panel {
         // ============================================================
         //  OPTIONS
         // ============================================================
-        PanelSectionHeader { text: "OPTIONS" }
+        // OPTIONS header with nav link in one row: same screen location
+        // whether main ("Advanced »") or advanced ("« Back") is showing.
+        Row {
+          width: parent.width
+          spacing: Style.space(8)
+          Text {
+            text: "OPTIONS"
+            color: Qt.darker(root.bar ? root.bar.foreground : Color.foreground, 1.4)
+            font.family: Style.font.family
+            font.pixelSize: Style.font.caption
+            font.bold: true
+            topPadding: Math.ceil(Style.font.caption * 0.15)
+            width: parent.width - navLink.width - parent.spacing
+            elide: Text.ElideRight
+            anchors.verticalCenter: parent.verticalCenter
+          }
+          Text {
+            id: navLink
+            text: root.showAdvanced ? "« Back" : "Advanced »"
+            color: Color.accent
+            font.family: Style.font.family
+            font.pixelSize: Style.font.body
+            font.bold: true
+            anchors.verticalCenter: parent.verticalCenter
+            MouseArea {
+              anchors.fill: parent
+              cursorShape: Qt.PointingHandCursor
+              onClicked: root.showAdvanced = !root.showAdvanced
+            }
+          }
+        }
 
         // ---- Options stage: main <-> advanced slide (top stays intact) ----
         Item {
@@ -183,8 +213,11 @@ Panel {
             Behavior on x { NumberAnimation { duration: 160; easing.type: Easing.OutCubic } }
             Behavior on opacity { NumberAnimation { duration: 160 } }
 
-        // ---- Bars (spectrum) ----
-        PanelSectionHeader { text: "BARS"; visible: root.isSpectrum }
+            // Top margin: the sliding stage clips, so first-row top
+            // borders would be cut without breathing room.
+            Item { width: parent.width; height: Style.space(8) }
+
+            // ---- Bars (spectrum): no subtitle, rows speak for themselves ----
 
         Row {
           visible: root.isSpectrum
@@ -199,32 +232,36 @@ Panel {
             onClicked: if (root.hostWidget) root.hostWidget.writeVizOption("peaks", !checked)
           }
 
-          Column {
+          BorderSurface {
             width: (parent.width - Style.space(14)) / 2
-            spacing: Style.space(4)
-            Text {
-              text: "Peak fall speed"
-              color: root.bar ? root.bar.foreground : Color.foreground
-              font.family: Style.font.family
-              font.pixelSize: Style.font.body
-              width: parent.width
-              elide: Text.ElideRight
-            }
-            Text {
-              text: "0 holds · 1 fast"
-              color: Qt.darker(root.bar ? root.bar.foreground : Color.foreground, 1.4)
-              font.family: Style.font.family
-              font.pixelSize: Style.font.bodySmall
-              width: parent.width
-              elide: Text.ElideRight
-            }
-            PanelSlider {
-              width: parent.width
-              bar: root.bar
-              enabled: root.peaksOn
-              minimum: 0; maximum: 1; step: 0.05
-              value: (root.hcfg.peakFalloff ?? 0.5)
-              onReleased: function(v) { if (root.hostWidget) root.hostWidget.writeVizOption("peak_falloff", Math.round(v * 20) / 20) }
+            height: fallCol.implicitHeight + Style.spacing.huge
+            radius: Style.cornerRadius
+            color: Style.controlFill(false, false, Color.foreground, Color.accent)
+            borderSpec: Border.controlSpec("normal", Color.foreground, Color.accent)
+            Column {
+              id: fallCol
+              anchors.left: parent.left
+              anchors.right: parent.right
+              anchors.verticalCenter: parent.verticalCenter
+              anchors.leftMargin: parent.borderLeft + Style.spacing.rowPaddingX
+              anchors.rightMargin: parent.borderRight + Style.spacing.rowPaddingX
+              spacing: Style.space(4)
+              Text {
+                text: "Peak fall speed"
+                color: root.bar ? root.bar.foreground : Color.foreground
+                font.family: Style.font.family
+                font.pixelSize: Style.font.body
+                width: parent.width
+                elide: Text.ElideRight
+              }
+              PanelSlider {
+                width: parent.width
+                bar: root.bar
+                enabled: root.peaksOn
+                minimum: 0; maximum: 1; step: 0.05
+                value: (root.hcfg.peakFalloff ?? 0.5)
+                onReleased: function(v) { if (root.hostWidget) root.hostWidget.writeVizOption("peak_falloff", Math.round(v * 20) / 20) }
+              }
             }
           }
         }
@@ -245,7 +282,7 @@ Panel {
           Toggle {
             width: (parent.width - Style.space(14)) / 2
             label: "Artwork backdrop"
-            description: "Album art behind bars (else glow)"
+            description: "Immersive artwork"
             checked: root.hcfg.artwork !== false
             onClicked: if (root.hostWidget) root.hostWidget.writeVizOption("artwork", !checked)
           }
@@ -254,101 +291,133 @@ Panel {
         // ---- Bar color (always visible; mini+preview+desktop in sync) ----
         PanelSectionHeader { text: "BAR COLOR" }
 
-        Row {
+        // ---- Bar color: toggle + tones + swatches in one box ----
+        BorderSurface {
           width: parent.width
-          spacing: Style.space(14)
-
-          Toggle {
-            width: (parent.width - Style.space(14)) / 2
-            label: "Custom colors"
-            description: "Off = theme colors"
-            checked: root.hcfg.barColorCustom === true
-            onClicked: if (root.hostWidget) root.hostWidget.writeVizOption("bar_color_custom", !checked)
-          }
-
+          height: colorBoxCol.implicitHeight + Style.spacing.huge
+          radius: Style.cornerRadius
+          color: Style.controlFill(false, false, Color.foreground, Color.accent)
+          borderSpec: Border.controlSpec("normal", Color.foreground, Color.accent)
           Column {
-            width: (parent.width - Style.space(14)) / 2
-            spacing: Style.space(4)
-            enabled: root.hcfg.barColorCustom === true
-            opacity: root.hcfg.barColorCustom === true ? 1.0 : 0.45
-
-            Text {
-              text: "Custom tones"
-              color: root.bar ? root.bar.foreground : Color.foreground
-              font.family: Style.font.family
-              font.pixelSize: Style.font.body
+            id: colorBoxCol
+            anchors.left: parent.left
+            anchors.right: parent.right
+            anchors.verticalCenter: parent.verticalCenter
+            anchors.leftMargin: parent.borderLeft + Style.spacing.rowPaddingX
+            anchors.rightMargin: parent.borderRight + Style.spacing.rowPaddingX
+            spacing: Style.space(8)
+            Row {
               width: parent.width
-              elide: Text.ElideRight
+              spacing: Style.space(14)
+
+              // Plain label + switch (no Toggle box): the parent color
+              // box already provides the container.
+              Row {
+                width: (parent.width - Style.space(14)) / 2
+                spacing: Style.space(8)
+                Column {
+                  width: parent.width - customSwitch.width - parent.spacing
+                  spacing: Style.space(4)
+                  anchors.verticalCenter: parent.verticalCenter
+                  Text {
+                    text: "Custom colors"
+                    color: root.bar ? root.bar.foreground : Color.foreground
+                    font.family: Style.font.family
+                    font.pixelSize: Style.font.body
+                    font.bold: true
+                    width: parent.width
+                    elide: Text.ElideRight
+                  }
+                  Text {
+                    text: "Off = theme colors"
+                    color: Qt.darker(root.bar ? root.bar.foreground : Color.foreground, 1.4)
+                    font.family: Style.font.family
+                    font.pixelSize: Style.font.bodySmall
+                    width: parent.width
+                    elide: Text.ElideRight
+                  }
+                }
+                ToggleSwitch {
+                  id: customSwitch
+                  checked: root.hcfg.barColorCustom === true
+                  foreground: root.bar ? root.bar.foreground : Color.foreground
+                  accent: Color.accent
+                  anchors.verticalCenter: parent.verticalCenter
+                  onToggled: if (root.hostWidget) root.hostWidget.writeVizOption("bar_color_custom", !checked)
+                }
+              }
+
+              Column {
+                width: (parent.width - Style.space(14)) / 2
+                spacing: Style.space(4)
+                enabled: root.hcfg.barColorCustom === true
+                opacity: root.hcfg.barColorCustom === true ? 1.0 : 0.45
+
+                Text {
+                  text: "Custom tones"
+                  color: root.bar ? root.bar.foreground : Color.foreground
+                  font.family: Style.font.family
+                  font.pixelSize: Style.font.body
+                  width: parent.width
+                  elide: Text.ElideRight
+                }
+                Text {
+                  text: "From (base) · To (tip)"
+                  color: Qt.darker(root.bar ? root.bar.foreground : Color.foreground, 1.4)
+                  font.family: Style.font.family
+                  font.pixelSize: Style.font.bodySmall
+                  width: parent.width
+                  elide: Text.ElideRight
+                }
+                Row {
+                  width: parent.width
+                  spacing: Style.space(8)
+
+                  HexField {
+                    width: (parent.width - Style.space(8)) / 2
+                    value: root.hcfg.barColorFrom || "#e68e0d"
+                    onAccept: function(v) { if (root.hostWidget) root.hostWidget.writeVizOption("bar_color_from", v) }
+                  }
+                  HexField {
+                    width: (parent.width - Style.space(8)) / 2
+                    value: root.hcfg.barColorTo || "#f59e0b"
+                    onAccept: function(v) { if (root.hostWidget) root.hostWidget.writeVizOption("bar_color_to", v) }
+                  }
+                }
+              }
+            }
+            Row {
+              id: presetRow
+              width: parent.width
+              spacing: Style.space(6)
+              Repeater {
+                model: [["#e68e0d","#f59e0b"],["#ef4444","#f59e0b"],["#0369a1","#38bdf8"],["#7c3aed","#c4b5fd"],["#65a30d","#d9f99d"],["#e11d48","#fda4af"],["#06b6d4","#a5f3fc"],["#6b7280","#f8fafc"]]
+                Rectangle {
+                  width: (presetRow.width - Style.space(42)) / 8
+                  height: 22
+                  radius: 5
+                  gradient: Gradient {
+                    GradientStop { position: 0.0; color: modelData[0] }
+                    GradientStop { position: 1.0; color: modelData[1] }
+                  }
+                  border.width: (root.hcfg.barColorFrom === modelData[0] && root.hcfg.barColorTo === modelData[1]) ? 2 : 0
+                  border.color: Color.accent
+                  MouseArea {
+                    anchors.fill: parent
+                    cursorShape: Qt.PointingHandCursor
+                    onClicked: if (root.hostWidget) root.hostWidget.writeVizOptions3("bar_color_custom", true, "bar_color_from", modelData[0], "bar_color_to", modelData[1])
+                  }
+                }
+              }
             }
             Text {
-              text: "From (base) · To (tip)"
+              text: "Tap a preset or type hex · applies to mini, preview, desktop + wave."
               color: Qt.darker(root.bar ? root.bar.foreground : Color.foreground, 1.4)
               font.family: Style.font.family
               font.pixelSize: Style.font.bodySmall
               width: parent.width
               elide: Text.ElideRight
             }
-            Row {
-              width: parent.width
-              spacing: Style.space(8)
-
-              HexField {
-                width: (parent.width - Style.space(8)) / 2
-                value: root.hcfg.barColorFrom || "#e68e0d"
-                onAccept: function(v) { if (root.hostWidget) root.hostWidget.writeVizOption("bar_color_from", v) }
-              }
-              HexField {
-                width: (parent.width - Style.space(8)) / 2
-                value: root.hcfg.barColorTo || "#f59e0b"
-                onAccept: function(v) { if (root.hostWidget) root.hostWidget.writeVizOption("bar_color_to", v) }
-              }
-            }
-          }
-        }
-        Row {
-          id: presetRow
-          width: parent.width
-          spacing: Style.space(6)
-          Repeater {
-            model: [["#e68e0d","#f59e0b"],["#ef4444","#f59e0b"],["#0369a1","#38bdf8"],["#7c3aed","#c4b5fd"],["#65a30d","#d9f99d"],["#e11d48","#fda4af"],["#06b6d4","#a5f3fc"],["#6b7280","#f8fafc"]]
-            Rectangle {
-              width: (presetRow.width - Style.space(42)) / 8
-              height: 22
-              radius: 5
-              gradient: Gradient {
-                GradientStop { position: 0.0; color: modelData[0] }
-                GradientStop { position: 1.0; color: modelData[1] }
-              }
-              border.width: (root.hcfg.barColorFrom === modelData[0] && root.hcfg.barColorTo === modelData[1]) ? 2 : 0
-              border.color: Color.accent
-              MouseArea {
-                anchors.fill: parent
-                cursorShape: Qt.PointingHandCursor
-                onClicked: if (root.hostWidget) root.hostWidget.writeVizOptions3("bar_color_custom", true, "bar_color_from", modelData[0], "bar_color_to", modelData[1])
-              }
-            }
-          }
-        }
-        Text {
-          text: "Tap a preset for both tones, or type hex. Custom tones apply to mini, preview, desktop + wave."
-          color: Qt.darker(root.bar ? root.bar.foreground : Color.foreground, 1.4)
-          font.family: Style.font.family
-          font.pixelSize: Style.font.bodySmall
-          width: parent.width
-          wrapMode: Text.WordWrap
-        }
-
-        // ---- Advanced link ----
-        Text {
-          text: "Advanced »"
-          color: Color.accent
-          font.family: Style.font.family
-          font.pixelSize: Style.font.body
-          font.bold: true
-          MouseArea {
-            anchors.fill: parent
-            cursorShape: Qt.PointingHandCursor
-            onClicked: root.showAdvanced = true
           }
         }
       }
@@ -364,19 +433,11 @@ Panel {
         Behavior on x { NumberAnimation { duration: 160; easing.type: Easing.OutCubic } }
         Behavior on opacity { NumberAnimation { duration: 160 } }
 
-        Text {
-          text: "« Back"
-          color: Color.accent
-          font.family: Style.font.family
-          font.pixelSize: Style.font.body
-          font.bold: true
-          MouseArea {
-            anchors.fill: parent
-            cursorShape: Qt.PointingHandCursor
-            onClicked: root.showAdvanced = false
-          }
-        }
-        PanelSectionHeader { text: "ADVANCED" }
+        // Same top margin as main view (shared clipped stage).
+        Item { width: parent.width; height: Style.space(8) }
+
+        // Back lives in the shared OPTIONS header row (same spot as
+        // "Advanced »") — no separate back link or subtitle here.
 
         Row {
           visible: root.isSpectrum
@@ -386,7 +447,7 @@ Panel {
           Toggle {
             width: (parent.width - Style.space(14)) / 2
             label: "Spikes"
-            description: "Thin dense spikes (enables Fire)"
+            description: "Thin firy spikes"
             checked: root.spikesOn
             onClicked: {
               if (!root.hostWidget) return
@@ -404,50 +465,22 @@ Panel {
           }
         }
 
-        Toggle {
-          width: parent.width
-          label: "Fire"
-          description: "Flame gradient everywhere"
-          checked: root.hcfg.fire === true
-          onClicked: if (root.hostWidget) root.hostWidget.writeVizOption("fire", !checked)
-        }
-
-        Column {
-          width: parent.width
-          spacing: Style.space(4)
-          visible: root.isScope
-          Text {
-            text: "Waveform. Follows color + sensitivity."
-            color: Qt.darker(root.bar ? root.bar.foreground : Color.foreground, 1.4)
-            font.family: Style.font.family
-            font.pixelSize: Style.font.bodySmall
-            width: parent.width
-            wrapMode: Text.WordWrap
-          }
-          Text {
-            text: "Line thickness"
-            color: Qt.darker(root.bar ? root.bar.foreground : Color.foreground, 1.4)
-            font.family: Style.font.family
-            font.pixelSize: Style.font.bodySmall
-            width: parent.width
-          }
-          PanelSlider {
-            width: parent.width
-            bar: root.bar
-            minimum: 1; maximum: 5; step: 0.5
-            value: (root.hcfg.scopeThickness ?? 2)
-            onReleased: function(v) { if (root.hostWidget) root.hostWidget.writeVizOption("scope_thickness", Math.round(v * 2) / 2) }
-          }
-        }
-
         Row {
           width: parent.width
           spacing: Style.space(14)
 
           Toggle {
             width: (parent.width - Style.space(14)) / 2
+            label: "Fire"
+            description: "Flame gradient everywhere"
+            checked: root.hcfg.fire === true
+            onClicked: if (root.hostWidget) root.hostWidget.writeVizOption("fire", !checked)
+          }
+
+          Toggle {
+            width: (parent.width - Style.space(14)) / 2
             label: "Linear fall"
-            description: "Fixed-rate drop (restarts engine)"
+            description: "Fixed-rate drop"
             checked: root.hcfg.linearFall === true
             onClicked: if (root.hostWidget) root.hostWidget.writeEngineOption("linear_fall", !checked)
           }
@@ -456,37 +489,90 @@ Panel {
         Column {
           width: parent.width
           spacing: Style.space(4)
+          visible: root.isScope
           Text {
-            text: "Sensitivity"
+            text: "Waveform. Follows color + input gain."
+            color: Qt.darker(root.bar ? root.bar.foreground : Color.foreground, 1.4)
+            font.family: Style.font.family
+            font.pixelSize: Style.font.bodySmall
+            width: parent.width
+            wrapMode: Text.WordWrap
+          }
+          Text {
+            text: "Line thickness"
             color: root.bar ? root.bar.foreground : Color.foreground
             font.family: Style.font.family
             font.pixelSize: Style.font.body
             width: parent.width
             elide: Text.ElideRight
           }
-          Text {
-            text: "Response for all viz"
-            color: Qt.darker(root.bar ? root.bar.foreground : Color.foreground, 1.4)
-            font.family: Style.font.family
-            font.pixelSize: Style.font.bodySmall
+          BorderSurface {
             width: parent.width
-            elide: Text.ElideRight
-          }
-          PanelSlider {
-            width: parent.width
-            bar: root.bar
-            minimum: 0.5; maximum: 2; step: 0.1
-            value: (root.hcfg.sensitivity ?? 1.0)
-            onReleased: function(v) { if (root.hostWidget) root.hostWidget.writeAudioOption("sensitivity", Math.round(v * 10) / 10) }
+            height: thickCol.implicitHeight + Style.spacing.huge
+            radius: Style.cornerRadius
+            color: Style.controlFill(false, false, Color.foreground, Color.accent)
+            borderSpec: Border.controlSpec("normal", Color.foreground, Color.accent)
+            Column {
+              id: thickCol
+              anchors.left: parent.left
+              anchors.right: parent.right
+              anchors.verticalCenter: parent.verticalCenter
+              anchors.leftMargin: parent.borderLeft + Style.spacing.rowPaddingX
+              anchors.rightMargin: parent.borderRight + Style.spacing.rowPaddingX
+              spacing: Style.space(4)
+              PanelSlider {
+                width: parent.width
+                bar: root.bar
+                minimum: 1; maximum: 5; step: 0.5
+                value: (root.hcfg.scopeThickness ?? 2)
+                onReleased: function(v) { if (root.hostWidget) root.hostWidget.writeVizOption("scope_thickness", Math.round(v * 2) / 2) }
+              }
+            }
           }
         }
 
-        Toggle {
+        // ---- Input gain + Mono side by side (half widths) ----
+        Row {
           width: parent.width
-          label: "Mono (mini only)"
-          description: "B&W mini bars (overrides color)"
-          checked: root.hcfg.mono === true
-          onClicked: if (root.hostWidget) root.hostWidget.writeVizOption("mono", !checked)
+          spacing: Style.space(14)
+          BorderSurface {
+            width: (parent.width - Style.space(14)) / 2
+            height: gainCol.implicitHeight + Style.spacing.huge
+            radius: Style.cornerRadius
+            color: Style.controlFill(false, false, Color.foreground, Color.accent)
+            borderSpec: Border.controlSpec("normal", Color.foreground, Color.accent)
+            Column {
+              id: gainCol
+              anchors.left: parent.left
+              anchors.right: parent.right
+              anchors.verticalCenter: parent.verticalCenter
+              anchors.leftMargin: parent.borderLeft + Style.spacing.rowPaddingX
+              anchors.rightMargin: parent.borderRight + Style.spacing.rowPaddingX
+              spacing: Style.space(4)
+              Text {
+                text: "Input gain"
+                color: root.bar ? root.bar.foreground : Color.foreground
+                font.family: Style.font.family
+                font.pixelSize: Style.font.body
+                width: parent.width
+                elide: Text.ElideRight
+              }
+              PanelSlider {
+                width: parent.width
+                bar: root.bar
+                minimum: 0.5; maximum: 2; step: 0.1
+                value: (root.hcfg.sensitivity ?? 1.0)
+                onReleased: function(v) { if (root.hostWidget) root.hostWidget.writeAudioOption("sensitivity", Math.round(v * 10) / 10) }
+              }
+            }
+          }
+          Toggle {
+            width: (parent.width - Style.space(14)) / 2
+            label: "Mono (mini only)"
+            description: "B&W mini bars"
+            checked: root.hcfg.mono === true
+            onClicked: if (root.hostWidget) root.hostWidget.writeVizOption("mono", !checked)
+          }
         }
       }
     }
