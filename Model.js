@@ -218,6 +218,11 @@ function writeConfigKey(tomlText, section, key, value) {
 
 // ---- Spectrum ----
 
+// Shared state singleton — survives BarWidget noteWrite without re-binding Panel's hcfg copy
+var sharedConfig = {
+  enabled: true
+}
+
 // Holds the latest spectrum frame (updated by QML Process stdout)
 var spectrumData = {
   bands: [],
@@ -281,7 +286,12 @@ function isDesktopActiveFromText(tomlText) {
 
 // Write enabled flag to config TOML (QML-visible)
 function writeEnabled(value, tomlText) {
+  sharedConfig.enabled = value
   return writeConfigKey(tomlText || "", "desktop", "enabled", value ? "true" : "false")
+}
+
+function getSharedConfig() {
+  return sharedConfig
 }
 
 // ---- Module exports ----
