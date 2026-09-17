@@ -269,21 +269,12 @@ BarWidget {
     // but renders a paused floor (no animation, bars at bottom) instead
     // of hiding — settings stay one click away, no round-trip.
     bar: root.bar
-    tooltipText: root.spectrumSilent ? "Omaviz — no audio" : "Omaviz — click for settings, double-click for desktop"
+    tooltipText: "Omaviz"
     text: ""
     hasVisualContent: true
 
-    property double lastClickTime: 0
     onPressed: function(b) {
-      if (b === Qt.LeftButton) {
-        var now = new Date().getTime()
-        if (now - lastClickTime < 300) {
-          root.detach()
-        } else {
-          root.toggle()
-        }
-        lastClickTime = now
-      }
+      if (b === Qt.LeftButton) root.toggle()
     }
 
     Rectangle {

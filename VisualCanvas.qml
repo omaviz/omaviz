@@ -258,7 +258,7 @@ Canvas {
     _frameId++
     var b = displayBands()
     var n = b.length
-    if (!n) return
+    if (!n) { requestPaint(); return }
     _advancePhysics(b, n)
     _maybePaint(b, n)
   }

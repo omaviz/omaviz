@@ -146,7 +146,7 @@ Panel {
           }
           MouseArea {
             anchors.fill: parent
-            onDoubleClicked: { if (root.hostWidget) root.hostWidget.detach() }
+            onClicked: { if (root.hostWidget) root.hostWidget.detach() }
           }
         }
         Text {
