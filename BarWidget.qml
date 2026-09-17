@@ -4,7 +4,6 @@ import Quickshell.Io
 import qs.Commons
 import qs.Ui
 import "Model.js" as Model
-import Quickshell.Services.Mpris
 
 BarWidget {
   id: root
@@ -48,18 +47,7 @@ BarWidget {
   property var spectrumBands: []
   property var spectrumWave: []
   property bool spectrumSilent: true
-  property string spectrumTrack: {
-    if (!Mpris || !Mpris.players) return ""
-    var players = Mpris.players.values
-    if (!players) return ""
-    for (var i = 0; i < players.length; i++) {
-      var p = players[i]
-      if (p && p.playbackState === Mpris.PlaybackState.Playing && p.trackTitle) {
-        return p.trackTitle.length > 30 ? p.trackTitle.substring(0, 27) + "..." : p.trackTitle
-      }
-    }
-    return ""
-  } 
+
   // Liveness lease: true only if the flag is set AND the heartbeat is fresh.
   // A stranded active=true (crash, kill -9, old code) self-heals within ~6s.
   property bool desktopLive: false
