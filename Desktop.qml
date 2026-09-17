@@ -21,7 +21,7 @@ Window {
   property var spectrumWave: []
   property bool spectrumSilent: Model.spectrumData.silent
   // Live viz options (peaks/falloff/spikes/fire) — re-parsed on each poll
-  // so settings-panel changes reflect in the open window within ~100ms.
+  // so settings-panel changes reflect in the open window within ~250ms.
   property var vizConfig: Model.defaultConfig()
   function refreshVizConfig() { win.vizConfig = Model.readConfigFromText(cfgWrite.text()) }
   // ---- Now-playing (MPRIS, zero deps — Quickshell built-in) ----
@@ -52,13 +52,20 @@ Window {
   Process {
     id: bridge
     running: false
-    // Full-res feed for the big surface: near 1:1 with dense spike bars.
-    // --wave for scope mode; fall-mode follows config (restarted on change).
-    command: [Model.engineBin, "--bands", "256", "--wave"].concat(
+    // Wave snippet is scope-only: Bars mode never reads it, so omit the
+    // flag (and its ~0.7KB/line of JSON.parse) unless scope is on.
+    // Fall-mode and scope are spawn-time: restart the bridge on flip.
+    command: [Model.engineBin, "--bands", "256"].concat(
+      win.vizConfig.scope === true ? ["--wave"] : []).concat(
       win.vizConfig.linearFall === true ? ["--fall-mode", "linear"] : [])
     stdout: SplitParser {
       splitMarker: "\n"
       onRead: function(data) {
+        // 30Hz decimation (perf): paints already throttle to ~30fps, so
+        // odd frames are pure parse/physics waste. Peak caps compensate
+        // via dataFps (two physics substeps per arrival).
+        win._frameSeq++
+        if ((win._frameSeq & 1) === 0) return
         try {
           var obj = JSON.parse(String(data).trim())
           if (obj && Array.isArray(obj.bands)) {
@@ -124,6 +131,9 @@ Window {
           anchors.fill: parent
           source: artSource
           radius: 100
+          // Static art: cache the blur, don't re-run a radius-100 kernel
+          // every frame (identical pixels — source only changes on track).
+          cached: true
         }
         Rectangle {
           anchors.fill: parent
@@ -175,6 +185,9 @@ Window {
         bands: win.spectrumBands
         silent: win.spectrumSilent
         wave: win.spectrumWave
+        // 30Hz decimated feed (bridge skips odd frames) — peak physics
+        // compensates with two substeps per arrival (see dataFps).
+        dataFps: 30
 
         visual: win.vizConfig.scope === true ? "Oscilloscope" : "Bars"
         artMode: false
@@ -362,6 +375,12 @@ Window {
   property bool _claimed: false
   property bool _allowClose: false
   property bool _lastLinearFall: false
+  property bool _lastScope: false
+  // Config-poll guard (perf): the TOML parse + full binding cascade runs
+  // only when the file text actually changed — not 4x/sec unconditionally.
+  property string _lastCfgText: ""
+  // Feed decimation parity (perf): see bridge onRead.
+  property int _frameSeq: 0
   Timer { id: closeTimer; interval: 200; repeat: false; onTriggered: win.close() }
   Timer {
     // Delayed quit: FileView.setText is async — quitting instantly in
@@ -371,17 +390,26 @@ Window {
     onTriggered: { win._allowClose = true; win.close(); Qt.callLater(Qt.quit) }
   }
   Timer {
-    interval: 100; repeat: true; running: true
+    // Config poll: 250ms keeps settings-panel changes feeling instant
+    // while quartering the JS TOML-parse + binding cascade vs 100ms.
+    interval: 250; repeat: true; running: true
     onTriggered: {
       cfgWrite.reload()
-      win.refreshVizConfig()
-      // Engine flags are spawn-time: restart the bridge when fall-mode flips.
+      var txt = cfgWrite.text()
+      if (txt !== win._lastCfgText) {
+        win._lastCfgText = txt
+        win.refreshVizConfig()
+      }
+      // Engine flags are spawn-time: restart the bridge when fall-mode or
+      // scope flips (scope toggles the --wave feed).
       var lf = win.vizConfig.linearFall === true
-      if (win._lastLinearFall !== lf) {
+      var sc = win.vizConfig.scope === true
+      if (win._lastLinearFall !== lf || win._lastScope !== sc) {
         win._lastLinearFall = lf
+        win._lastScope = sc
         if (bridge.running) { bridge.running = false; bridge.running = true }
       }
-      if (!win._claimed && cfgWrite.text().length > 0) {
+      if (!win._claimed && txt.length > 0) {
         win._claimed = true
         win.setDesktopActive(true)
       }

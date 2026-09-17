@@ -197,7 +197,7 @@ fn main() -> anyhow::Result<()> {
                 let silent_now = a.is_silent();
                 // Steady silence carries no information — hold it to the
                 // heartbeat rate instead of re-emitting 60 identical frames.
-                if (silent_now && last_silent && !due) {
+                if silent_now && last_silent && !due {
                     std::thread::sleep(tick);
                     continue;
                 }

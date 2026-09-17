@@ -4,6 +4,7 @@
 use realfft::{RealFftPlanner, RealToComplex, num_complex::Complex32};
 use std::sync::Arc;
 
+#[allow(dead_code)]
 pub const FFT_SIZE: usize = 2048;
 
 #[derive(Debug, Clone)]
