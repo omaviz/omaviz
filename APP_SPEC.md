@@ -1,7 +1,7 @@
-# omaviz — Application Specification (v8.1.0)
+# omaviz — Application Specification (v8.2.0)
 
 > **Plugin id:** `org.omaviz.visualizer`
-> **Version:** 8.1.0 (spec + manifest, git tag)
+> **Version:** 8.2.0 (spec + manifest, git tag)
 > **Status:** Single-package Omarchy QML plugin. Audio analysis is bundled as
 > one native binary (`bin/omaviz-engine`) shipped **inside** the plugin
 > directory. No systemd service, no Unix socket, no `~/.local/bin` binaries.
@@ -118,7 +118,7 @@ Only the container size and position change.
 
 ---
 
-## 5. Settings Panel (v8.1.0)
+## 5. Settings Panel (v8.2.0)
 
 **VISUALIZATIONS**: Two caps-text cards first (SPECTRUM / OSCILLOSCOPE) —
 workflow starts by picking the viz. Artwork is not a viz anymore: it
