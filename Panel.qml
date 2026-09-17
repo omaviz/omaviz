@@ -80,26 +80,25 @@ Panel {
         // ---- ON/OFF toggle (top right, no container) ----
         Item {
           width: parent.width
-          height: onOffLabel.implicitHeight
-          Text {
-            id: onOffLabel
-            text: root.vizEnabled ? "ON" : "OFF"
-            color: root.vizEnabled ? Color.accent : Qt.darker(root.bar ? root.bar.foreground : Color.foreground, 1.6)
-            font.family: Style.font.family
-            font.pixelSize: Style.font.bodySmall
-            font.bold: true
-            anchors.verticalCenter: parent.verticalCenter
-          }
+          height: Style.space(24)
           ToggleSwitch {
+            id: onOffSwitch
             checked: root.vizEnabled
             foreground: root.bar ? root.bar.foreground : Color.foreground
             accent: Color.accent
             anchors.right: parent.right
             anchors.verticalCenter: parent.verticalCenter
-            onToggled: {
-              if (!root.hostWidget) return
-              root.hostWidget.writeEnabled(checked)
-            }
+            onToggled: if (root.hostWidget) root.hostWidget.writeEnabled(!checked)
+          }
+          Text {
+            text: root.vizEnabled ? "ON" : "OFF"
+            color: root.vizEnabled ? Color.accent : Qt.darker(root.bar ? root.bar.foreground : Color.foreground, 1.6)
+            font.family: Style.font.family
+            font.pixelSize: Style.font.bodySmall
+            font.bold: true
+            anchors.right: onOffSwitch.left
+            anchors.rightMargin: Style.space(4)
+            anchors.verticalCenter: onOffSwitch.verticalCenter
           }
         }
 

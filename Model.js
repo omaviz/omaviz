@@ -279,6 +279,11 @@ function isDesktopActiveFromText(tomlText) {
   return readTomlValue(tomlText, "desktop", "active") === "true"
 }
 
+// Write enabled flag to config TOML (QML-visible)
+function writeEnabled(value, tomlText) {
+  return writeConfigKey(tomlText || "", "desktop", "enabled", value ? "true" : "false")
+}
+
 // ---- Module exports ----
 if (typeof module !== "undefined") {
   module.exports = {
@@ -291,9 +296,6 @@ if (typeof module !== "undefined") {
     isDesktopActiveFromText: isDesktopActiveFromText,
     readTomlTopKey: readTomlTopKey,
     isHexColor: isHexColor,
-    engineBin: engineBin,
-    writeEnabled: function(value, tomlText) {
-      return writeConfigKey(tomlText || "", "desktop", "enabled", value ? "true" : "false")
-    }
+    engineBin: engineBin
   }
 }
