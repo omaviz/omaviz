@@ -102,11 +102,22 @@ Panel {
           }
         }
 
+        // ---- Helper text when OFF ----
+        Text {
+          width: parent.width
+          visible: !root.vizEnabled
+          text: "Turn on to see all options"
+          color: Qt.darker(root.bar ? root.bar.foreground : Color.foreground, 1.6)
+          font.family: Style.font.family
+          font.pixelSize: Style.font.bodySmall
+          horizontalAlignment: Text.AlignCenter
+        }
+
         // ---- Live content (hidden when OFF) ----
         Item {
           width: parent.width
-          height: root.vizEnabled ? contentColumn.implicitHeight : 0
-          clip: true
+          visible: root.vizEnabled
+          height: contentColumn.implicitHeight
           Column {
             id: contentColumn
             width: parent.width
