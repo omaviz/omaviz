@@ -39,6 +39,7 @@ Panel {
   readonly property bool spikesOn: root.hcfg.spikes === true
   // Main <-> Advanced options views (top viz cards + preview stay put).
   property bool showAdvanced: false
+  property bool vizEnabled: root.hcfg.enabled !== false
 
   // ---- Popup lifecycle (Panel base owns controller; do NOT override opened/open/close/toggle) ----
   KeyboardPanel {
@@ -75,6 +76,42 @@ Panel {
         id: column
         width: parent.width
         spacing: Style.space(8)
+
+        // ---- ON/OFF toggle (top right, no container) ----
+        Item {
+          width: parent.width
+          height: onOffLabel.implicitHeight
+          Text {
+            id: onOffLabel
+            text: root.vizEnabled ? "ON" : "OFF"
+            color: root.vizEnabled ? Color.accent : Qt.darker(root.bar ? root.bar.foreground : Color.foreground, 1.6)
+            font.family: Style.font.family
+            font.pixelSize: Style.font.bodySmall
+            font.bold: true
+            anchors.verticalCenter: parent.verticalCenter
+          }
+          ToggleSwitch {
+            checked: root.vizEnabled
+            foreground: root.bar ? root.bar.foreground : Color.foreground
+            accent: Color.accent
+            anchors.right: parent.right
+            anchors.verticalCenter: parent.verticalCenter
+            onToggled: {
+              if (!root.hostWidget) return
+              root.hostWidget.writeEnabled(checked)
+            }
+          }
+        }
+
+        // ---- Live content (hidden when OFF) ----
+        Item {
+          width: parent.width
+          height: root.vizEnabled ? contentColumn.implicitHeight : 0
+          clip: true
+          Column {
+            id: contentColumn
+            width: parent.width
+            spacing: Style.space(8)
 
         // ============================================================
         //  VISUALIZATIONS — two cards (Spectrum / Scope)
@@ -150,12 +187,15 @@ Panel {
           }
         }
         Text {
-          text: "Double-click preview to open full-screen visualization"
+          text: "Click preview to open full-screen visualization"
           color: Qt.darker(root.bar ? root.bar.foreground : Color.foreground, 1.6)
           font.family: Style.font.family
           font.pixelSize: Style.font.bodySmall
           width: parent.width
           horizontalAlignment: Text.AlignLeft
+        }
+
+          }
         }
 
         PanelSeparator { }

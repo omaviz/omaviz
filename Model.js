@@ -91,6 +91,7 @@ function readConfigFromText(tomlText) {
   d.widthScale = parseFloat(readTomlValue(tomlText, "mini", "width_scale") ?? "1.5")
   if (d.widthScale !== d.widthScale || d.widthScale < 0.5 || d.widthScale > 4) d.widthScale = 1.5
   d.desktopActive = readTomlValue(tomlText, "desktop", "active") === "true"
+  d.enabled = readTomlValue(tomlText, "desktop", "enabled") !== "false"
   // Heartbeat lease (epoch ms, written by the open desktop window every 2s).
   // Guards against a stranded active=true with no live window.
   d.desktopHeartbeat = parseInt(readTomlValue(tomlText, "desktop", "heartbeat") ?? "0", 10)
@@ -154,6 +155,7 @@ function defaultConfig() {
     gap: 1,
     widthScale: 1.5,
     desktopActive: false,
+    enabled: true,
     desktopHeartbeat: 0,
     colorSync: false,
     themeBottom: "#e68e0d",
@@ -289,6 +291,9 @@ if (typeof module !== "undefined") {
     isDesktopActiveFromText: isDesktopActiveFromText,
     readTomlTopKey: readTomlTopKey,
     isHexColor: isHexColor,
-    engineBin: engineBin
+    engineBin: engineBin,
+    writeEnabled: function(value, tomlText) {
+      return writeConfigKey(tomlText || "", "desktop", "enabled", value ? "true" : "false")
+    }
   }
 }

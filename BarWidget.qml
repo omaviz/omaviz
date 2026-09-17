@@ -214,6 +214,26 @@ BarWidget {
     detachConfigWrite.setText(txt)
     root.noteWrite(txt)
   }
+
+  function writeEnabled(value) {
+    var txt = Model.writeEnabled(value, root.readGuarded())
+    detachConfigWrite.setText(txt)
+    root.noteWrite(txt)
+    if (value) {
+      // ON: restart engine
+      spectrumProc.running = true
+    } else {
+      // OFF: stop engine, close desktop
+      spectrumProc.running = false
+      if (root.config.desktopActive === true) {
+        detachProc.running = false
+        root.writeDesktopActive(false)
+      }
+      // Clear bands so mini shows floor
+      root.spectrumBands = []
+      root.spectrumWave = []
+    }
+  }
   function writeVizOption(key, value) {
     writeVizOptions(key, value, null, null)
   }
