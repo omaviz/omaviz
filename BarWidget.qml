@@ -47,6 +47,7 @@ BarWidget {
   property var spectrumBands: []
   property var spectrumWave: []
   property bool spectrumSilent: true
+
   // Liveness lease: true only if the flag is set AND the heartbeat is fresh.
   // A stranded active=true (crash, kill -9, old code) self-heals within ~6s.
   property bool desktopLive: false
@@ -214,6 +215,26 @@ BarWidget {
     detachConfigWrite.setText(txt)
     root.noteWrite(txt)
   }
+
+  function writeEnabled(value) {
+    var txt = Model.writeEnabled(value, root.readGuarded())
+    detachConfigWrite.setText(txt)
+    root.noteWrite(txt)
+    if (value) {
+      // ON: restart engine
+      spectrumProc.running = true
+    } else {
+      // OFF: stop engine, close desktop
+      spectrumProc.running = false
+      if (root.config.desktopActive === true) {
+        detachProc.running = false
+        root.writeDesktopActive(false)
+      }
+      // Clear bands so mini shows floor
+      root.spectrumBands = []
+      root.spectrumWave = []
+    }
+  }
   function writeVizOption(key, value) {
     writeVizOptions(key, value, null, null)
   }
@@ -269,12 +290,20 @@ BarWidget {
     // but renders a paused floor (no animation, bars at bottom) instead
     // of hiding — settings stay one click away, no round-trip.
     bar: root.bar
-    tooltipText: "Omaviz"
+    tooltipText: {
+      var viz = root.config.scope === true ? "Oscilloscope" : "Spectrum"
+      return "Omaviz — " + viz
+    }
     text: ""
     hasVisualContent: true
 
     onPressed: function(b) {
-      if (b === Qt.LeftButton) root.toggle()
+      if (b === Qt.LeftButton) {
+        // Ensure panel is injected before trying to open/close
+        if (!panelLoader.item) root.injectPanel()
+        if (root.opened) root.close()
+        else root.open()
+      }
     }
 
     Rectangle {

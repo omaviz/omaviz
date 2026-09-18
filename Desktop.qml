@@ -400,6 +400,18 @@ Window {
         win._lastCfgText = txt
         win.refreshVizConfig()
       }
+      // Check enabled state: close window when visualization is disabled
+      var enabled = true
+      try {
+        var val = Model.readTomlValue(txt, "desktop", "enabled")
+        enabled = val !== "false"
+      } catch(e) {}
+      if (!enabled) {
+        // Visualization disabled — close the desktop window
+        win.setDesktopActive(false)
+        closeTimer.restart()
+        return
+      }
       // Engine flags are spawn-time: restart the bridge when fall-mode or
       // scope flips (scope toggles the --wave feed).
       var lf = win.vizConfig.linearFall === true
