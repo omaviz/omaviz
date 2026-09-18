@@ -298,7 +298,12 @@ BarWidget {
     hasVisualContent: true
 
     onPressed: function(b) {
-      if (b === Qt.LeftButton) root.toggle()
+      if (b === Qt.LeftButton) {
+        // Ensure panel is injected before trying to open/close
+        if (!panelLoader.item) root.injectPanel()
+        if (root.opened) root.close()
+        else root.open()
+      }
     }
 
     Rectangle {
