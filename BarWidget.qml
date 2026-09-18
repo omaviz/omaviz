@@ -47,6 +47,7 @@ BarWidget {
   property var spectrumBands: []
   property var spectrumWave: []
   property bool spectrumSilent: true
+  property bool vizEnabled: true
 
   // Liveness lease: true only if the flag is set AND the heartbeat is fresh.
   // A stranded active=true (crash, kill -9, old code) self-heals within ~6s.
@@ -68,6 +69,7 @@ BarWidget {
     return configFile.text()
   }
   function refreshDesktopLive() {
+    if (!root.vizEnabled) { root.desktopLive = false; return }
     var hb = (root.config && root.config.desktopHeartbeat) || 0
     root.desktopLive = (root.config && root.config.desktopActive === true) && (Date.now() - hb < 6000)
   }
@@ -119,6 +121,7 @@ BarWidget {
       root.config.linearFall === true ? ["--fall-mode", "linear"] : [])
     stdout: SplitParser {
       onRead: function(data) {
+        if (!root.vizEnabled) return
         var lines = String(data).split("\n")
         for (var i = 0; i < lines.length; i++) {
           var line = lines[i].trim()
@@ -131,6 +134,7 @@ BarWidget {
       }
     }
     onExited: function(code, status) {
+      if (!root.vizEnabled) return
       // Indefinite backoff retry: engine death must never permanently kill
       // the mini. Interval grows 1.5s → 30s cap; silence shows meanwhile.
       root._bridgeRetries++
@@ -220,19 +224,30 @@ BarWidget {
     var txt = Model.writeEnabled(value, root.readGuarded())
     detachConfigWrite.setText(txt)
     root.noteWrite(txt)
+    root.vizEnabled = value
     if (value) {
       // ON: restart engine
       spectrumProc.running = true
+      // Clear desktop lease so it can be re-opened
+      root.refreshDesktopLive()
     } else {
-      // OFF: stop engine, close desktop
+      // OFF: stop engine, close desktop immediately
       spectrumProc.running = false
+      // Immediately mark desktop as not live (override 6s lease)
+      root.desktopLive = false
+      // Clear bands so mini shows floor
+      root.spectrumBands = []
+      root.spectrumWave = []
+      // Clear stale spectrum data
+      Model.spectrumData.bands = []
+      Model.spectrumData.wave = []
+      Model.spectrumData.silent = true
       if (root.config.desktopActive === true) {
         detachProc.running = false
         root.writeDesktopActive(false)
       }
-      // Clear bands so mini shows floor
-      root.spectrumBands = []
-      root.spectrumWave = []
+      // Force config reload so panel picks up enabled=false immediately
+      configFile.reload()
     }
   }
   function writeVizOption(key, value) {
