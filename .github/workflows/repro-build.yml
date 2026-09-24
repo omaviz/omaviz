@@ -28,7 +28,8 @@ on:
 
 permissions:
   contents: read
-  id-token: write   # for Sigstore-signed build provenance attestation
+  id-token: write        # for Sigstore keyless signing
+  attestations: write    # to persist the attestation on the repo
 
 env:
   # Digest-pinned container: rust:1.98.1-slim-trixie (multi-arch index).
