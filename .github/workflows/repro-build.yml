@@ -1,0 +1,142 @@
+name: Reproducible engine build
+
+# Purpose: prove that bin/omaviz-engine — the executable shipped to users —
+# is byte-identically reproducible from the reviewed source in engine/ using
+# a fully pinned toolchain and dependency set. See docs/BUILD_ATTESTATION.md.
+#
+# The build environment is pinned three ways:
+#   1. rustc/cargo 1.98.1 via the digest-pinned container image
+#   2. system libs via apt from the same frozen Debian release (trixie)
+#   3. crate versions + SHA256 checksums via the committed engine/Cargo.lock
+#      (cargo verifies every download against it; --locked forbids drift)
+#
+# A double-build determinism check runs inside one container: the same source
+# built twice from scratch must produce the same SHA256. The committed
+# bin/omaviz-engine must then match that digest, or the job fails.
+#
+# NOTE on step order: upload + attestation run BEFORE the binary-match gate
+# so that a bootstrap run (gate red by design, binary not yet committed)
+# still yields the signed artifact to commit.
+
+on:
+  push:
+    branches: [master]
+    paths: [engine/**, bin/**, .github/workflows/repro-build.yml, tools/repro/**]
+  pull_request:
+    paths: [engine/**, bin/**, .github/workflows/repro-build.yml, tools/repro/**]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write        # for Sigstore keyless signing
+  attestations: write    # to persist the attestation on the repo
+
+env:
+  # Digest-pinned container: rust:1.98.1-slim-trixie (multi-arch index).
+  # Re-pinning = update this digest AND rebuild+commit bin/omaviz-engine
+  # in the same commit (CI's binary-match gate enforces they agree).
+  IMAGE: rust@sha256:f47a8de237dcbb0b0ce1099901e60a89728e3d51f24e664b40e947171538ade7
+
+jobs:
+  repro:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+
+      - name: Build + test + determinism check (in pinned container)
+        run: |
+          docker run --rm \
+            -v "$PWD:/src" \
+            -w /src/engine \
+            "$IMAGE" \
+            bash -euo pipefail -c '
+              echo "== toolchain =="
+              rustc --version
+              cargo --version
+
+              echo "== install pinned system libs =="
+              export DEBIAN_FRONTEND=noninteractive
+              apt-get update -qq
+              apt-get install -y -qq --no-install-recommends \
+                libpipewire-0.3-dev libclang-dev clang pkg-config > /dev/null
+              dpkg-query -W -f "\${Package} \${Version}\n" \
+                libpipewire-0.3-dev libclang-dev clang pkg-config
+
+              echo "== build (pass 1, from scratch, locked) =="
+              rm -rf target
+              cargo build --release --locked
+              cp target/release/omaviz-engine /tmp/build1
+              sha256sum /tmp/build1
+
+              echo "== unit tests =="
+              cargo test --release --locked
+
+              echo "== determinism: rebuild from scratch =="
+              rm -rf target
+              cargo build --release --locked
+              cp target/release/omaviz-engine /tmp/build2
+              sha256sum /tmp/build2
+
+              echo "== determinism: pass 1 vs pass 2 =="
+              cmp /tmp/build1 /tmp/build2
+              echo "PASS: two clean builds are byte-identical"
+
+              echo "== smoke test (deterministic gen backend) =="
+              rc=0
+              timeout 10 ./target/release/omaviz-engine \
+                --source gen=tone:freq=440 --bands 32 > /tmp/smoke.jsonl || rc=$?
+              # 124 = timeout stopped it (expected: engine streams forever)
+              [ "$rc" -eq 0 ] || [ "$rc" -eq 124 ]
+              head -1 /tmp/smoke.jsonl | cut -c1-100
+              test -s /tmp/smoke.jsonl
+              head -1 /tmp/smoke.jsonl | grep -q "\"bands\":\["
+
+              sha256sum target/release/omaviz-engine | awk "{print \$1}" > /src/.ci-engine-sha
+            '
+
+      - name: Stage engine artifact
+        run: |
+          mkdir -p /tmp/stage
+          # the CI-built binary is the artifact of record
+          cp engine/target/release/omaviz-engine /tmp/stage/omaviz-engine
+          sha256sum /tmp/stage/omaviz-engine
+
+      - name: Upload CI-built engine artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: omaviz-engine
+          path: /tmp/stage/omaviz-engine
+          if-no-files-found: error
+
+      - name: Attest build provenance (Sigstore keyless)
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-name: omaviz-engine
+          subject-path: /tmp/stage/omaviz-engine
+
+      - name: Binary match gate (committed bin/omaviz-engine == CI build)
+        run: |
+          CI_SHA="$(cat .ci-engine-sha)"
+          COMMITTED_SHA="$(sha256sum bin/omaviz-engine | awk '{print $1}')"
+          echo "CI build:  $CI_SHA"
+          echo "committed: $COMMITTED_SHA"
+          if [ "$CI_SHA" != "$COMMITTED_SHA" ]; then
+            {
+              echo "::error::Committed bin/omaviz-engine does not match the pinned-container build."
+              echo "Bootstrap: download the omaviz-engine artifact from this run, replace"
+              echo "bin/omaviz-engine with it, and commit. After that this gate goes green"
+              echo "on every push — any source change without a matching binary commit"
+              echo "turns the branch red."
+            } >&2
+            exit 1
+          fi
+          echo "PASS: committed bin/omaviz-engine is byte-identical to the CI build"
+          {
+            echo "## Engine reproducibility"
+            echo "- CI build SHA256: \`$CI_SHA\`"
+            echo "- committed binary matches: ✅"
+            echo "- double-build determinism: ✅"
+            echo "- unit tests: ✅"
+            echo "- gen-backend smoke test: ✅"
+          } >> "$GITHUB_STEP_SUMMARY"
