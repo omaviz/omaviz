@@ -97,8 +97,6 @@ jobs:
       - name: Stage engine artifact
         run: |
           mkdir -p /tmp/stage
-          cp bin/omaviz-engine /tmp/stage/ 2>/dev/null || true
-          cp .ci-engine-sha /tmp/stage/
           # the CI-built binary is the artifact of record
           cp engine/target/release/omaviz-engine /tmp/stage/omaviz-engine
           sha256sum /tmp/stage/omaviz-engine
@@ -114,7 +112,7 @@ jobs:
         uses: actions/attest-build-provenance@v2
         with:
           subject-name: omaviz-engine
-          subject-digest: sha256:$(cat .ci-engine-sha)
+          path: /tmp/stage/omaviz-engine
 
       - name: Binary match gate (committed bin/omaviz-engine == CI build)
         run: |
