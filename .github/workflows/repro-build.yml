@@ -112,7 +112,7 @@ jobs:
         uses: actions/attest-build-provenance@v2
         with:
           subject-name: omaviz-engine
-          path: /tmp/stage/omaviz-engine
+          subject-path: /tmp/stage/omaviz-engine
 
       - name: Binary match gate (committed bin/omaviz-engine == CI build)
         run: |
