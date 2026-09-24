@@ -46,13 +46,14 @@ fi
 # ---------------------------------------------------------------- plugin
 # Copy the self-contained plugin files (repo root IS the plugin: manifest.json
 # + QML/JS + assets + bin). rsync excludes keep dev-only baggage (engine
-# source, docs, scripts) out of the live plugin dir; otherwise plain cp.
-# The engine binary ships inside bin/.
+# source, docs, CI, repro tooling, scripts) out of the live plugin dir;
+# otherwise plain cp. The engine binary ships inside bin/.
 step "installing Omarchy plugin"
 mkdir -p "$PLUGIN_DIR"
 if command -v rsync >/dev/null; then
   rsync -a --delete \
     --exclude '/engine/' --exclude '/docs/' --exclude '/.git/' \
+    --exclude '/tools/' --exclude '/.github/' \
     --exclude '/*.sh' --exclude '/*.md' --exclude '/LICENSE' --exclude '/preview.png' \
     "$SRC/" "$PLUGIN_DIR/"
 else
