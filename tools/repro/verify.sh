@@ -21,11 +21,11 @@ docker run --rm -i \
   -w /src/engine \
   "$IMAGE" \
   bash -euo pipefail -c '
-    apt-get update -qq
-    apt-get install -y --no-install-recommends \
-      libpipewire-0.3-dev libclang-dev clang pkg-config > /dev/null
-
     echo "-- building from source (locked) --"
+    export DEBIAN_FRONTEND=noninteractive
+    apt-get update -qq
+    apt-get install -y -qq --no-install-recommends \
+      libpipewire-0.3-dev libclang-dev clang pkg-config > /dev/null
     cargo build --release --locked
 
     echo

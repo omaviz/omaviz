@@ -55,10 +55,11 @@ jobs:
               cargo --version
 
               echo "== install pinned system libs =="
+              export DEBIAN_FRONTEND=noninteractive
               apt-get update -qq
-              apt-get install -y --no-install-recommends \
+              apt-get install -y -qq --no-install-recommends \
                 libpipewire-0.3-dev libclang-dev clang pkg-config > /dev/null
-              dpkg-query -W -f "${Package} ${Version}\n" \
+              dpkg-query -W -f "\${Package} \${Version}\n" \
                 libpipewire-0.3-dev libclang-dev clang pkg-config
 
               echo "== build (pass 1, from scratch, locked) =="
