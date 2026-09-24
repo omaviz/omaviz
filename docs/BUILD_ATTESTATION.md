@@ -10,7 +10,7 @@ the maintainer's machine.
 
 | Artifact | Value |
 |---|---|
-| Engine binary | `bin/omaviz-engine` |
+| Engine binary | `bin/omaviz-engine` — SHA256 `fbccdaddca176ef2983d298d99f94d814bc9ea0754007aaa568e639f9efcd589` |
 | Source | `engine/` (Rust), committed in this repository |
 | Lockfile | `engine/Cargo.lock` — pins every crate version + SHA256 checksum |
 | Toolchain | Rust 1.98.1 (`rustc 1.98.1 (48a229cea 2026-09-01)`) |
@@ -77,10 +77,13 @@ re-derived from the reviewed source and the build fails if it doesn't match.
 
 ## Bootstrapping note
 
-The binary currently committed was itself **built by this CI workflow** at the
-bootstrap commit (see history of `bin/omaviz-engine`). Before that, the
-workflow was run once in bootstrap mode; the resulting artifact was committed
-verbatim. Every subsequent build verifies against it.
+The binary currently committed was itself **built and attested by this CI
+workflow** (first during [PR #4](https://github.com/omaviz/omaviz/pull/4),
+run [35952135827](https://github.com/omaviz/omaviz/actions/runs/35952135827),
+subject `sha256:fbccdaddca176ef2983d298d99f94d814bc9ea0754007aaa568e639f9efcd589`).
+Every subsequent push re-verifies it byte-for-byte — the binary match gate
+fails if the committed binary ever diverges from a fresh pinned-container
+rebuild of the source.
 
 ## Re-pinning the toolchain
 
