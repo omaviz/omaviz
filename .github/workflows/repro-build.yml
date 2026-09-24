@@ -82,10 +82,14 @@ jobs:
               echo "PASS: two clean builds are byte-identical"
 
               echo "== smoke test (deterministic gen backend) =="
+              rc=0
               timeout 10 ./target/release/omaviz-engine \
-                --source gen=tone:freq=440 --bands 32 | head -5 > /tmp/smoke.jsonl
-              echo "first frame: $(head -1 /tmp/smoke.jsonl | cut -c1-100)..."
+                --source gen=tone:freq=440 --bands 32 > /tmp/smoke.jsonl || rc=$?
+              # 124 = timeout stopped it (expected: engine streams forever)
+              [ "$rc" -eq 0 ] || [ "$rc" -eq 124 ]
+              head -1 /tmp/smoke.jsonl | cut -c1-100
               test -s /tmp/smoke.jsonl
+              head -1 /tmp/smoke.jsonl | grep -q "\"bands\":\["
 
               sha256sum target/release/omaviz-engine | awk "{print \$1}" > /src/.ci-engine-sha
             '
