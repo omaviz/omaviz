@@ -100,6 +100,7 @@ fn run_loop(tx: Sender<AudioChunk>) -> Result<()> {
             let _ = ud.tx.send(AudioChunk {
                 samples: mono,
                 rate,
+                channels: ud.format.channels().min(2) as u16,
             });
         })
         .register()?;

@@ -259,4 +259,8 @@ omaviz/  (repo root IS the plugin — manifest.json lives here)
 | 10 | Theme-dominant gradient colors | Shipped | 100% |
 | 11 | TDD: engine (Rust) + plugin (node) suites green | Shipped | 100% |
 | 12 | GPU/ShaderEffect visuals | Removed (Canvas-only) | — |
-| 13 | Additional backends (PulseAudio/JACK/ALSA) | Planned | 0% |
+|| 13 | Additional backends (PulseAudio/JACK/ALSA) | Planned | 0% |
+|| 14 | Shader renderer path (Qt Quick ShaderEffect / WebGL) for procedural fluid/plasma/particle/tunnel visuals | Planned | 0% |
+|| 15 | Stereo channel support in engine (L/R band sets, stereo scope) | Planned | 0% |
+|| 16 | Beat-driven mode switching / preset cycling (engine beat → visual sweep/cycle) | Planned | 0% |
+|| 17 | Preset system: save/recall named visual configurations | Planned | 0% |

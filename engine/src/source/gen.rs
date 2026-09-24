@@ -104,7 +104,7 @@ fn run(tx: Sender<SourceEvent>, mode: GenMode, params: GenParams) {
             t += dt;
         }
         if tx
-            .send(SourceEvent::Chunk(AudioChunk { samples, rate: RATE }))
+            .send(SourceEvent::Chunk(AudioChunk { samples, rate: RATE, channels: 1 }))
             .is_err()
         {
             break; // consumer gone

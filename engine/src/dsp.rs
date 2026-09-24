@@ -11,6 +11,7 @@ pub const FFT_SIZE: usize = 2048;
 pub struct AudioChunk {
     pub samples: Vec<f32>,
     pub rate: u32,
+    pub channels: u16,
 }
 
 pub struct Analyzer {
