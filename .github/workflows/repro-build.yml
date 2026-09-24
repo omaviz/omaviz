@@ -21,9 +21,9 @@ name: Reproducible engine build
 on:
   push:
     branches: [master]
-    paths: [engine/**, bin/**, .github/workflows/repro-build.yml, tools/repro/**]
+    paths: [engine/**, bin/**, install.sh, uninstall.sh, .github/workflows/repro-build.yml, tools/repro/**]
   pull_request:
-    paths: [engine/**, bin/**, .github/workflows/repro-build.yml, tools/repro/**]
+    paths: [engine/**, bin/**, install.sh, uninstall.sh, .github/workflows/repro-build.yml, tools/repro/**]
   workflow_dispatch:
 
 permissions:

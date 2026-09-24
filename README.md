@@ -67,6 +67,12 @@ cd ~/omaviz
 
 Requires: Omarchy (quickshell), PipeWire, `cargo` (only for `--build`).
 
+**Safety:** the installer never deletes files it doesn't own. A plugin
+directory that isn't omaviz-managed (no `.omaviz-managed` marker) is left
+untouched unless you pass `--force` (which takes a timestamped backup
+first). Foreign files inside a managed install — and unrelated
+`.desktop` launchers — always survive install, update, and uninstall.
+
 Single-click the mini for settings · double-click (or `SUPER+V`) for the
 desktop window · close it and the mini returns by itself.
 
