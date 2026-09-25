@@ -9,6 +9,7 @@ Canvas {
   property int barCount: 0
   property color monoColor: "#dce0eb"
   property int gapPx: 1
+  property int barWidthExtra: 0
   property bool peaks: true
   property real peakFalloff: 0.5
   property bool spikes: false
@@ -174,7 +175,7 @@ Canvas {
     }
     if (_peakSpeed.length !== n) {
       _peakSpeed = []
-      var s0 = (1.5 + peakFalloff * 6.5) / 256
+      var s0 = (0.5 + peakFalloff * 4.5) / 256
       for (var s = 0; s < n; s++) _peakSpeed.push(s0)
     }
   }
@@ -183,10 +184,10 @@ Canvas {
     _sizePeaks(n)
     // Winamp peak physics: caught peaks reset a slow drop speed that
     // accelerates ×1.05/frame — hang, then snap down (not linear decay).
-    // falloff maps to initial drop speed (~1.5/256 → ~8/256 per frame).
+    // falloff maps to initial drop speed (~0.5/256 → ~5/256 per frame).
     // At 30Hz feeds each arrival advances two substeps on the same sample
     // (catch is idempotent, decay doubles) to track the 60Hz trajectory.
-    var speed0 = (1.5 + peakFalloff * 6.5) / 256
+    var speed0 = (0.5 + peakFalloff * 4.5) / 256
     var steps = dataFps > 45 ? 1 : 2
     for (var st = 0; st < steps; st++) {
       for (var i = 0; i < n; i++) {
@@ -381,7 +382,7 @@ Canvas {
 
     var gap = spikes ? 0 : gapPx
     var totalGap = gap * (n - 1)
-    var bw = spikes ? Math.max(1, width / n) : Math.max(2, (width - totalGap) / n)
+    var bw = spikes ? Math.max(1, width / n) : Math.max(2, (width - totalGap) / n) + barWidthExtra
     // Spike overlap: fractional widths leave 1px container seams between
     // bars — draw each spike half a pixel wider to seal them.
     var spikeOverlap = spikes ? 0.5 : 0
@@ -396,16 +397,18 @@ Canvas {
     }
     if (_peakSpeed.length !== n) {
       _peakSpeed = []
-      var _sp0 = (1.5 + peakFalloff * 6.5) / 256
+      var _sp0 = (0.5 + peakFalloff * 4.5) / 256
       for (var s = 0; s < n; s++) _peakSpeed.push(_sp0)
     }
     // Flat-fill fast path (mono/artMode): every body shares one fillStyle,
     // so all bodies join a single path + one fill instead of N fills.
     var useFlat = mono || artMode
     var flatFill = artMode ? "#ffffff" : (monoLight ? "#000000" : "#ffffff")
-    // One shared fire gradient per frame (identical coords for every bar).
+    // One shared vertical gradient per frame (identical coords for every bar).
+    // Used by Fire mode and all other non-flat modes for consistent
+    // bottom→top color across bars (matches Fire behavior).
     var sharedGrad = null
-    if (!useFlat && fire) {
+    if (!useFlat) {
       sharedGrad = ctx.createLinearGradient(0, baseY, 0, baseY - areaH)
       sharedGrad.addColorStop(0, fireColorAt(0))
       sharedGrad.addColorStop(0.25, fireColorAt(0.25))
@@ -423,13 +426,11 @@ Canvas {
       // Values only — physics already advanced on data arrival.
       var v = silent ? 0 : Math.min(1, Math.max(0, b[i]) * sensitivity)
       var h = v * areaH
-      // Auto floor (Min-height toggle retired): 1px while playing so
-      // quiet bars stay visible, 0 when silent so idle bars vanish.
-      var floorH = silent ? 0 : 1
+      // Floor always visible (1px minimum) — no silent-based hide
+      var floorH = 1
       if (h < floorH) h = floorH
       var x = i * (bw + gap)
       var y = baseY - h
-      if (h <= 0) continue
       if (stacks) {
         // Winamp segments: 3px blocks with 1px gaps, stacked from the base.
         // Each block samples the fire ramp (or flat fill) at its own height
@@ -441,8 +442,7 @@ Canvas {
           if (useFlat) ctx.rect(x, sy - sh, bw + spikeOverlap, sh)
           else {
             var tMid = 1 - (sy - sh / 2 - (baseY - areaH)) / areaH
-            if (fire) ctx.fillStyle = fireColorAt(tMid);
-            else ctx.fillStyle = fillFor(v, 0.25 + v * 0.75);
+            ctx.fillStyle = sharedGrad
             ctx.fillRect(x, sy - sh, bw + spikeOverlap, sh)
           }
           sy -= segH + segGap
@@ -478,7 +478,7 @@ Canvas {
           }
         } else {
           if (fire) ctx.fillStyle = sharedGrad
-          else ctx.fillStyle = fillFor(v, 0.25 + v * 0.75)
+          else ctx.fillStyle = sharedGrad
           if (h > tipH + 1) {
             ctx.fillRect(x, y + tipH, bw + spikeOverlap, h - tipH)
             ctx.beginPath()
@@ -517,18 +517,19 @@ Canvas {
     }
     if (useFlat) ctx.fill()
     else if (barOrd.length > 0) {
+      // Use shared vertical gradient for all bars (bottom→top)
+      ctx.fillStyle = sharedGrad
       var hasRR = !!ctx.roundRect
       var brad = Math.min(bw * 0.5, 3)
+      ctx.beginPath()
       for (var bi2 = 0; bi2 < barOrd.length; bi2++) {
-        var bk2 = barOrd[bi2], ba = barBkt[bk2]
-        ctx.fillStyle = _plainLUT[bk2]
-        ctx.beginPath()
+        var ba = barBkt[barOrd[bi2]]
         for (var bj = 0; bj < ba.length; bj += 3) {
           if (hasRR) ctx.roundRect(ba[bj], ba[bj + 1], bw, ba[bj + 2], brad)
           else ctx.rect(ba[bj], ba[bj + 1], bw, ba[bj + 2])
         }
-        ctx.fill()
       }
+      ctx.fill()
     }
 
     if (peaks) {
