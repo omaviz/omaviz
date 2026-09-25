@@ -138,10 +138,17 @@ Window {
         Rectangle {
           anchors.fill: parent
           gradient: Gradient {
-            GradientStop { position: 0.0; color: Qt.rgba(0, 0, 0, 0.62) }
-            GradientStop { position: 0.45; color: Qt.rgba(0, 0, 0, 0.30) }
-            GradientStop { position: 1.0; color: Qt.rgba(0, 0, 0, 0.66) }
+            GradientStop { position: 0.0; color: Qt.rgba(0, 0, 0, 0.55) }
+            GradientStop { position: 0.45; color: Qt.rgba(0, 0, 0, 0.25) }
+            GradientStop { position: 1.0; color: Qt.rgba(0, 0, 0, 0.60) }
           }
+        }
+        // Additional darkening overlay on top of blur — adjustable without
+        // affecting the blur quality itself. Keeps color clouds visible
+        // while making background darker for bar readability.
+        Rectangle {
+          anchors.fill: parent
+          color: Qt.rgba(0, 0, 0, 0.70)
         }
       }
 
@@ -199,6 +206,7 @@ Window {
         colorSync: false
         barCount: Math.max(16, Math.floor((parent.width - 8) / 10))
         gapPx: Math.min(6, Math.max(0, win.vizConfig.gap ?? 1))
+        barWidthExtra: 4
 
         // Peak settings — live from config (settings panel writes).
         peaks: win.vizConfig.peaks !== false
