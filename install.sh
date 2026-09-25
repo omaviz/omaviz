@@ -91,12 +91,36 @@ if [ -e "$PLUGIN_DIR" ] && [ ! -f "$PLUGIN_DIR/$MARKER" ]; then
   fi
 fi
 mkdir -p "$PLUGIN_DIR"
+
+# Validate marker lines: reject empties, absolute paths, and any path
+# containing '..' (path traversal). This prevents a corrupted or foreign
+# marker from making rm -rf delete files outside the plugin directory.
+validate_marker_line() {
+  local line="$1"
+  # reject empty lines
+  [ -z "$line" ] && return 1
+  # reject lines with .. (path traversal)
+  case "$line" in
+    *..*) return 1 ;;
+  esac
+  # reject absolute paths (starting with /)
+  case "$line" in
+    /*) return 1 ;;
+  esac
+  return 0
+}
 if command -v rsync >/dev/null; then
   # Remove only files WE shipped in a previous run (listed in the marker),
   # never foreign files a user may have dropped into the plugin dir.
   if [ -f "$PLUGIN_DIR/$MARKER" ]; then
     while IFS= read -r f; do
-      [ -n "$f" ] && rm -rf "${PLUGIN_DIR:?}/$f"
+      # reject blank / lines with path traversal / absolute paths
+      case "$f" in
+        "") echo "refusing to touch $PLUGIN_DIR: marker contains empty line" >&2; exit 1 ;;
+        ".."*) echo "refusing to touch $PLUGIN_DIR: marker contains path traversal: $f" >&2; exit 1 ;;
+        "/")*  echo "refusing to touch $PLUGIN_DIR: marker contains absolute path: $f" >&2; exit 1 ;;
+        *)  rm -rf "${PLUGIN_DIR:?}/$f" ;;
+      esac
     done < "$PLUGIN_DIR/$MARKER"
   fi
   rsync -a \
@@ -110,7 +134,13 @@ else
   # manage (marker lists them), then copy fresh ones in.
   if [ -f "$PLUGIN_DIR/$MARKER" ]; then
     while IFS= read -r f; do
-      [ -n "$f" ] && rm -rf "${PLUGIN_DIR:?}/$f"
+      # reject blank / lines with path traversal / absolute paths
+      case "$f" in
+        "") echo "refusing to touch $PLUGIN_DIR: marker contains empty line" >&2; exit 1 ;;
+        ".."*) echo "refusing to touch $PLUGIN_DIR: marker contains path traversal: $f" >&2; exit 1 ;;
+        "/")*  echo "refusing to touch $PLUGIN_DIR: marker contains absolute path: $f" >&2; exit 1 ;;
+        *)  rm -rf "${PLUGIN_DIR:?}/$f" ;;
+      esac
     done < "$PLUGIN_DIR/$MARKER"
   fi
   cp "$SRC"/manifest.json "$PLUGIN_DIR/"
