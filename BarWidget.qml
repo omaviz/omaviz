@@ -216,14 +216,14 @@ BarWidget {
     // write-only view — bounds staleness so concurrent writers can't
     // resurrect each other's flags from ancient caches (#16).
     var txt = Model.writeConfigKey(root.readGuarded(), "desktop", "active", value ? "true" : "false")
-    detachConfigWrite.setText(txt)
     root.noteWrite(txt)
+    detachConfigWrite.setText(txt)
   }
 
   function writeEnabled(value) {
     var txt = Model.writeEnabled(value, root.readGuarded())
-    detachConfigWrite.setText(txt)
     root.noteWrite(txt)
+    detachConfigWrite.setText(txt)
     root.vizEnabled = value
     if (value) {
       // ON: restart engine
@@ -265,8 +265,8 @@ BarWidget {
   // surface picks it up live through the config poll — no restart needed.
   function writeAudioOption(key, value) {
     var txt = Model.writeConfigKey(root.readGuarded(), "audio", key, vizVal(value))
-    detachConfigWrite.setText(txt)
     root.noteWrite(txt)
+    detachConfigWrite.setText(txt)
   }
   function writeVizOptions(key1, value1, key2, value2) {
     // Multi-key single write: two sequential setText calls race on the same
@@ -275,8 +275,8 @@ BarWidget {
     var txt = root.readGuarded()
     txt = Model.writeConfigKey(txt, "desktop", key1, vizVal(value1))
     if (key2) txt = Model.writeConfigKey(txt, "desktop", key2, vizVal(value2))
-    detachConfigWrite.setText(txt)
     root.noteWrite(txt)
+    detachConfigWrite.setText(txt)
   }
   // Three-key single write (preset swatches, theme snapshot): same
   // one-base-text rule as writeVizOptions.
@@ -285,8 +285,8 @@ BarWidget {
     txt = Model.writeConfigKey(txt, "desktop", key1, vizVal(value1))
     if (key2) txt = Model.writeConfigKey(txt, "desktop", key2, vizVal(value2))
     if (key3) txt = Model.writeConfigKey(txt, "desktop", key3, vizVal(value3))
-    detachConfigWrite.setText(txt)
     root.noteWrite(txt)
+    detachConfigWrite.setText(txt)
   }
   function vizVal(value) {
     if (typeof value === "boolean") return value ? "true" : "false"

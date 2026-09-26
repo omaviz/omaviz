@@ -203,7 +203,7 @@ Window {
         reflect: win.vizConfig.reflect === true
         scopeLineWidth: win.vizConfig.scopeThickness ?? 2
 
-        colorSync: false
+        colorSync: true
         barCount: Math.max(16, Math.floor((parent.width - 8) / 10))
         gapPx: Math.min(6, Math.max(0, win.vizConfig.gap ?? 1))
         barWidthExtra: 4

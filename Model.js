@@ -96,6 +96,7 @@ function readConfigFromText(tomlText) {
   // Guards against a stranded active=true with no live window.
   d.desktopHeartbeat = parseInt(readTomlValue(tomlText, "desktop", "heartbeat") ?? "0", 10)
   if (d.desktopHeartbeat !== d.desktopHeartbeat) d.desktopHeartbeat = 0
+  // Color sync: default ON so theme gradient (themeBottom→themeTop) works.
   d.colorSync = readTomlValue(tomlText, "mini", "color_sync") === "true"
   // Theme gradient defaults: Matte Black active theme (see THEME_PALETTE.md).
   // accent (#e68e0d) -> bright_blue (#f59e0b). Replaces the old cyan/purple
@@ -157,7 +158,7 @@ function defaultConfig() {
     desktopActive: false,
     enabled: true,
     desktopHeartbeat: 0,
-    colorSync: false,
+    colorSync: true,
     themeBottom: "#e68e0d",
     themeTop: "#f59e0b",
     fire: false,

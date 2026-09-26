@@ -27,6 +27,9 @@ Canvas {
   property bool barColorCustom: false
   property color barColorFrom: "#e68e0d"
   property color barColorTo: "#f59e0b"
+  // Color sync: ON by default so theme gradient (themeBottom→themeTop) works.
+  // When OFF, gradient goes themeBottom→white (legacy behavior).
+  property bool colorSync: true
   // Oscilloscope feed: 128-point time-domain samples (-1..1, newest last).
   property var wave: []
   property real scopeLineWidth: 2

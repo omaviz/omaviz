@@ -12,7 +12,8 @@ Panel {
   ipcTarget: "org.omaviz.visualizer"
   manageIpc: false
 
-  property var hcfg: root.hostWidget ? root.hostWidget.config : Model.defaultConfig()
+  // Live config binding — refreshed when hostWidget.config changes (via noteWrite)
+  readonly property var hcfg: root.hostWidget ? root.hostWidget.config : Model.defaultConfig()
   property var anchorItem: null
   property var hostWidget: null
 
@@ -199,7 +200,7 @@ Panel {
           wash: root.hcfg.artwork !== false
           reflect: root.hcfg.reflect === true
           scopeLineWidth: (root.hcfg.scopeThickness ?? 2)
-          colorSync: false
+          colorSync: true
           barCount: 64
           gapPx: root.hostWidget ? Math.min(6, Math.max(0, root.hostWidget.barGap)) : 1
           peaks: root.peaksOn
