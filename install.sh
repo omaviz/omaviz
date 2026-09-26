@@ -142,7 +142,7 @@ else
     done < "$PLUGIN_DIR/$MARKER"
   fi
   cp "$SRC"/manifest.json "$PLUGIN_DIR/"
-  cp "$SRC"/*.qml "$SRC"/Model.js "$PLUGIN_DIR/"
+  cp "$SRC"/*.qml "$SRC"/ModelStore.js "$PLUGIN_DIR/"
   # Optional file classes — copy only those that exist (glob would otherwise
   # fail under `set -e` when a class is absent, e.g. no .frag/.qsb in v8+).
   for f in "$SRC"/*.frag "$SRC"/*.qsb; do
@@ -155,13 +155,56 @@ chmod +x "$PLUGIN_DIR/bin/omaviz-engine"
 # this installer owns, so future runs (and uninstall) only ever touch these.
 {
   echo "manifest.json"
-  for f in "$SRC"/*.qml "$SRC"/Model.js "$SRC"/*.frag "$SRC"/*.qsb; do
+  for f in "$SRC"/*.qml "$SRC"/ModelStore.js "$SRC"/*.frag "$SRC"/*.qsb; do
     [ -e "$f" ] && echo "${f#"$SRC"/}"
   done
   echo "assets/"
   echo "bin/"
   echo "tests/"
 } > "$PLUGIN_DIR/$MARKER"
+
+# Ensure config file exists with defaults (BarWidget writes it, but do it here
+# too for immediate availability and Desktop.qml first-run)
+mkdir -p "${XDG_CONFIG_HOME:-$HOME/.config}/omaviz"
+if [ ! -f "${XDG_CONFIG_HOME:-$HOME/.config}/omaviz/config.toml" ]; then
+  cat > "${XDG_CONFIG_HOME:-$HOME/.config}/omaviz/config.toml" <<'EOF'
+[audio]
+sensitivity = 1.0
+bands = 32
+
+[mini]
+gap = 1
+width_scale = 1.5
+color_sync = true
+
+[desktop]
+theme_bottom = "#e68e0d"
+theme_top = "#f59e0b"
+theme_accent = "#f59e0b"
+bar_color_custom = false
+bar_color_from = "#e68e0d"
+bar_color_to = "#f59e0b"
+peaks = true
+peak_falloff = 0.1
+peak_sustain_ms = 100
+linear_fall = true
+spikes = false
+fire = false
+stacks = false
+scope = false
+artwork = false
+reflect = true
+dots = true
+scope_thickness = 2
+mono = false
+min_bar_height = false
+
+[full]
+visual = "wave"
+EOF
+  say "created default config: ${XDG_CONFIG_HOME:-$HOME/.config}/omaviz/config.toml"
+fi
+
 say "plugin -> $PLUGIN_DIR"
 
 # ---------------------------------------------------------------- launcher

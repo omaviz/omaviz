@@ -1,5 +1,5 @@
-//! Shared DSP: windowed FFT -> log-spaced bands -> smoothed envelope + beat.
-//! Ported verbatim from v6/daemon/src/dsp.rs (backend-agnostic: consumes f32 mono).
+//! Shared DSP: windowed FFT -> log-spaced bands -> raw magnitudes + energy/beat.
+//! No smoothing — engine outputs raw bands; VisualCanvas does all physics.
 
 use realfft::{RealFftPlanner, RealToComplex, num_complex::Complex32};
 use std::sync::Arc;
@@ -25,14 +25,11 @@ pub struct Analyzer {
     pub energy: f32,
     pub beat: f32,
     energy_avg: f32,
-    attack: f32,
-    decay: f32,
-    linear_fall: bool,
     sample_rate: f32,
 }
 
 impl Analyzer {
-    pub fn new(sample_rate: f32, n_bands: usize, fft_size: usize, linear_fall: bool) -> Self {
+    pub fn new(sample_rate: f32, n_bands: usize, fft_size: usize) -> Self {
         let mut planner = RealFftPlanner::<f32>::new();
         let fft = planner.plan_fft_forward(fft_size);
         let window = (0..fft_size)
@@ -71,9 +68,6 @@ impl Analyzer {
             energy: 0.0,
             beat: 0.0,
             energy_avg: 0.0,
-            attack: 0.70,
-            decay: 0.12,
-            linear_fall,
             sample_rate,
         }
     }
@@ -109,7 +103,8 @@ impl Analyzer {
         }
     }
 
-    /// Recompute bands from the current ring. Cheap enough for 60 Hz.
+    /// Recompute bands from the current ring. Outputs RAW normalized bands (0..1).
+    /// No smoothing — all physics (attack/decay, peak hold, falloff) in VisualCanvas.
     pub fn analyze(&mut self) {
         for (d, (s, w)) in self
             .scratch_in
@@ -133,18 +128,11 @@ impl Analyzer {
             for c in &self.spectrum[lo..hi.max(lo + 1)] {
                 peak = peak.max(c.norm() * norm);
             }
-            // dB scale -> 0..1
+            // dB scale -> 0..1 (raw, no temporal smoothing)
             let db = 20.0 * (peak + 1e-9).log10();
             let v = ((db + 70.0) / 70.0).clamp(0.0, 1.0);
-            let prev = self.bands[i];
-            self.bands[i] = if self.linear_fall {
-                // Winamp-style: instant rise, fixed-rate linear fall.
-                if v > prev { v } else { (prev - 0.05).max(v) }
-            } else {
-                let k = if v > prev { self.attack } else { self.decay };
-                prev + (v - prev) * k
-            };
-            total += self.bands[i];
+            self.bands[i] = v;
+            total += v;
         }
         self.energy = total / self.bands.len() as f32;
 
@@ -165,7 +153,7 @@ mod tests {
 
     #[test]
     fn new_allocates_requested_band_count() {
-        let a = Analyzer::new(48_000.0, 24, FFT_SIZE, false);
+        let a = Analyzer::new(48_000.0, 24, FFT_SIZE);
         assert_eq!(a.bands.len(), 24);
         assert_eq!(a.bands, vec![0.0; 24]);
         assert_eq!(a.sample_rate(), 48_000.0);
@@ -173,7 +161,7 @@ mod tests {
 
     #[test]
     fn silence_produces_zero_energy() {
-        let mut a = Analyzer::new(48_000.0, 16, FFT_SIZE, false);
+        let mut a = Analyzer::new(48_000.0, 16, FFT_SIZE);
         a.push(&vec![0.0; FFT_SIZE]);
         a.analyze();
         assert_eq!(a.energy, 0.0);
@@ -182,7 +170,7 @@ mod tests {
 
     #[test]
     fn loud_tone_produces_nonzero_energy_and_is_not_silent() {
-        let mut a = Analyzer::new(48_000.0, 16, FFT_SIZE, false);
+        let mut a = Analyzer::new(48_000.0, 16, FFT_SIZE);
         let sr = 48_000.0;
         let samples: Vec<f32> = (0..FFT_SIZE)
             .map(|i| (2.0 * std::f32::consts::PI * 1000.0 * i as f32 / sr).sin() * 0.5)
@@ -195,7 +183,7 @@ mod tests {
 
     #[test]
     fn push_handles_short_buffers_with_ring() {
-        let mut a = Analyzer::new(48_000.0, 8, FFT_SIZE, false);
+        let mut a = Analyzer::new(48_000.0, 8, FFT_SIZE);
         let chunk: Vec<f32> = (0..512).map(|i| (i as f32 * 0.01).sin()).collect();
         a.push(&chunk);
         a.push(&chunk);
@@ -206,28 +194,8 @@ mod tests {
     }
 
     #[test]
-    fn linear_fall_rises_instantly_and_falls_linearly() {
-        let mut a = Analyzer::new(48_000.0, 8, FFT_SIZE, true);
-        let sr = 48_000.0;
-        let loud: Vec<f32> = (0..FFT_SIZE)
-            .map(|i| (2.0 * std::f32::consts::PI * 1000.0 * i as f32 / sr).sin() * 0.5)
-            .collect();
-        a.push(&loud);
-        a.analyze();
-        let hot: Vec<f32> = a.bands.clone();
-        assert!(hot.iter().any(|&v| v > 0.0), "linear mode must rise instantly");
-        // Silence: linear mode must fall by exactly the fixed step per frame.
-        a.push(&vec![0.0; FFT_SIZE]);
-        a.analyze();
-        for (h, b) in hot.iter().zip(a.bands.iter()) {
-            let expected = (*h - 0.05).max(0.0);
-            assert!((b - expected).abs() < 1e-5, "linear fall step wrong: {b} vs {expected}");
-        }
-    }
-
-    #[test]
     fn fft_1024_analyzes_and_stays_finite() {
-        let mut a = Analyzer::new(48_000.0, 16, 1024, false);
+        let mut a = Analyzer::new(48_000.0, 16, 1024);
         let chunk: Vec<f32> = (0..512).map(|i| (i as f32 * 0.01).sin()).collect();
         a.push(&chunk);
         a.analyze();
@@ -239,7 +207,7 @@ mod tests {
 
     #[test]
     fn wave_snippet_downsamples_ring() {
-        let mut a = Analyzer::new(48_000.0, 8, FFT_SIZE, false);
+        let mut a = Analyzer::new(48_000.0, 8, FFT_SIZE);
         a.push(&vec![0.25; FFT_SIZE]);
         let w = a.wave_snippet(128);
         assert_eq!(w.len(), 128);

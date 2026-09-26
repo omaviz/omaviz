@@ -3,13 +3,13 @@
 //! Replaces the old (daemon + socket + bridge) topology. It captures from the
 //! active audio source, runs the FFT analyzer, and emits one JSON spectrum
 //! frame per line on stdout. The Quickshell plugin spawns this binary and
-//! parses stdout with Model.parseSpectrumLine — no socket, no systemd, no
+//! parses stdout with Store.parseSpectrumLine — no socket, no systemd, no
 //! separate binaries outside the plugin directory.
 //!
 //! Backend selection is auto by default: `auto`/`""` resolves to PipeWire. Two
 //! synthetic backends are compiled in for deterministic offline testing
 //! (engine lane #11, no plugin/QML changes):
-//!   --source gen[=mode[:param=value;...]]   built-in tone/noise/sweep generator
+//!   --source gen[=mode[:param=value;...]]   built-in tone/noise/sweep|mixed
 //!   --source file=<path>[:fps=N][:loop]     replays a recorded spectrum stream
 //! The plugin never picks a backend; it just spawns the binary.
 
@@ -37,11 +37,6 @@ struct Cli {
     /// Number of spectrum bands in the output frame.
     #[arg(long, default_value_t = 32)]
     bands: usize,
-
-    /// Bar motion: exp (attack/decay easing, default) or linear
-    /// (Winamp-style: instant rise, fixed-rate fall).
-    #[arg(long, default_value = "exp")]
-    fall_mode: String,
 
     /// FFT window size in samples (window latency = size/rate, e.g.
     /// 2048 @48kHz ≈ 43ms, 1024 ≈ 21ms). Smaller is snappier but
@@ -72,11 +67,6 @@ fn main() -> anyhow::Result<()> {
             cli.fft_size
         );
     }
-    let linear_fall = match cli.fall_mode.as_str() {
-        "linear" => true,
-        "exp" => false,
-        other => anyhow::bail!("--fall-mode must be exp|linear (got {other})"),
-    };
 
     // Resolve the backend up-front (errors on unsupported source).
     let backend = source::resolve(&cli.source)?;
@@ -99,6 +89,7 @@ fn main() -> anyhow::Result<()> {
     let idle_heartbeat = Duration::from_millis(200); // 5 Hz keepalive
     let mut fresh_chunk = false;
     let mut last_silent = false;
+
     loop {
         // Drain all pending events, keeping the most recent per kind.
         let mut pending_chunk: Option<dsp::AudioChunk> = None;
@@ -142,9 +133,9 @@ fn main() -> anyhow::Result<()> {
             // emit every tick so frames keep flowing at ~60 Hz.
             if let Some(c) = pending_chunk {
                 match &mut analyzer {
-                    None => analyzer = Some(Analyzer::new(c.rate as f32, cli.bands, cli.fft_size, linear_fall)),
+                    None => analyzer = Some(Analyzer::new(c.rate as f32, cli.bands, cli.fft_size)),
                     Some(a) if (a.sample_rate() as u32) != c.rate => {
-                        *a = Analyzer::new(c.rate as f32, cli.bands, cli.fft_size, linear_fall);
+                        *a = Analyzer::new(c.rate as f32, cli.bands, cli.fft_size);
                     }
                     _ => {}
                 }
@@ -219,7 +210,7 @@ fn main() -> anyhow::Result<()> {
                     let w = a.wave_snippet(128);
                     let w_json: Vec<String> =
                         w.iter().map(|v| format!("{:.4}", v)).collect();
-                    writeln!(out, "{{\"wave\":[{}]}}", w_json.join(","))?;
+                    writeln!(out, "{{\\\"wave\\\":[{}]}}", w_json.join(","))?;
                 }
                 out.flush()?;
             }

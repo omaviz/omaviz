@@ -3,13 +3,49 @@ import Quickshell
 import Quickshell.Io
 import qs.Commons
 import qs.Ui
-import "Model.js" as Model
+import "ModelStore.js" as Store
 
 BarWidget {
   id: root
   moduleName: "org.omaviz.visualizer"
 
-  property var config: Model.defaultConfig()
+  // Reactive config from Store (single source of truth)
+  property var config: Store.get("")
+  property bool _ready: false
+
+  Component.onCompleted: {
+    root._ready = true
+    root.snapThemeColors()
+    // Initialize config from Store
+    root.config = Store.get("")
+    // Subscribe to Store changes
+    Store.onChanged("mini.colorSync", function(v) { root.config.mini.colorSync = v })
+    Store.onChanged("desktop.themeBottom", function(v) { root.config.desktop.themeBottom = v })
+    Store.onChanged("desktop.themeTop", function(v) { root.config.desktop.themeTop = v })
+    Store.onChanged("desktop.themeAccent", function(v) { root.config.desktop.themeAccent = v })
+    Store.onChanged("desktop.barColorCustom", function(v) { root.config.desktop.barColorCustom = v })
+    Store.onChanged("desktop.barColorFrom", function(v) { root.config.desktop.barColorFrom = v })
+    Store.onChanged("desktop.barColorTo", function(v) { root.config.desktop.barColorTo = v })
+    Store.onChanged("desktop.peaks", function(v) { root.config.desktop.peaks = v })
+    Store.onChanged("desktop.peakFalloff", function(v) { root.config.desktop.peakFalloff = v })
+    Store.onChanged("desktop.peakSustainMs", function(v) { root.config.desktop.peakSustainMs = v })
+    Store.onChanged("desktop.linearFall", function(v) { root.config.desktop.linearFall = v })
+    Store.onChanged("desktop.spikes", function(v) { root.config.desktop.spikes = v })
+    Store.onChanged("desktop.fire", function(v) { root.config.desktop.fire = v })
+    Store.onChanged("desktop.stacks", function(v) { root.config.desktop.stacks = v })
+    Store.onChanged("desktop.scope", function(v) { root.config.desktop.scope = v })
+    Store.onChanged("desktop.artwork", function(v) { root.config.desktop.artwork = v })
+    Store.onChanged("desktop.reflect", function(v) { root.config.desktop.reflect = v })
+    Store.onChanged("desktop.dots", function(v) { root.config.desktop.dots = v })
+    Store.onChanged("desktop.scopeThickness", function(v) { root.config.desktop.scopeThickness = v })
+    Store.onChanged("desktop.mono", function(v) { root.config.desktop.mono = v })
+    Store.onChanged("desktop.minBarHeight", function(v) { root.config.desktop.minBarHeight = v })
+    Store.onChanged("audio.sensitivity", function(v) { root.config.audio.sensitivity = v })
+    Store.onChanged("audio.bands", function(v) { root.config.audio.bands = v })
+    Store.onChanged("mini.gap", function(v) { root.config.mini.gap = v })
+    Store.onChanged("mini.widthScale", function(v) { root.config.mini.widthScale = v })
+  }
+
   // Live theme snapshot: persists the current Omarchy accent triple to
   // config whenever the theme changes, so the standalone desktop window
   // (no qs.* context) follows theme switches within its 100ms poll.
@@ -17,13 +53,8 @@ BarWidget {
   // not the config being written).
   property color accentSnap: Color.accent
   property string _snappedAccent: ""
-  // _ready gates the snapshot until BarWidget (incl. the write-only
-  // FileView) completes: setText during construction warns "no path"
-  // and drops the write.
-  property bool _ready: false
-  Component.onCompleted: { root._ready = true; root.snapThemeColors() }
   onAccentSnapChanged: root.snapThemeColors()
-  onConfigChanged: root.snapThemeColors()
+
   function colorHex(c) {
     function h2(v) {
       var s = Math.round(Math.min(1, Math.max(0, v)) * 255).toString(16)
@@ -33,17 +64,15 @@ BarWidget {
   }
   function snapThemeColors() {
     if (!root._ready) return
-    if (!root.config) return
     var top = root.colorHex(Color.accent)
     if (top === root._snappedAccent) return
-    var curTop = Model.readConfigFromText(root.readGuarded()).themeAccent || ""
-    // File already fresh: adopt without writing (avoids a mount-time
-    // setText, which FileView can drop with a "no path" warning).
-    if (curTop === top) { root._snappedAccent = top; return }
-    var bottom = root.colorHex(Qt.darker(Color.accent, 1.3))
     root._snappedAccent = top
-    root.writeVizOptions3("theme_bottom", bottom, "theme_top", top, "theme_accent", top)
+    var bottom = root.colorHex(Qt.darker(Color.accent, 1.3))
+    Store.set("desktop.themeBottom", bottom)
+    Store.set("desktop.themeTop", top)
+    Store.set("desktop.themeAccent", top)
   }
+
   property var spectrumBands: []
   property var spectrumWave: []
   property bool spectrumSilent: true
@@ -60,7 +89,7 @@ BarWidget {
   function noteWrite(txt) {
     root._lastWriteAt = Date.now()
     root._lastWriteText = txt
-    root.config = Model.readConfigFromText(txt)
+    root.config = Store.loadFromTOML(txt)
     root.refreshDesktopLive()
   }
   function readGuarded() {
@@ -70,12 +99,12 @@ BarWidget {
   }
   function refreshDesktopLive() {
     if (!root.vizEnabled) { root.desktopLive = false; return }
-    var hb = (root.config && root.config.desktopHeartbeat) || 0
-    root.desktopLive = (root.config && root.config.desktopActive === true) && (Date.now() - hb < 6000)
+    var hb = (root.config && root.config.desktop && root.config.desktop.desktopHeartbeat) || 0
+    root.desktopLive = (root.config && root.config.desktop && root.config.desktop.desktopActive === true) && (Date.now() - hb < 6000)
   }
-  readonly property int barCount: Math.max(8, (root.config && root.config.bands !== undefined) ? root.config.bands : 32)
+  readonly property int barCount: Math.max(8, (root.config && root.config.audio && root.config.audio.bands !== undefined) ? root.config.audio.bands : 32)
 
-  function applyConfig(text) { root.config = Model.readConfigFromText(text) }
+  function applyConfig(text) { root.config = Store.loadFromTOML(text) }
 
   readonly property bool opened: panelLoader.item ? panelLoader.item.opened === true : false
   readonly property bool popoutSwitchClosing: panelLoader.item ? panelLoader.item.popoutSwitchClosing === true : false
@@ -95,13 +124,13 @@ BarWidget {
   }
 
   readonly property real barGap: {
-    var g = (root.config && root.config.gap !== undefined) ? +root.config.gap : 3
-    return (g === g && g >= 0) ? g : 3
+    var g = (root.config && root.config.mini && root.config.mini.gap !== undefined) ? +root.config.mini.gap : 1
+    return (g === g && g >= 0) ? g : 1
   }
   readonly property real slotW: root.barGap
   readonly property real widthScale: {
-    var w = (root.config && root.config.widthScale !== undefined) ? +root.config.widthScale : 1
-    return (w === w && w >= 0.5 && w <= 4) ? w : 1
+    var w = (root.config && root.config.mini && root.config.mini.widthScale !== undefined) ? +root.config.mini.widthScale : 1.5
+    return (w === w && w >= 0.5 && w <= 4) ? w : 1.5
   }
   implicitWidth: Math.round(widthScale * (Style.space(2) + root.barCount * (root.slotW + Style.space(2))))
   implicitHeight: Style.space(28)
@@ -116,20 +145,19 @@ BarWidget {
     running: true
     // High-res feed (128 bands): mini downsamples to 32, preview to 64 —
     // both map from rich source detail instead of a coarse 32-band feed.
-    // --wave always on (cheap scope feed); --fall-mode follows config.
-    command: [root.engineBin, "--bands", "128", "--wave"].concat(
-      root.config.linearFall === true ? ["--fall-mode", "linear"] : [])
+    // --wave always on (cheap scope feed); engine now outputs raw bands (no fall-mode).
+    command: [root.engineBin, "--bands", "128", "--wave"]
     stdout: SplitParser {
       onRead: function(data) {
         if (!root.vizEnabled) return
         var lines = String(data).split("\n")
         for (var i = 0; i < lines.length; i++) {
           var line = lines[i].trim()
-          if (line) Model.parseSpectrumLine(line)
+          if (line) Store.parseSpectrumLine(line)
         }
-        root.spectrumBands = Model.spectrumData.bands
-        root.spectrumWave = Model.spectrumData.wave
-        root.spectrumSilent = Model.spectrumData.silent
+        root.spectrumBands = Store.spectrumData.bands
+        root.spectrumWave = Store.spectrumData.wave
+        root.spectrumSilent = Store.spectrumData.silent
         root.noteSpectrumFrame()
       }
     }
@@ -155,7 +183,7 @@ BarWidget {
     onExited: function(code, status) {
       // Bar-spawned desktop closed: release the shared flag (Desktop's own
       // onClosing also writes it; last write wins, same value).
-      if (root.config.desktopActive === true) {
+      if (root.config && root.config.desktop && root.config.desktop.desktopActive === true) {
         root.writeDesktopActive(false)
       }
     }
@@ -168,7 +196,7 @@ BarWidget {
   // that would fight launcher-opened windows this process didn't spawn.
 
   function detach() {
-    if (root.config.desktopActive === true) {
+    if (root.config && root.config.desktop && root.config.desktop.desktopActive === true) {
       detachProc.running = false
       root.writeDesktopActive(false)
     } else {
@@ -184,18 +212,30 @@ BarWidget {
 
   FileView {
     id: configFile
-    path: Model.configPath
+    path: Store.configPath
     watchChanges: true
     printErrors: false
     onLoaded: {
-      root.config = Model.readConfigFromText(root.readGuarded())
+      root.config = Store.loadFromTOML(root.readGuarded())
       root.refreshDesktopLive()
+      // If config file doesn't exist or is empty, write defaults immediately
+      if (!configFile.text() || configFile.text().trim() === "") {
+        var txt = Store.toTOML()
+        root.noteWrite(txt)
+        detachConfigWrite.setText(txt)
+      }
     }
     onFileChanged: {
-      root.config = Model.readConfigFromText(root.readGuarded())
+      root.config = Store.loadFromTOML(root.readGuarded())
       root.refreshDesktopLive()
     }
-    onLoadFailed: root.config = Model.defaultConfig()
+    onLoadFailed: {
+      root.config = Store.defaultConfig()
+      // Write default config if file doesn't exist
+      var txt = Store.toTOML()
+      root.noteWrite(txt)
+      detachConfigWrite.setText(txt)
+    }
   }
   // Poll config (watchChanges is unreliable) so shared flags like
   // desktop.active propagate — this is what hides the mini.
@@ -206,22 +246,53 @@ BarWidget {
 
   FileView {
     id: detachConfigWrite
-    path: Model.configPath
+    path: Store.configPath
     watchChanges: false
     printErrors: false
     Component.onCompleted: reload()
   }
+
+  // Hook Store persistence to our FileView
+  var StorePersistRequest = function(txt) {
+    detachConfigWrite.setText(txt)
+  }
+
   function writeDesktopActive(value) {
     // Base the write on configFile (reloaded every 500ms), not the
     // write-only view — bounds staleness so concurrent writers can't
-    // resurrect each other's flags from ancient caches (#16).
-    var txt = Model.writeConfigKey(root.readGuarded(), "desktop", "active", value ? "true" : "false")
+    // resurrect each other's flags from ancient caches.
+    var txt = Store.toTOML()
+    // Manually update the active field in the TOML
+    var lines = txt.split("\n")
+    var inDesktop = false
+    for (var i = 0; i < lines.length; i++) {
+      var line = lines[i].trim()
+      if (line === "[desktop]") { inDesktop = true; continue }
+      if (line.startsWith("[") && line.endsWith("]")) { inDesktop = false }
+      if (inDesktop && line.startsWith("active")) {
+        lines[i] = "active = " + (value ? "true" : "false")
+        break
+      }
+    }
+    txt = lines.join("\n")
     root.noteWrite(txt)
     detachConfigWrite.setText(txt)
   }
 
   function writeEnabled(value) {
-    var txt = Model.writeEnabled(value, root.readGuarded())
+    var txt = Store.toTOML()
+    var lines = txt.split("\n")
+    var inDesktop = false
+    for (var i = 0; i < lines.length; i++) {
+      var line = lines[i].trim()
+      if (line === "[desktop]") { inDesktop = true; continue }
+      if (line.startsWith("[") && line.endsWith("]")) { inDesktop = false }
+      if (inDesktop && line.startsWith("enabled")) {
+        lines[i] = "enabled = " + (value ? "true" : "false")
+        break
+      }
+    }
+    txt = lines.join("\n")
     root.noteWrite(txt)
     detachConfigWrite.setText(txt)
     root.vizEnabled = value
@@ -238,11 +309,12 @@ BarWidget {
       // Clear bands so mini shows floor
       root.spectrumBands = []
       root.spectrumWave = []
+      root.spectrumSilent = true
       // Clear stale spectrum data
-      Model.spectrumData.bands = []
-      Model.spectrumData.wave = []
-      Model.spectrumData.silent = true
-      if (root.config.desktopActive === true) {
+      Store.spectrumData.bands = []
+      Store.spectrumData.wave = []
+      Store.spectrumData.silent = true
+      if (root.config && root.config.desktop && root.config.desktop.desktopActive === true) {
         detachProc.running = false
         root.writeDesktopActive(false)
       }
@@ -250,50 +322,40 @@ BarWidget {
       configFile.reload()
     }
   }
+
   function writeVizOption(key, value) {
-    writeVizOptions(key, value, null, null)
+    Store.set("desktop." + key, value)
   }
-  // Engine-flag options need a process restart to take effect (CLI args
-  // are read at spawn). Restart is cheap (~100ms gap, backoff resets).
   function writeEngineOption(key, value) {
     writeVizOption(key, value)
-    spectrumProc.running = false
-    spectrumProc.running = true
+    // Engine no longer needs restart for fall-mode (removed)
+    // but restart for band count changes
+    if (key === "bands") {
+      spectrumProc.running = false
+      spectrumProc.running = true
+    }
   }
-  // Audio-section options (e.g. sensitivity): same single-write pattern as
-  // writeVizOptions but targeting [audio]. Applied QML-side, so every
-  // surface picks it up live through the config poll — no restart needed.
   function writeAudioOption(key, value) {
-    var txt = Model.writeConfigKey(root.readGuarded(), "audio", key, vizVal(value))
-    root.noteWrite(txt)
-    detachConfigWrite.setText(txt)
-  }
-  function writeVizOptions(key1, value1, key2, value2) {
-    // Multi-key single write: two sequential setText calls race on the same
-    // stale base text and the second clobbers the first (e.g. Spikes+Fire).
-    // Apply both keys to ONE base text, then a single setText.
-    var txt = root.readGuarded()
-    txt = Model.writeConfigKey(txt, "desktop", key1, vizVal(value1))
-    if (key2) txt = Model.writeConfigKey(txt, "desktop", key2, vizVal(value2))
-    root.noteWrite(txt)
-    detachConfigWrite.setText(txt)
-  }
-  // Three-key single write (preset swatches, theme snapshot): same
-  // one-base-text rule as writeVizOptions.
-  function writeVizOptions3(key1, value1, key2, value2, key3, value3) {
-    var txt = root.readGuarded()
-    txt = Model.writeConfigKey(txt, "desktop", key1, vizVal(value1))
-    if (key2) txt = Model.writeConfigKey(txt, "desktop", key2, vizVal(value2))
-    if (key3) txt = Model.writeConfigKey(txt, "desktop", key3, vizVal(value3))
-    root.noteWrite(txt)
-    detachConfigWrite.setText(txt)
+    Store.set("audio." + key, value)
   }
   function vizVal(value) {
     if (typeof value === "boolean") return value ? "true" : "false"
     return value
   }
   function writeDesktopBeat() {
-    var txt = Model.writeConfigKey(root.readGuarded(), "desktop", "heartbeat", String(Date.now()))
+    var txt = Store.toTOML()
+    var lines = txt.split("\n")
+    var inDesktop = false
+    for (var i = 0; i < lines.length; i++) {
+      var line = lines[i].trim()
+      if (line === "[desktop]") { inDesktop = true; continue }
+      if (line.startsWith("[") && line.endsWith("]")) { inDesktop = false }
+      if (inDesktop && line.startsWith("heartbeat")) {
+        lines[i] = "heartbeat = \"" + String(Date.now()) + "\""
+        break
+      }
+    }
+    txt = lines.join("\n")
     detachConfigWrite.setText(txt)
     root.noteWrite(txt)
   }
@@ -306,7 +368,7 @@ BarWidget {
     // of hiding — settings stay one click away, no round-trip.
     bar: root.bar
     tooltipText: {
-      var viz = root.config.scope === true ? "Oscilloscope" : "Spectrum"
+      var viz = root.config && root.config.desktop && root.config.desktop.scope === true ? "Oscilloscope" : "Spectrum"
       return "Omaviz — " + viz
     }
     text: ""
@@ -329,50 +391,51 @@ BarWidget {
       height: parent.height * 0.90
       // Theme-aware container: tracks the shell background so it reads
       // correctly on light and dark themes (dark theme ≈ previous look).
-      color: root.config.spikes === true ? "transparent" : Qt.rgba(Color.background.r, Color.background.g, Color.background.b, 0.82)
+      color: root.config && root.config.desktop && root.config.desktop.spikes === true ? "transparent" : Qt.rgba(Color.background.r, Color.background.g, Color.background.b, 0.82)
       // Spikes run borderless — the dense spectrum sits directly on the bar.
-      border.width: root.config.spikes === true ? 0 : 1
+      border.width: root.config && root.config.desktop && root.config.desktop.spikes === true ? 0 : 1
       border.color: Qt.rgba(0.20, 0.20, 0.25, 0.50)
 
       // One shared renderer everywhere: mini uses the same VisualCanvas
       // as preview/desktop, so spikes/splits/fire/peaks look identical.
       DotsCanvas {
         anchors.fill: parent
-        anchors.margins: root.config.spikes === true ? 0 : 4
-        visible: root.config.dots !== false && !root.desktopLive
+        anchors.margins: root.config && root.config.desktop && root.config.desktop.spikes === true ? 0 : 4
+        visible: (root.config && root.config.desktop && root.config.desktop.dots !== false) && !root.desktopLive
       }
       VisualCanvas {
         anchors.fill: parent
-        anchors.margins: root.config.spikes === true ? 0 : 4
+        anchors.margins: root.config && root.config.desktop && root.config.desktop.spikes === true ? 0 : 4
         dots: false   // static underlay above (per-frame dots = 34K rects)
         bands: root.desktopLive ? [] : root.spectrumBands
         silent: root.desktopLive ? true : root.spectrumSilent
-        visual: root.config.scope === true ? "Oscilloscope" : "Bars"
-        artMode: root.config.artMode === true
-        colorSync: root.config.colorSync === true
+        visual: root.config && root.config.desktop && root.config.desktop.scope === true ? "Oscilloscope" : "Bars"
+        artMode: root.config && root.config.desktop && root.config.desktop.artMode === true
+        colorSync: root.config && root.config.mini && root.config.mini.colorSync === true
         barCount: root.barCount
         // Rendered gap follows config (same value that sizes the container).
         gapPx: Math.min(6, Math.max(0, root.barGap))
-        peaks: root.config.peaks !== false
-        peakFalloff: root.config.peakFalloff ?? 0.5
-        spikes: root.config.spikes === true
-        fire: root.config.fire === true
+        peaks: root.config && root.config.desktop && root.config.desktop.peaks !== false
+        peakFalloff: root.config && root.config.desktop ? (root.config.desktop.peakFalloff ?? 0.5) : 0.5
+        peakSustainMs: root.config && root.config.desktop ? (root.config.desktop.peakSustainMs ?? 100) : 100
+        spikes: root.config && root.config.desktop && root.config.desktop.spikes === true
+        fire: root.config && root.config.desktop && root.config.desktop.fire === true
         // Stacks stay off in the mini (segments need taller bars to read).
         stacks: false
         // Mini holds 32 bars even in spikes (downsampled from the 128 feed).
         spikeBars: 32
-        sensitivity: root.config.sensitivity ?? 1.0
+        sensitivity: root.config && root.config.audio ? (root.config.audio.sensitivity ?? 1.0) : 1.0
         // Bar color: custom From→To wins; otherwise LIVE theme accent
         // (Theme mode always follows the Omarchy theme — no stale snapshot).
-        barColorCustom: root.config.barColorCustom === true
-        barColorFrom: root.config.barColorFrom || "#e68e0d"
-        barColorTo: root.config.barColorTo || "#f59e0b"
-        themeBottom: Qt.darker(Color.accent, 1.3)
-        themeTop: Color.accent
+        barColorCustom: root.config && root.config.desktop && root.config.desktop.barColorCustom === true
+        barColorFrom: root.config && root.config.desktop ? (root.config.desktop.barColorFrom || "#e68e0d") : "#e68e0d"
+        barColorTo: root.config && root.config.desktop ? (root.config.desktop.barColorTo || "#f59e0b") : "#f59e0b"
+        themeBottom: root.config && root.config.desktop ? (root.config.desktop.themeBottom || Qt.darker(Color.accent, 1.3)) : Qt.darker(Color.accent, 1.3)
+        themeTop: root.config && root.config.desktop ? (root.config.desktop.themeTop || Color.accent) : Color.accent
         wave: root.desktopLive ? [] : root.spectrumWave
         reflect: false
         // Mono: B&W bars by theme luminance (black on light, white on dark).
-        mono: root.config.mono === true
+        mono: root.config && root.config.desktop && root.config.desktop.mono === true
         monoLight: (0.299 * Color.background.r + 0.587 * Color.background.g + 0.114 * Color.background.b) > 0.5
       }
     }

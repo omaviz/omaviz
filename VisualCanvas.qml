@@ -5,13 +5,13 @@ Canvas {
   property var bands: []
   property bool silent: false
   property string visual: "Bars"
-  property bool colorSync: false
   property int barCount: 0
   property color monoColor: "#dce0eb"
   property int gapPx: 1
   property int barWidthExtra: 0
   property bool peaks: true
-  property real peakFalloff: 0.5
+  property real peakFalloff: 0.1          // initial fall speed multiplier (0.0-1.0)
+  property int peakSustainMs: 100         // hold at peak before falling (ms)
   property bool spikes: false
   property bool fire: false
   property bool stacks: false
@@ -53,6 +53,7 @@ Canvas {
   property int spikeBars: 0
   property var _peakArr: []
   property var _peakSpeed: []
+  property var _peakHoldTimer: []  // ms remaining in sustain phase
 
   function displayBands() {
     var b = bands
@@ -99,9 +100,8 @@ Canvas {
   property var _plainLUT: []
   property var _washLUT: []
   property string _palSig: ""
-  // Feed rate: the desktop bridge decimates to 30Hz (paints already
-  // throttle there), while mini/preview stay 60. Peak physics runs two
-  // substeps per arrival at 30Hz so cap trajectories match 60Hz.
+  // Feed rate: engine now emits at ~60 Hz for all surfaces. Physics runs
+  // one step per frame. Peak sustain/falloff in ms, converted to frames.
   property real dataFps: 60
   // Peak-settled flag: when silent and every cap is parked, band updates
   // repaint an identical image — onBandsChanged skips those paints.
@@ -181,27 +181,45 @@ Canvas {
       var s0 = (0.5 + peakFalloff * 4.5) / 256
       for (var s = 0; s < n; s++) _peakSpeed.push(s0)
     }
+    if (_peakHoldTimer.length !== n) {
+      _peakHoldTimer = []
+      for (var h = 0; h < n; h++) _peakHoldTimer.push(0)
+    }
   }
 
+  // Winamp-authentic peak physics:
+  // - On new peak: peak = value, speed = 0, holdTimer = peakSustainMs
+  // - While holdTimer > 0: holdTimer -= frameMs, peak stays at max
+  // - After sustain: speed *= 1.05/frame, peak = max(0, peak - speed)
+  // - peakFalloff (0..1) scales initial fall speed
+  // - Frame time = 1000/dataFps ms (≈16.67ms at 60Hz)
   function _advancePhysics(b, n) {
     _sizePeaks(n)
-    // Winamp peak physics: caught peaks reset a slow drop speed that
-    // accelerates ×1.05/frame — hang, then snap down (not linear decay).
-    // falloff maps to initial drop speed (~0.5/256 → ~5/256 per frame).
-    // At 30Hz feeds each arrival advances two substeps on the same sample
-    // (catch is idempotent, decay doubles) to track the 60Hz trajectory.
+    var frameMs = 1000.0 / dataFps
     var speed0 = (0.5 + peakFalloff * 4.5) / 256
-    var steps = dataFps > 45 ? 1 : 2
-    for (var st = 0; st < steps; st++) {
-      for (var i = 0; i < n; i++) {
-        var v = silent ? 0 : Math.min(1, Math.max(0, b[i]) * sensitivity)
-        if (v >= _peakArr[i]) { _peakArr[i] = v; _peakSpeed[i] = speed0 }
-        else {
+
+    for (var i = 0; i < n; i++) {
+      var v = silent ? 0 : Math.min(1, Math.max(0, b[i]) * sensitivity)
+
+      if (v >= _peakArr[i]) {
+        // New peak caught: reset to value, zero speed, start sustain
+        _peakArr[i] = v
+        _peakSpeed[i] = 0
+        _peakHoldTimer[i] = peakSustainMs
+      } else {
+        // No new peak: check sustain timer
+        if (_peakHoldTimer[i] > 0) {
+          // In sustain phase: hold at peak, count down timer
+          _peakHoldTimer[i] -= frameMs
+          if (_peakHoldTimer[i] < 0) _peakHoldTimer[i] = 0
+        } else {
+          // Sustain over: accelerate fall
           _peakArr[i] = Math.max(0, _peakArr[i] - _peakSpeed[i])
           _peakSpeed[i] = _peakSpeed[i] * 1.05
         }
       }
     }
+
     var settledNow = silent === true
     if (settledNow) {
       for (var q = 0; q < n; q++) {
@@ -212,7 +230,7 @@ Canvas {
   }
 
   function _modeSig() {
-    return visual + "|" + (reflect ? 1 : 0) + "|" + (spikes ? 1 : 0) + "|" + (fire ? 1 : 0) + "|" + (stacks ? 1 : 0) + "|" + (peaks ? 1 : 0) + "|" + (mono ? 1 : 0) + "|" + (monoLight ? 1 : 0) + "|" + (artMode ? 1 : 0) + "|" + (wash ? 1 : 0) + "|" + (dots ? 1 : 0) + "|" + gapPx + "|" + peakFalloff + "|" + stackScale + "|" + barCount + "|" + spikeBars + "|" + scopeLineWidth + "|" + sensitivity + "|" + (silent ? 1 : 0) + "|" + _palSig
+    return visual + "|" + (reflect ? 1 : 0) + "|" + (spikes ? 1 : 0) + "|" + (fire ? 1 : 0) + "|" + (stacks ? 1 : 0) + "|" + (peaks ? 1 : 0) + "|" + (mono ? 1 : 0) + "|" + (monoLight ? 1 : 0) + "|" + (artMode ? 1 : 0) + "|" + (wash ? 1 : 0) + "|" + (dots ? 1 : 0) + "|" + gapPx + "|" + peakFalloff + "|" + peakSustainMs + "|" + stackScale + "|" + barCount + "|" + spikeBars + "|" + scopeLineWidth + "|" + sensitivity + "|" + (silent ? 1 : 0) + "|" + _palSig
   }
 
   function _computeSig(b, n) {
@@ -287,6 +305,7 @@ Canvas {
   onVisualChanged: requestPaint()
   onPeaksChanged: requestPaint()
   onPeakFalloffChanged: requestPaint()
+  onPeakSustainMsChanged: requestPaint()
   onScopeLineWidthChanged: requestPaint()
   onMonoChanged: requestPaint()
   onMonoLightChanged: requestPaint()
@@ -402,6 +421,10 @@ Canvas {
       _peakSpeed = []
       var _sp0 = (0.5 + peakFalloff * 4.5) / 256
       for (var s = 0; s < n; s++) _peakSpeed.push(_sp0)
+    }
+    if (_peakHoldTimer.length !== n) {
+      _peakHoldTimer = []
+      for (var h = 0; h < n; h++) _peakHoldTimer.push(0)
     }
     // Flat-fill fast path (mono/artMode): every body shares one fillStyle,
     // so all bodies join a single path + one fill instead of N fills.

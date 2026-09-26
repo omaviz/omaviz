@@ -4,7 +4,7 @@ import Quickshell
 import Quickshell.Io
 import Quickshell.Services.Mpris
 import Qt5Compat.GraphicalEffects
-import "Model.js" as Model
+import "ModelStore.js" as Store
 
 Window {
   id: win
@@ -17,13 +17,14 @@ Window {
   color: "#0c0c12"
   flags: Qt.Window | Qt.WindowStaysOnTopHint
 
-  property var spectrumBands: Model.spectrumData.bands
+  property var spectrumBands: []
   property var spectrumWave: []
-  property bool spectrumSilent: Model.spectrumData.silent
-  // Live viz options (peaks/falloff/spikes/fire) — re-parsed on each poll
-  // so settings-panel changes reflect in the open window within ~250ms.
-  property var vizConfig: Model.defaultConfig()
-  function refreshVizConfig() { win.vizConfig = Model.readConfigFromText(cfgWrite.text()) }
+  property bool spectrumSilent: true
+  // Live viz options from Store (parsed from TOML on poll)
+  property var vizConfig: Store.defaultConfig()
+
+  function refreshVizConfig() { win.vizConfig = Store.loadFromTOML(cfgWrite.text()) }
+
   // ---- Now-playing (MPRIS, zero deps — Quickshell built-in) ----
   // Player pick mirrors the shell media service: prefer a playing source
   // with track metadata, else the first source that has any.
@@ -44,9 +45,9 @@ Window {
   readonly property string trackArtist: win.activePlayer ? (win.activePlayer.trackArtist || "") : ""
   readonly property string trackArt: win.activePlayer ? (win.activePlayer.trackArtUrl || "") : ""
   readonly property string trackLabel: win.trackArtist !== "" ? win.trackArtist + " — " + win.trackTitle : win.trackTitle
-  readonly property string modeName: win.vizConfig.scope === true ? "Omaviz (Scope)" : "Omaviz"
+  readonly property string modeName: win.vizConfig.desktop && win.vizConfig.desktop.scope === true ? "Omaviz (Scope)" : "Omaviz"
   // Artwork available: MPRIS art URL present and backdrop toggle on.
-  readonly property bool hasArt: win.trackArt !== "" && win.vizConfig.artwork !== false
+  readonly property bool hasArt: win.trackArt !== "" && (win.vizConfig.desktop && win.vizConfig.desktop.artwork !== false)
   readonly property string playerSource: win.activePlayer ? (win.activePlayer.identity || win.activePlayer.desktopEntry || "") : ""
 
   Process {
@@ -54,10 +55,10 @@ Window {
     running: false
     // Wave snippet is scope-only: Bars mode never reads it, so omit the
     // flag (and its ~0.7KB/line of JSON.parse) unless scope is on.
-    // Fall-mode and scope are spawn-time: restart the bridge on flip.
-    command: [Model.engineBin, "--bands", "256"].concat(
-      win.vizConfig.scope === true ? ["--wave"] : []).concat(
-      win.vizConfig.linearFall === true ? ["--fall-mode", "linear"] : [])
+    // Engine now outputs raw bands (no fall-mode). --wave only for scope.
+    command: [Store.engineBin, "--bands", "256"].concat(
+      win.vizConfig.desktop && win.vizConfig.desktop.scope === true ? ["--wave"] : []
+    )
     stdout: SplitParser {
       splitMarker: "\n"
       onRead: function(data) {
@@ -116,7 +117,7 @@ Window {
       // FastBlur caches: static art costs one frame, not per-frame.
       Item {
         anchors.fill: parent
-        visible: win.vizConfig.artwork !== false
+        visible: win.vizConfig.desktop && win.vizConfig.desktop.artwork !== false
         opacity: win.trackArt !== "" ? 1 : 0
         Behavior on opacity { NumberAnimation { duration: 900 } }
         Image {
@@ -159,7 +160,7 @@ Window {
         anchors.bottom: parent.bottom
         anchors.bottomMargin: 4
         height: parent.height - 4
-        visible: win.vizConfig.dots !== false
+        visible: win.vizConfig.desktop && win.vizConfig.desktop.dots !== false
       }
       // Single active renderer (Loader unloads the other): a hidden
       // Canvas still runs its paint JS, so dual instantiation doubles
@@ -192,35 +193,35 @@ Window {
         bands: win.spectrumBands
         silent: win.spectrumSilent
         wave: win.spectrumWave
-        // 30Hz decimated feed (bridge skips odd frames) — peak physics
-        // compensates with two substeps per arrival (see dataFps).
-        dataFps: 30
+        // Engine now emits at ~60Hz for all surfaces. Desktop gets raw feed.
+        dataFps: 60
 
-        visual: win.vizConfig.scope === true ? "Oscilloscope" : "Bars"
+        visual: win.vizConfig.desktop && win.vizConfig.desktop.scope === true ? "Oscilloscope" : "Bars"
         artMode: false
-        wash: win.vizConfig.artwork !== false
+        wash: win.vizConfig.desktop && win.vizConfig.desktop.artwork !== false
         dots: false   // static underlay above
-        reflect: win.vizConfig.reflect === true
-        scopeLineWidth: win.vizConfig.scopeThickness ?? 2
+        reflect: win.vizConfig.desktop && win.vizConfig.desktop.reflect === true
+        scopeLineWidth: win.vizConfig.desktop ? (win.vizConfig.desktop.scopeThickness ?? 2) : 2
 
         colorSync: true
         barCount: Math.max(16, Math.floor((parent.width - 8) / 10))
-        gapPx: Math.min(6, Math.max(0, win.vizConfig.gap ?? 1))
+        gapPx: Math.min(6, Math.max(0, win.vizConfig.desktop ? (win.vizConfig.desktop.gap ?? 1) : 1))
         barWidthExtra: 4
 
         // Peak settings — live from config (settings panel writes).
-        peaks: win.vizConfig.peaks !== false
-        peakFalloff: win.vizConfig.peakFalloff ?? 0.5
-        spikes: win.vizConfig.spikes === true
-        fire: win.vizConfig.fire === true
-        stacks: win.vizConfig.stacks === true
+        peaks: win.vizConfig.desktop && win.vizConfig.desktop.peaks !== false
+        peakFalloff: win.vizConfig.desktop ? (win.vizConfig.desktop.peakFalloff ?? 0.1) : 0.1
+        peakSustainMs: win.vizConfig.desktop ? (win.vizConfig.desktop.peakSustainMs ?? 100) : 100
+        spikes: win.vizConfig.desktop && win.vizConfig.desktop.spikes === true
+        fire: win.vizConfig.desktop && win.vizConfig.desktop.fire === true
+        stacks: win.vizConfig.desktop && win.vizConfig.desktop.stacks === true
         stackScale: 2
-        sensitivity: win.vizConfig.sensitivity ?? 1.0
-        barColorCustom: win.vizConfig.barColorCustom === true
-        barColorFrom: win.vizConfig.barColorFrom || "#e68e0d"
-        barColorTo: win.vizConfig.barColorTo || "#f59e0b"
-        themeBottom: win.vizConfig.themeBottom || "#e68e0d"
-        themeTop: win.vizConfig.themeTop || "#f59e0b"
+        sensitivity: win.vizConfig.audio ? (win.vizConfig.audio.sensitivity ?? 1.0) : 1.0
+        barColorCustom: win.vizConfig.desktop && win.vizConfig.desktop.barColorCustom === true
+        barColorFrom: win.vizConfig.desktop ? (win.vizConfig.desktop.barColorFrom || "#e68e0d") : "#e68e0d"
+        barColorTo: win.vizConfig.desktop ? (win.vizConfig.desktop.barColorTo || "#f59e0b") : "#f59e0b"
+        themeBottom: win.vizConfig.desktop ? (win.vizConfig.desktop.themeBottom || "#e68e0d") : "#e68e0d"
+        themeTop: win.vizConfig.desktop ? (win.vizConfig.desktop.themeTop || "#f59e0b") : "#f59e0b"
         }
       }
 
@@ -315,7 +316,7 @@ Window {
         }
         Text {
           text: win.playerSource
-          color: win.vizConfig.themeAccent || "#f59e0b"
+          color: win.vizConfig.desktop ? (win.vizConfig.desktop.themeAccent || "#f59e0b") : "#f59e0b"
           font.family: "monospace"
           font.pixelSize: 10
           elide: Text.ElideRight
@@ -360,7 +361,7 @@ Window {
   // (the "needs multiple tries" bug). Skip one beat when another writer
   // was active in the last 1.5s — the 6s lease tolerates the delay.
   property double _lastExternalChange: 0
-  FileView { id: cfgWrite; path: Model.configPath; onFileChanged: { win._lastExternalChange = Date.now() } }
+  FileView { id: cfgWrite; path: Store.configPath; onFileChanged: { win._lastExternalChange = Date.now() } }
   // Heartbeat lease: refresh every 2s while open so the bar knows this
   // window is LIVE. If the process dies without clearing active (crash,
   // kill -9), the stale flag expires within ~6s and the mini returns.
@@ -374,15 +375,45 @@ Window {
   }
   function setDesktopActive(v) {
     var txt = cfgWrite.text()
-    txt = Model.writeConfigKey(txt, "desktop", "active", v ? "true" : "false")
-    if (v) txt = Model.writeConfigKey(txt, "desktop", "heartbeat", String(Date.now()))
+    // If config doesn't exist or is empty, write defaults
+    if (!txt || txt.trim() === "") {
+      txt = Store.toTOML()
+    }
+    txt = Store.toTOML()
+    var lines = txt.split("\n")
+    var inDesktop = false
+    for (var i = 0; i < lines.length; i++) {
+      var line = lines[i].trim()
+      if (line === "[desktop]") { inDesktop = true; continue }
+      if (line.startsWith("[") && line.endsWith("]")) { inDesktop = false }
+      if (inDesktop && line.startsWith("active")) {
+        lines[i] = "active = " + (v ? "true" : "false")
+        break
+      }
+    }
+    txt = lines.join("\n")
     cfgWrite.setText(txt)
+    // Also write heartbeat if enabling
+    if (v) {
+      lines = txt.split("\n")
+      inDesktop = false
+      for (var i = 0; i < lines.length; i++) {
+        var line = lines[i].trim()
+        if (line === "[desktop]") { inDesktop = true; continue }
+        if (line.startsWith("[") && line.endsWith("]")) { inDesktop = false }
+        if (inDesktop && line.startsWith("heartbeat")) {
+          lines[i] = "heartbeat = \"" + String(Date.now()) + "\""
+          break
+        }
+      }
+      txt = lines.join("\n")
+      cfgWrite.setText(txt)
+    }
   }
   // Claim the shared flag once config text is available (covers
   // app-launcher + keybind paths that bypass BarWidget's detach()).
   property bool _claimed: false
   property bool _allowClose: false
-  property bool _lastLinearFall: false
   property bool _lastScope: false
   // Config-poll guard (perf): the TOML parse + full binding cascade runs
   // only when the file text actually changed — not 4x/sec unconditionally.
@@ -411,7 +442,7 @@ Window {
       // Check enabled state: close window when visualization is disabled
       var enabled = true
       try {
-        var val = Model.readTomlValue(txt, "desktop", "enabled")
+        var val = Store.readTomlValue(txt, "desktop", "enabled")
         enabled = val !== "false"
       } catch(e) {}
       if (!enabled) {
@@ -420,12 +451,10 @@ Window {
         closeTimer.restart()
         return
       }
-      // Engine flags are spawn-time: restart the bridge when fall-mode or
-      // scope flips (scope toggles the --wave feed).
-      var lf = win.vizConfig.linearFall === true
-      var sc = win.vizConfig.scope === true
-      if (win._lastLinearFall !== lf || win._lastScope !== sc) {
-        win._lastLinearFall = lf
+      // Engine flags are spawn-time: restart the bridge when scope flips
+      // (scope toggles the --wave feed).
+      var sc = win.vizConfig.desktop && win.vizConfig.desktop.scope === true
+      if (win._lastScope !== sc) {
         win._lastScope = sc
         if (bridge.running) { bridge.running = false; bridge.running = true }
       }

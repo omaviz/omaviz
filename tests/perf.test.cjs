@@ -71,17 +71,18 @@ test("config poll skips parse when text unchanged", () => {
 })
 
 test("wave feed is scope-only with bridge restart on flip", () => {
-  assert.ok(desk.includes('win.vizConfig.scope === true ? ["--wave"]'))
+  assert.ok(desk.includes('win.vizConfig.desktop && win.vizConfig.desktop.scope === true ? ["--wave"]'))
   assert.ok(desk.includes("_lastScope"))
 })
 
-test("feed decimated to 30Hz with physics compensation", () => {
-  // bridge skips odd frames; canvas runs 2 physics substeps at 30Hz
-  assert.ok(desk.includes("win._frameSeq++"))
-  assert.ok(desk.includes("(win._frameSeq & 1) === 0) return"))
-  assert.ok(desk.includes("dataFps: 30"))
+test("engine emits raw bands at 60Hz for all surfaces (no decimation)", () => {
+  // Desktop now gets full 60Hz feed like mini/preview
+  assert.ok(desk.includes("dataFps: 60"))
   assert.ok(src.includes("property real dataFps: 60"))
-  assert.ok(src.includes("var steps = dataFps > 45 ? 1 : 2"))
+  // No more 2-step physics compensation needed (single step at 60Hz)
+  assert.ok(!src.includes("var steps = dataFps > 45 ? 1 : 2"))
+  // Engine no longer has --fall-mode flag
+  assert.ok(!desk.includes("--fall-mode"))
 })
 
 test("wash paints overlap-free analytic columns", () => {
@@ -99,4 +100,26 @@ test("paint reuses maybe-paint hash via frame-stamped stash", () => {
 
 test("artwork blur is cached (static source)", () => {
   assert.ok(desk.includes("cached: true"))
+})
+
+test("Winamp peak physics: sustain + accelerating falloff", () => {
+  assert.ok(src.includes("peakSustainMs"))
+  assert.ok(src.includes("_peakHoldTimer"))
+  assert.ok(src.includes("_peakHoldTimer[i] > 0"))
+  assert.ok(src.includes("_peakHoldTimer[i] -= frameMs"))
+  assert.ok(src.includes("_peakSpeed[i] * 1.05"))
+})
+
+test("ModelStore.js exports reactive singleton API", () => {
+  const store = fs.readFileSync(path.join(__dirname, "..", "ModelStore.js"), "utf8")
+  assert.ok(store.includes(".pragma library"))
+  assert.ok(store.includes("function defaultConfig"))
+  assert.ok(store.includes("function get"))
+  assert.ok(store.includes("function set"))
+  assert.ok(store.includes("function onChanged"))
+  assert.ok(store.includes("function loadFromTOML"))
+  assert.ok(store.includes("function toTOML"))
+  assert.ok(store.includes("function writeConfigKey"))
+  assert.ok(store.includes("function parseSpectrumLine"))
+  assert.ok(store.includes("configPath"))
 })

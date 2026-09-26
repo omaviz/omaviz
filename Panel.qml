@@ -4,7 +4,7 @@ import Quickshell
 import Quickshell.Io
 import qs.Commons
 import qs.Ui
-import "Model.js" as Model
+import "ModelStore.js" as Store
 
 Panel {
   id: root
@@ -13,19 +13,19 @@ Panel {
   manageIpc: false
 
   // Live config binding — refreshed when hostWidget.config changes (via noteWrite)
-  readonly property var hcfg: root.hostWidget ? root.hostWidget.config : Model.defaultConfig()
+  readonly property var hcfg: root.hostWidget ? root.hostWidget.config : Store.defaultConfig()
   property var anchorItem: null
   property var hostWidget: null
 
   readonly property string sourceLabelText:
-    Model.sourceLabel(Model.spectrumData.source || "")
+    Store.sourceLabel(Store.spectrumData.source || "")
 
-  readonly property bool isScope: root.hcfg.scope === true
+  readonly property bool isScope: root.hcfg.desktop && root.hcfg.desktop.scope === true
   readonly property bool isSpectrum: !root.isScope
-  readonly property bool peaksOn: root.hcfg.peaks !== false
-  readonly property bool spikesOn: root.hcfg.spikes === true
+  readonly property bool peaksOn: root.hcfg.desktop && root.hcfg.desktop.peaks !== false
+  readonly property bool spikesOn: root.hcfg.desktop && root.hcfg.desktop.spikes === true
   property bool showAdvanced: false
-  property bool vizEnabled: Model.getSharedConfig().enabled !== false
+  property bool vizEnabled: Store.get("desktop.enabled") !== false
   function setVizEnabled(v) {
     vizEnabled = v
     if (root.hostWidget && root.hostWidget.writeEnabled) root.hostWidget.writeEnabled(v)
@@ -185,7 +185,7 @@ Panel {
         DotsCanvas {
           anchors.fill: parent
           anchors.margins: Style.space(6)
-          visible: root.hcfg.dots !== false
+          visible: root.hcfg.desktop && root.hcfg.desktop.dots !== false
         }
         VisualCanvas {
           id: previewViz
@@ -197,21 +197,22 @@ Panel {
           wave: root.hostWidget ? root.hostWidget.spectrumWave : []
           visual: root.isScope ? "Oscilloscope" : "Bars"
           artMode: false
-          wash: root.hcfg.artwork !== false
-          reflect: root.hcfg.reflect === true
-          scopeLineWidth: (root.hcfg.scopeThickness ?? 2)
+          wash: root.hcfg.desktop && root.hcfg.desktop.artwork !== false
+          reflect: root.hcfg.desktop && root.hcfg.desktop.reflect === true
+          scopeLineWidth: (root.hcfg.desktop ? (root.hcfg.desktop.scopeThickness ?? 2) : 2)
           colorSync: true
           barCount: 64
           gapPx: root.hostWidget ? Math.min(6, Math.max(0, root.hostWidget.barGap)) : 1
           peaks: root.peaksOn
-          peakFalloff: (root.hcfg.peakFalloff ?? 0.5)
+          peakFalloff: root.hcfg.desktop ? (root.hcfg.desktop.peakFalloff ?? 0.1) : 0.1
+          peakSustainMs: root.hcfg.desktop ? (root.hcfg.desktop.peakSustainMs ?? 100) : 100
           spikes: root.spikesOn
-          fire: root.hcfg.fire === true
-          stacks: root.hcfg.stacks === true
-          sensitivity: (root.hcfg.sensitivity ?? 1.0)
-          barColorCustom: root.hcfg.barColorCustom === true
-          barColorFrom: root.hcfg.barColorFrom || "#e68e0d"
-          barColorTo: root.hcfg.barColorTo || "#f59e0b"
+          fire: root.hcfg.desktop && root.hcfg.desktop.fire === true
+          stacks: root.hcfg.desktop && root.hcfg.desktop.stacks === true
+          sensitivity: root.hcfg.audio ? (root.hcfg.audio.sensitivity ?? 1.0) : 1.0
+          barColorCustom: root.hcfg.desktop && root.hcfg.desktop.barColorCustom === true
+          barColorFrom: root.hcfg.desktop ? (root.hcfg.desktop.barColorFrom || "#e68e0d") : "#e68e0d"
+          barColorTo: root.hcfg.desktop ? (root.hcfg.desktop.barColorTo || "#f59e0b") : "#f59e0b"
           themeBottom: Qt.darker(Color.accent, 1.3)
           themeTop: Color.accent
         }
@@ -324,8 +325,8 @@ Panel {
                   bar: root.bar
                   enabled: root.peaksOn
                   minimum: 0; maximum: 1; step: 0.05
-                  value: (root.hcfg.peakFalloff ?? 0.5)
-                  onReleased: function(v) { if (root.hostWidget) root.hostWidget.writeVizOption("peak_falloff", Math.round(v * 20) / 20) }
+                  value: (root.hcfg.desktop ? (root.hcfg.desktop.peakFalloff ?? 0.1) : 0.1)
+                  onReleased: function(v) { if (root.hostWidget) root.hostWidget.writeVizOption("peakFalloff", Math.round(v * 20) / 20) }
                 }
               }
             }
@@ -340,7 +341,7 @@ Panel {
               width: (parent.width - Style.space(14)) / 2
               label: "Reflection"
               description: "Floor mirror"
-              checked: root.hcfg.reflect === true
+              checked: root.hcfg.desktop && root.hcfg.desktop.reflect === true
               onClicked: if (root.hostWidget) root.hostWidget.writeVizOption("reflect", !checked)
             }
 
@@ -348,7 +349,7 @@ Panel {
               width: (parent.width - Style.space(14)) / 2
               label: "Artwork backdrop"
               description: "Immersive artwork"
-              checked: root.hcfg.artwork !== false
+              checked: root.hcfg.desktop && root.hcfg.desktop.artwork !== false
               onClicked: if (root.hostWidget) root.hostWidget.writeVizOption("artwork", !checked)
             }
           }
@@ -401,19 +402,19 @@ Panel {
                   }
                   ToggleSwitch {
                     id: customSwitch
-                    checked: root.hcfg.barColorCustom === true
+                    checked: root.hcfg.desktop && root.hcfg.desktop.barColorCustom === true
                     foreground: root.bar ? root.bar.foreground : Color.foreground
                     accent: Color.accent
                     anchors.verticalCenter: parent.verticalCenter
-                    onToggled: if (root.hostWidget) root.hostWidget.writeVizOption("bar_color_custom", !checked)
+                    onToggled: if (root.hostWidget) root.hostWidget.writeVizOption("barColorCustom", !checked)
                   }
                 }
 
                 Column {
                   width: (parent.width - Style.space(14)) / 2
                   spacing: Style.space(4)
-                  enabled: root.hcfg.barColorCustom === true
-                  opacity: root.hcfg.barColorCustom === true ? 1.0 : 0.45
+                  enabled: root.hcfg.desktop && root.hcfg.desktop.barColorCustom === true
+                  opacity: (root.hcfg.desktop && root.hcfg.desktop.barColorCustom === true) ? 1.0 : 0.45
 
                   Text {
                     text: "Custom tones"
@@ -437,13 +438,13 @@ Panel {
 
                     HexField {
                       width: (parent.width - Style.space(8)) / 2
-                      value: root.hcfg.barColorFrom || "#e68e0d"
-                      onAccept: function(v) { if (root.hostWidget) root.hostWidget.writeVizOption("bar_color_from", v) }
+                      value: root.hcfg.desktop ? (root.hcfg.desktop.barColorFrom || "#e68e0d") : "#e68e0d"
+                      onAccept: function(v) { if (root.hostWidget) root.hostWidget.writeVizOption("barColorFrom", v) }
                     }
                     HexField {
                       width: (parent.width - Style.space(8)) / 2
-                      value: root.hcfg.barColorTo || "#f59e0b"
-                      onAccept: function(v) { if (root.hostWidget) root.hostWidget.writeVizOption("bar_color_to", v) }
+                      value: root.hcfg.desktop ? (root.hcfg.desktop.barColorTo || "#f59e0b") : "#f59e0b"
+                      onAccept: function(v) { if (root.hostWidget) root.hostWidget.writeVizOption("barColorTo", v) }
                     }
                   }
                 }
@@ -462,12 +463,12 @@ Panel {
                       GradientStop { position: 0.0; color: modelData[0] }
                       GradientStop { position: 1.0; color: modelData[1] }
                     }
-                    border.width: (root.hcfg.barColorFrom === modelData[0] && root.hcfg.barColorTo === modelData[1]) ? 2 : 0
+                    border.width: (root.hcfg.desktop && root.hcfg.desktop.barColorFrom === modelData[0] && root.hcfg.desktop.barColorTo === modelData[1]) ? 2 : 0
                     border.color: Color.accent
                     MouseArea {
                       anchors.fill: parent
                       cursorShape: Qt.PointingHandCursor
-                      onClicked: if (root.hostWidget) root.hostWidget.writeVizOptions3("bar_color_custom", true, "bar_color_from", modelData[0], "bar_color_to", modelData[1])
+                      onClicked: if (root.hostWidget) root.hostWidget.writeVizOptions3("barColorCustom", true, "barColorFrom", modelData[0], "barColorTo", modelData[1])
                     }
                   }
                 }
@@ -518,7 +519,7 @@ Panel {
               width: (parent.width - Style.space(14)) / 2
               label: "Stacks"
               description: "Segmented Winamp bars"
-              checked: root.hcfg.stacks === true
+              checked: root.hcfg.desktop && root.hcfg.desktop.stacks === true
               onClicked: if (root.hostWidget) root.hostWidget.writeVizOption("stacks", !checked)
             }
           }
@@ -531,7 +532,7 @@ Panel {
               width: (parent.width - Style.space(14)) / 2
               label: "Fire"
               description: "Flame gradient everywhere"
-              checked: root.hcfg.fire === true
+              checked: root.hcfg.desktop && root.hcfg.desktop.fire === true
               onClicked: if (root.hostWidget) root.hostWidget.writeVizOption("fire", !checked)
             }
 
@@ -539,8 +540,8 @@ Panel {
               width: (parent.width - Style.space(14)) / 2
               label: "Linear fall"
               description: "Fixed-rate drop"
-              checked: root.hcfg.linearFall === true
-              onClicked: if (root.hostWidget) root.hostWidget.writeEngineOption("linear_fall", !checked)
+              checked: root.hcfg.desktop && root.hcfg.desktop.linearFall === true
+              onClicked: if (root.hostWidget) root.hostWidget.writeEngineOption("linearFall", !checked)
             }
           }
 
@@ -582,8 +583,8 @@ Panel {
                   width: parent.width
                   bar: root.bar
                   minimum: 1; maximum: 5; step: 0.5
-                  value: (root.hcfg.scopeThickness ?? 2)
-                  onReleased: function(v) { if (root.hostWidget) root.hostWidget.writeVizOption("scope_thickness", Math.round(v * 2) / 2) }
+                  value: (root.hcfg.desktop ? (root.hcfg.desktop.scopeThickness ?? 2) : 2)
+                  onReleased: function(v) { if (root.hostWidget) root.hostWidget.writeVizOption("scopeThickness", Math.round(v * 2) / 2) }
                 }
               }
             }
@@ -619,7 +620,7 @@ Panel {
                   width: parent.width
                   bar: root.bar
                   minimum: 0.5; maximum: 2; step: 0.1
-                  value: (root.hcfg.sensitivity ?? 1.0)
+                  value: (root.hcfg.audio ? (root.hcfg.audio.sensitivity ?? 1.0) : 1.0)
                   onReleased: function(v) { if (root.hostWidget) root.hostWidget.writeAudioOption("sensitivity", Math.round(v * 10) / 10) }
                 }
               }
@@ -628,7 +629,7 @@ Panel {
               width: (parent.width - Style.space(14)) / 2
               label: "Mono (mini only)"
               description: "B&W mini bars"
-              checked: root.hcfg.mono === true
+              checked: root.hcfg.desktop && root.hcfg.desktop.mono === true
               onClicked: if (root.hostWidget) root.hostWidget.writeVizOption("mono", !checked)
             }
           }
