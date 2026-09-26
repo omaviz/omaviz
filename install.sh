@@ -114,13 +114,12 @@ if command -v rsync >/dev/null; then
   # never foreign files a user may have dropped into the plugin dir.
   if [ -f "$PLUGIN_DIR/$MARKER" ]; then
     while IFS= read -r f; do
-      # reject blank / lines with path traversal / absolute paths
-      case "$f" in
-        "") echo "refusing to touch $PLUGIN_DIR: marker contains empty line" >&2; exit 1 ;;
-        ".."*) echo "refusing to touch $PLUGIN_DIR: marker contains path traversal: $f" >&2; exit 1 ;;
-        "/")*  echo "refusing to touch $PLUGIN_DIR: marker contains absolute path: $f" >&2; exit 1 ;;
-        *)  rm -rf "${PLUGIN_DIR:?}/$f" ;;
-      esac
+      # validate each marker entry (rejects empty, path traversal, absolute paths)
+      validate_marker_line "$f" || {
+        echo "refusing to touch $PLUGIN_DIR: invalid marker entry: $f" >&2
+        exit 1
+      }
+      rm -rf "${PLUGIN_DIR:?}/$f"
     done < "$PLUGIN_DIR/$MARKER"
   fi
   rsync -a \
@@ -134,13 +133,12 @@ else
   # manage (marker lists them), then copy fresh ones in.
   if [ -f "$PLUGIN_DIR/$MARKER" ]; then
     while IFS= read -r f; do
-      # reject blank / lines with path traversal / absolute paths
-      case "$f" in
-        "") echo "refusing to touch $PLUGIN_DIR: marker contains empty line" >&2; exit 1 ;;
-        ".."*) echo "refusing to touch $PLUGIN_DIR: marker contains path traversal: $f" >&2; exit 1 ;;
-        "/")*  echo "refusing to touch $PLUGIN_DIR: marker contains absolute path: $f" >&2; exit 1 ;;
-        *)  rm -rf "${PLUGIN_DIR:?}/$f" ;;
-      esac
+      # validate each marker entry (rejects empty, path traversal, absolute paths)
+      validate_marker_line "$f" || {
+        echo "refusing to touch $PLUGIN_DIR: invalid marker entry: $f" >&2
+        exit 1
+      }
+      rm -rf "${PLUGIN_DIR:?}/$f"
     done < "$PLUGIN_DIR/$MARKER"
   fi
   cp "$SRC"/manifest.json "$PLUGIN_DIR/"
