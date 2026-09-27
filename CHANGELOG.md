@@ -1,5 +1,29 @@
 # Changelog
 
+## 8.4.2
+
+Installer safety — the second marketplace review blocker.
+
+### Fixed
+- **Install deleted a launcher it did not own.** `install.sh` removed
+  `~/.local/share/applications/omaviz-desktop.desktop` (a legacy entry from
+  very old omaviz versions) whenever the file merely *contained* the word
+  `omaviz`, so a user-owned desktop entry that mentioned the plugin in its
+  name, comment, or own command was destroyed on install/update. Ownership is
+  now verified from the entry itself: it must be a `[Desktop Entry]` whose
+  `Exec=`/`TryExec=` command is one omaviz actually shipped — the old `omaviz`
+  CLI, or a path inside an omaviz plugin directory. Nothing is matched on the
+  word appearing elsewhere in the file.
+- **The check contradicted its own comment**, which claimed removal only "if it
+  references the omaviz plugin path". Code and comment now agree.
+
+### Tests
+- `tests/installer.test.sh` gains 7 legacy-launcher ownership scenarios: a
+  user file that mentions omaviz survives untouched, a stale `omaviz`-CLI
+  entry is removed, a plugin-path entry is removed, a lookalike command
+  (`omaviz-notes-editor`) is not matched, and an absent file is a clean no-op
+  (42 scenarios total).
+
 ## 8.4.1
 
 Installer/uninstaller safety — resolves the open marketplace review blocker.

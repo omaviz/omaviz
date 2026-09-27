@@ -35,6 +35,7 @@ export PATH="$STUBS:$PATH"
 
 PD() { printf '%s' "$HOME/.config/omarchy/plugins/org.omaviz.visualizer"; }
 LAUNCHER() { printf '%s' "$HOME/.local/share/applications/omaviz.desktop"; }
+LEGACY() { printf '%s' "$HOME/.local/share/applications/omaviz-desktop.desktop"; }
 
 new_home() {
   HOME="$SANDBOX/home-$1"
@@ -140,6 +141,44 @@ printf '[Desktop Entry]\nName=Not ours\n' >"$(LAUNCHER)"
 run_install
 check "foreign launcher backed up" "ls \"$(LAUNCHER).bak-\"* >/dev/null 2>&1"
 check "foreign launcher preserved in backup" "grep -rl 'Not ours' \"$HOME/.local/share/applications/\" >/dev/null 2>&1"
+
+# ======= legacy omaviz-desktop.desktop: only a provably-ours file is removed
+# (marketplace review: install.sh must verify ownership, not match "omaviz")
+step "legacy launcher ownership"
+# (a) the reported case: a USER file that merely mentions omaviz must survive
+new_home 11
+mkdir -p "$HOME/.local/share/applications"
+printf '[Desktop Entry]\nType=Application\nName=Omaviz notes\nComment=my omaviz scratchpad\nExec=gedit /tmp/omaviz-notes.txt\n' >"$(LEGACY)"
+run_install
+check "install exits 0"                      "[ $? -eq 0 ]"
+check "user file mentioning omaviz survives" "[ -f \"$(LEGACY)\" ]"
+check "its contents are untouched"           "grep -q 'omaviz-notes.txt' \"$(LEGACY)\""
+
+# (b) a genuinely-ours stale legacy entry (our old CLI) IS removed
+new_home 12
+mkdir -p "$HOME/.local/share/applications"
+printf '[Desktop Entry]\nType=Application\nName=Omaviz\nExec=omaviz start\n' >"$(LEGACY)"
+run_install
+check "our stale legacy entry removed"       "[ ! -e \"$(LEGACY)\" ]"
+
+# (c) a legacy entry whose Exec points inside our plugin dir is ours too
+new_home 13
+mkdir -p "$HOME/.local/share/applications"
+printf '[Desktop Entry]\nType=Application\nName=Omaviz\nExec=quickshell -p %s/Desktop.qml\n' "$(PD)" >"$(LEGACY)"
+run_install
+check "legacy entry with our plugin path removed" "[ ! -e \"$(LEGACY)\" ]"
+
+# (d) a lookalike command is NOT ours (must not prefix-match)
+new_home 14
+mkdir -p "$HOME/.local/share/applications"
+printf '[Desktop Entry]\nType=Application\nName=omaviz-notes\nExec=omaviz-notes-editor %%f\n' >"$(LEGACY)"
+run_install
+check "lookalike command survives"           "[ -f \"$(LEGACY)\" ]"
+
+# (e) absent file -> the whole path is a clean no-op
+new_home 15
+run_install
+check "no legacy file -> install exits 0"    "[ $? -eq 0 ]"
 
 # ======================================================= --purge behaviour
 step "--purge removes only omaviz's own config"

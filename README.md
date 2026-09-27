@@ -6,15 +6,15 @@ desktop visualizer window, and an oscilloscope that dances to whatever
 is playing. Same soul, zero nostalgia tax: buttery Canvas rendering,
 theme-aware, and configured with two clicks.
 
-![version](https://img.shields.io/badge/version-8.2.0-amber) ![license](https://img.shields.io/badge/license-MIT-blue)
+![version](https://img.shields.io/badge/version-8.4.2-amber) ![license](https://img.shields.io/badge/license-MIT-blue)
 
 ## Why omaviz
 
 - **It lives where you look.** No separate app to open — the visualizer
   is always there, in the bar, pulsing with your music, your calls,
   your game.
-- **One click to tweak, double-click to go big.** The settings panel
-  shows a live preview of every change. Double-click it and the same
+- **One click to tweak, one more to go big.** The settings panel
+  shows a live preview of every change — click that preview and the same
   visualization explodes onto a borderless desktop window.
 - **Your colors, everywhere.** Follow the Omarchy theme automatically,
   or dial in your own From → To gradient — mini, preview, desktop and
@@ -54,18 +54,51 @@ theme-aware, and configured with two clicks.
 
 ## Install
 
-Requires Omarchy (Quickshell) + PipeWire. Zero-build: the engine binary
-ships committed, so no toolchain is needed — only `./install.sh --build`
-needs `cargo`.
+Requires Omarchy (Quickshell) + PipeWire. **Nothing has to be built or run by
+hand** — the engine binary ships committed, and Omarchy installs the plugin as
+a self-contained folder.
+
+### From the plugin marketplace (recommended)
+
+Install from the Omarchy plugin marketplace, or equivalently:
 
 ```bash
-cd ~/omaviz
-./install.sh            # zero-build: uses the committed engine binary
-./install.sh --build    # rebuild engine from Rust source first
-./uninstall.sh          # remove plugin (+ launcher); --purge also config
+omarchy plugin add https://github.com/omaviz/omaviz --enable
 ```
 
-Requires: Omarchy (quickshell), PipeWire, `cargo` (only for `--build`).
+That is the entire install. `omarchy plugin add` clones this repository,
+validates it, and moves the folder into
+`~/.config/omarchy/plugins/org.omaviz.visualizer/` — **no script from this
+repository is executed, and there is nothing to run afterwards.** The engine
+ships as a committed executable at `bin/omaviz-engine` (git mode `100755`, so
+the exec bit survives the clone), and the bar widget spawns it from that path
+as soon as it mounts.
+
+Removing it is the standard manager operation — its own tool, not ours:
+
+```bash
+omarchy plugin remove org.omaviz.visualizer
+```
+
+There is no `manual-setup` step. If you ever see no bars, check
+`omarchy plugin list` shows the plugin enabled.
+
+### Local development / manual clone
+
+`install.sh` is a convenience for working on omaviz from a git checkout. It is
+**not** part of the marketplace install path and never runs during one.
+
+```bash
+./install.sh            # copy into the plugin dir, enable, restart the shell
+./install.sh --build    # same, but rebuild the engine from Rust source first
+./uninstall.sh          # remove the plugin (+ launcher); --purge also config
+```
+
+Both scripts are ownership-guarded: they never delete or replace files omaviz
+does not own, and uninstall removes only what this plugin installed
+(`tests/installer.test.sh` proves it).
+
+Requires: Omarchy (quickshell), PipeWire. `cargo` is needed only for `--build`.
 
 ## Testing
 
@@ -89,15 +122,15 @@ untouched unless you pass `--force` (which takes a timestamped backup
 first). Foreign files inside a managed install — and unrelated
 `.desktop` launchers — always survive install, update, and uninstall.
 
-Single-click the mini for settings · double-click (or `SUPER+V`) for the
-desktop window · close it and the mini returns by itself.
+Single-click the mini for settings · single-click the preview inside it to
+detach the desktop window · close it and the mini returns by itself.
 
 ## Mini
 
 Thirty-two live bars riding in your bar, fed by the 128-band engine —
 with a dotted-skin backdrop and a B&W Mono mode for tiny sizes.
-Single-click the mini for the settings panel below, double-click it
-(or `SUPER+V`) for the desktop window:
+Single-click the mini for the settings panel below; single-click the live
+preview inside it to detach the desktop window:
 
 ![settings panel with mini in the bar](docs/screenshots/Mini.png)
 
@@ -110,7 +143,7 @@ install and it just runs. Rebuild from source only if you want to
 hack on it (`./install.sh --build`).
 
 ```bash
-omaviz-engine --bands 128 --fall-mode exp|linear --fft-size 2048 --wave
+omaviz-engine --bands 128 --fft-size 2048 --wave
 ```
 
 One JSON frame per line on stdout (`bands, energy, beat, silent, source,
