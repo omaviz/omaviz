@@ -142,7 +142,7 @@ else
     done < "$PLUGIN_DIR/$MARKER"
   fi
   cp "$SRC"/manifest.json "$PLUGIN_DIR/"
-  cp "$SRC"/*.qml "$SRC"/Model.js "$PLUGIN_DIR/"
+  cp "$SRC"/*.qml "$SRC"/ModelStore.js "$SRC"/Physics.js "$PLUGIN_DIR/"
   # Optional file classes — copy only those that exist (glob would otherwise
   # fail under `set -e` when a class is absent, e.g. no .frag/.qsb in v8+).
   for f in "$SRC"/*.frag "$SRC"/*.qsb; do
@@ -155,7 +155,7 @@ chmod +x "$PLUGIN_DIR/bin/omaviz-engine"
 # this installer owns, so future runs (and uninstall) only ever touch these.
 {
   echo "manifest.json"
-  for f in "$SRC"/*.qml "$SRC"/Model.js "$SRC"/*.frag "$SRC"/*.qsb; do
+  for f in "$SRC"/*.qml "$SRC"/ModelStore.js "$SRC"/Physics.js "$SRC"/*.frag "$SRC"/*.qsb; do
     [ -e "$f" ] && echo "${f#"$SRC"/}"
   done
   echo "assets/"

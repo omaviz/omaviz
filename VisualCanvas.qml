@@ -1,17 +1,33 @@
 import QtQuick
+import "Physics.js" as Physics
 
 Canvas {
   id: cv
   property var bands: []
+  // `silent` is now ADVISORY ONLY (drives the settle optimisation). It never
+  // zeroes bars — the engine's silence flag used to hard-zero every bar on any
+  // quiet passage, which is what made faint audio invisible and made bars
+  // vanish instantly instead of falling.
   property bool silent: false
   property string visual: "Bars"
-  property bool colorSync: false
+  // NOTE: colorSync is declared ONCE, further down with its rationale — a
+  // second declaration here made the QML engine reject the whole type
+  // ("Duplicate property name" -> "Type VisualCanvas unavailable"), which is
+  // what silently killed the mini widget.
   property int barCount: 0
   property color monoColor: "#dce0eb"
   property int gapPx: 1
   property int barWidthExtra: 0
   property bool peaks: true
   property real peakFalloff: 0.5
+  // Winamp peak caps: hold the high-water mark for this long, then fall with
+  // an accelerating speed (see Physics.js).
+  property real peakSustainMs: 100
+  // Bar release shape: true = fixed-rate linear drop, false = exponential.
+  property bool linearFall: true
+  // Targets below this are treated as zero so inaudible noise does not render
+  // as a permanently jittering 1px floor.
+  property real noiseFloor: 0.02
   property bool spikes: false
   property bool fire: false
   property bool stacks: false
@@ -53,6 +69,11 @@ Canvas {
   property int spikeBars: 0
   property var _peakArr: []
   property var _peakSpeed: []
+  property var _peakHold: []
+  // Rendered bar heights (release envelope) — what actually gets painted.
+  property var _barArr: []
+  // Scratch target buffer (raw bands * sensitivity) handed to Physics.step.
+  property var _targets: []
 
   function displayBands() {
     var b = bands
@@ -171,48 +192,34 @@ Canvas {
   property double _lastBandsSig: -1
   property string _lastModeSig: ""
 
-  function _sizePeaks(n) {
-    if (_peakArr.length !== n) {
-      _peakArr = []
-      for (var p = 0; p < n; p++) _peakArr.push(0)
-    }
-    if (_peakSpeed.length !== n) {
-      _peakSpeed = []
-      var s0 = (0.5 + peakFalloff * 4.5) / 256
-      for (var s = 0; s < n; s++) _peakSpeed.push(s0)
-    }
-  }
-
   function _advancePhysics(b, n) {
-    _sizePeaks(n)
-    // Winamp peak physics: caught peaks reset a slow drop speed that
-    // accelerates ×1.05/frame — hang, then snap down (not linear decay).
-    // falloff maps to initial drop speed (~0.5/256 → ~5/256 per frame).
-    // At 30Hz feeds each arrival advances two substeps on the same sample
-    // (catch is idempotent, decay doubles) to track the 60Hz trajectory.
-    var speed0 = (0.5 + peakFalloff * 4.5) / 256
-    var steps = dataFps > 45 ? 1 : 2
-    for (var st = 0; st < steps; st++) {
-      for (var i = 0; i < n; i++) {
-        var v = silent ? 0 : Math.min(1, Math.max(0, b[i]) * sensitivity)
-        if (v >= _peakArr[i]) { _peakArr[i] = v; _peakSpeed[i] = speed0 }
-        else {
-          _peakArr[i] = Math.max(0, _peakArr[i] - _peakSpeed[i])
-          _peakSpeed[i] = _peakSpeed[i] * 1.05
-        }
-      }
+    // ALL motion lives in Physics.js (unit-tested under node): instant attack,
+    // rate-limited release, peak caps with sustain hold + accelerating fall.
+    // Nothing here special-cases the surface, so mini / preview / desktop
+    // share one trajectory.
+    _barArr = Physics.ensure(_barArr, n, 0)
+    _peakArr = Physics.ensure(_peakArr, n, 0)
+    _peakHold = Physics.ensure(_peakHold, n, 0)
+    _peakSpeed = Physics.ensure(_peakSpeed, n, Physics.peakSpeed0(peakFalloff))
+    _targets = Physics.ensure(_targets, n, 0)
+    for (var i = 0; i < n; i++) {
+      var v = b[i]
+      if (v !== v || v < 0) v = 0
+      if (v > 1) v = 1
+      _targets[i] = v * sensitivity
     }
-    var settledNow = silent === true
-    if (settledNow) {
-      for (var q = 0; q < n; q++) {
-        if (_peakArr[q] >= 0.02) { settledNow = false; break }
-      }
-    }
-    _peaksSettled = settledNow
+    var dt = 1000 / Math.max(1, dataFps)
+    Physics.step(_barArr, _peakArr, _peakHold, _peakSpeed, _targets, dt, {
+      linearFall: linearFall,
+      peakFalloff: peakFalloff,
+      peakSustainMs: peakSustainMs,
+      noiseFloor: noiseFloor
+    })
+    _peaksSettled = Physics.settled(_barArr, _peakArr, _targets)
   }
 
   function _modeSig() {
-    return visual + "|" + (reflect ? 1 : 0) + "|" + (spikes ? 1 : 0) + "|" + (fire ? 1 : 0) + "|" + (stacks ? 1 : 0) + "|" + (peaks ? 1 : 0) + "|" + (mono ? 1 : 0) + "|" + (monoLight ? 1 : 0) + "|" + (artMode ? 1 : 0) + "|" + (wash ? 1 : 0) + "|" + (dots ? 1 : 0) + "|" + gapPx + "|" + peakFalloff + "|" + stackScale + "|" + barCount + "|" + spikeBars + "|" + scopeLineWidth + "|" + sensitivity + "|" + (silent ? 1 : 0) + "|" + _palSig
+    return visual + "|" + (reflect ? 1 : 0) + "|" + (spikes ? 1 : 0) + "|" + (fire ? 1 : 0) + "|" + (stacks ? 1 : 0) + "|" + (peaks ? 1 : 0) + "|" + (mono ? 1 : 0) + "|" + (monoLight ? 1 : 0) + "|" + (artMode ? 1 : 0) + "|" + (wash ? 1 : 0) + "|" + (dots ? 1 : 0) + "|" + gapPx + "|" + peakFalloff + "|" + peakSustainMs + "|" + (linearFall ? 1 : 0) + "|" + noiseFloor + "|" + stackScale + "|" + barCount + "|" + spikeBars + "|" + scopeLineWidth + "|" + sensitivity + "|" + (silent ? 1 : 0) + "|" + _palSig
   }
 
   function _computeSig(b, n) {
@@ -230,8 +237,9 @@ Canvas {
       return hsh
     }
     for (var i = 0; i < n; i++) {
-      var v = silent ? 0 : Math.min(1, Math.max(0, b[i]) * sensitivity)
-      hsh ^= (Math.round(v * areaH) & 0xffff); hsh = Math.imul(hsh, 16777619) >>> 0
+      // Hash the RENDERED envelope (not the raw frame): the visual output is
+      // what determines whether a repaint is needed.
+      hsh ^= (Math.round((_barArr[i] || 0) * areaH) & 0xffff); hsh = Math.imul(hsh, 16777619) >>> 0
       hsh ^= (Math.round((_peakArr[i] || 0) * areaH) & 0xffff); hsh = Math.imul(hsh, 16777619) >>> 0
     }
     return hsh
@@ -287,6 +295,9 @@ Canvas {
   onVisualChanged: requestPaint()
   onPeaksChanged: requestPaint()
   onPeakFalloffChanged: requestPaint()
+  onPeakSustainMsChanged: requestPaint()
+  onLinearFallChanged: requestPaint()
+  onNoiseFloorChanged: requestPaint()
   onScopeLineWidthChanged: requestPaint()
   onMonoChanged: requestPaint()
   onMonoLightChanged: requestPaint()
@@ -342,7 +353,7 @@ Canvas {
       var gw = width / n
       var prvR = 0, prvG = 0, prvB = 0, prvH = 0, prvStyle = "", hasPrv = false
       for (var g = 0; g < n; g++) {
-        var gv = silent ? 0 : Math.min(1, Math.max(0, b[g]) * sensitivity)
+        var gv = _barArr[g] || 0
         var curR, curG, curB, curStyle
         if (fire) {
           curR = 255; curG = Math.round(120 + gv * 120); curB = 60
@@ -394,15 +405,8 @@ Canvas {
     // paints that precede data, e.g. first paint or resize without frames).
     // Physics itself advances in _advancePhysics on data arrival — paints
     // never move the simulation (see paint-dedup note at the handlers).
-    if (_peakArr.length !== n) {
-      _peakArr = []
-      for (var p = 0; p < n; p++) _peakArr.push(0)
-    }
-    if (_peakSpeed.length !== n) {
-      _peakSpeed = []
-      var _sp0 = (0.5 + peakFalloff * 4.5) / 256
-      for (var s = 0; s < n; s++) _peakSpeed.push(_sp0)
-    }
+    if (_peakArr.length !== n || _barArr.length !== n)
+      _advancePhysics(b, n)
     // Flat-fill fast path (mono/artMode): every body shares one fillStyle,
     // so all bodies join a single path + one fill instead of N fills.
     var useFlat = mono || artMode
@@ -426,8 +430,8 @@ Canvas {
     var barBkt = {}, barOrd = []
 
     for (var i = 0; i < n; i++) {
-      // Values only — physics already advanced on data arrival.
-      var v = silent ? 0 : Math.min(1, Math.max(0, b[i]) * sensitivity)
+      // Rendered envelope (physics already advanced on data arrival).
+      var v = _barArr[i] || 0
       var h = v * areaH
       // Floor always visible (1px minimum) — no silent-based hide
       var floorH = 1
@@ -566,7 +570,7 @@ Canvas {
       else ctx.fillStyle = fire ? fireColorAt(0.12) : Qt.darker(barColorCustom ? barColorFrom : themeBottom, 1.25);
       ctx.beginPath()
       for (var m = 0; m < n; m++) {
-        var mv = silent ? 0 : Math.min(1, Math.max(0, b[m]) * sensitivity)
+        var mv = _barArr[m] || 0
         var mh = mv * areaH * 0.5
         if (mh > 0) ctx.rect(m * (bw + gap), baseY + 2, bw + spikeOverlap, mh)
       }

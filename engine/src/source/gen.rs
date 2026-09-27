@@ -8,7 +8,7 @@
 //!
 //! CLI grammar (the text after the `gen` prefix, e.g. `--source gen=tone:freq=1000`):
 //!   gen                              -> Mixed (default)
-//!   gen=tone[:freq=440]              -> steady sine at `freq` Hz
+//!   gen=tone[:freq=440][:amp=1.0]    -> steady sine at `freq` Hz, scaled by `amp`
 //!   gen=noise                        -> deterministic pseudo-noise (incommensurate sines)
 //!   gen=sweep[:rate=0.2][:min=80][:max=7080] -> 80..7080 Hz sine sweep, `rate` Hz LFO
 //!   gen=mixed[:pulse=1.5][:low=120] -> multi-partial w/ pulsing low partial (beat/Wave)
@@ -35,6 +35,9 @@ pub struct GenParams {
     pub sweep_max: f32,
     pub mixed_pulse: f32,
     pub mixed_low: f32,
+    /// Output gain (0..1 typical). Lets tests drive a genuinely quiet —
+    /// but audible — signal to exercise the faint-audio path.
+    pub amp: f32,
 }
 
 impl Default for GenParams {
@@ -46,6 +49,7 @@ impl Default for GenParams {
             sweep_max: 7080.0,
             mixed_pulse: 1.5,
             mixed_low: 120.0,
+            amp: 1.0,
         }
     }
 }
@@ -77,6 +81,7 @@ pub fn parse_spec(spec: &str) -> Result<(GenMode, GenParams)> {
                 "max" => params.sweep_max = v.parse().unwrap_or(params.sweep_max),
                 "pulse" => params.mixed_pulse = v.parse().unwrap_or(params.mixed_pulse),
                 "low" => params.mixed_low = v.parse().unwrap_or(params.mixed_low),
+                "amp" => params.amp = v.parse().unwrap_or(params.amp),
                 _ => {}
             }
         }
@@ -115,6 +120,10 @@ fn run(tx: Sender<SourceEvent>, mode: GenMode, params: GenParams) {
 
 /// Sample the synthetic signal at time `t` (seconds). Deterministic.
 pub fn synth(mode: GenMode, t: f32, p: &GenParams) -> f32 {
+    p.amp * raw(mode, t, p)
+}
+
+fn raw(mode: GenMode, t: f32, p: &GenParams) -> f32 {
     match mode {
         GenMode::Noise => {
             // Incommensurate sines -> noise-like but fully deterministic.
@@ -167,6 +176,15 @@ mod tests {
         assert_eq!(p.sweep_rate, 2.0);
         assert_eq!(p.sweep_min, 200.0);
         assert_eq!(p.sweep_max, 6000.0);
+    }
+
+    #[test]
+    fn parse_amp_scales_output() {
+        let (_, p) = parse_spec("=tone:freq=440:amp=0.02").unwrap();
+        assert_eq!(p.amp, 0.02);
+        let quiet = synth(GenMode::Tone, 0.001, &p);
+        let full = synth(GenMode::Tone, 0.001, &GenParams::default());
+        assert!(quiet.abs() < full.abs() * 0.05, "amp must scale the signal down");
     }
 
     #[test]

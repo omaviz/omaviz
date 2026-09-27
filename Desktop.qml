@@ -4,7 +4,7 @@ import Quickshell
 import Quickshell.Io
 import Quickshell.Services.Mpris
 import Qt5Compat.GraphicalEffects
-import "Model.js" as Model
+import "ModelStore.js" as Store
 
 Window {
   id: win
@@ -17,13 +17,13 @@ Window {
   color: "#0c0c12"
   flags: Qt.Window | Qt.WindowStaysOnTopHint
 
-  property var spectrumBands: Model.spectrumData.bands
+  property var spectrumBands: Store.spectrumData.bands
   property var spectrumWave: []
-  property bool spectrumSilent: Model.spectrumData.silent
+  property bool spectrumSilent: Store.spectrumData.silent
   // Live viz options (peaks/falloff/spikes/fire) — re-parsed on each poll
   // so settings-panel changes reflect in the open window within ~250ms.
-  property var vizConfig: Model.defaultConfig()
-  function refreshVizConfig() { win.vizConfig = Model.readConfigFromText(cfgWrite.text()) }
+  property var vizConfig: Store.defaultConfig()
+  function refreshVizConfig() { win.vizConfig = Store.loadFromTOML(cfgWrite.text()) }
   // ---- Now-playing (MPRIS, zero deps — Quickshell built-in) ----
   // Player pick mirrors the shell media service: prefer a playing source
   // with track metadata, else the first source that has any.
@@ -54,18 +54,12 @@ Window {
     running: false
     // Wave snippet is scope-only: Bars mode never reads it, so omit the
     // flag (and its ~0.7KB/line of JSON.parse) unless scope is on.
-    // Fall-mode and scope are spawn-time: restart the bridge on flip.
-    command: [Model.engineBin, "--bands", "256"].concat(
-      win.vizConfig.scope === true ? ["--wave"] : []).concat(
-      win.vizConfig.linearFall === true ? ["--fall-mode", "linear"] : [])
+    // Scope is spawn-time, so the bridge restarts when it flips.
+    command: [Store.engineBin, "--bands", "256"].concat(
+      win.vizConfig.scope === true ? ["--wave"] : [])
     stdout: SplitParser {
       splitMarker: "\n"
       onRead: function(data) {
-        // 30Hz decimation (perf): paints already throttle to ~30fps, so
-        // odd frames are pure parse/physics waste. Peak caps compensate
-        // via dataFps (two physics substeps per arrival).
-        win._frameSeq++
-        if ((win._frameSeq & 1) === 0) return
         try {
           var obj = JSON.parse(String(data).trim())
           if (obj && Array.isArray(obj.bands)) {
@@ -192,9 +186,9 @@ Window {
         bands: win.spectrumBands
         silent: win.spectrumSilent
         wave: win.spectrumWave
-        // 30Hz decimated feed (bridge skips odd frames) — peak physics
-        // compensates with two substeps per arrival (see dataFps).
-        dataFps: 30
+        // Unified 60Hz feed: identical cadence to the mini/preview, so the
+        // fall trajectory is identical on every surface.
+        dataFps: 60
 
         visual: win.vizConfig.scope === true ? "Oscilloscope" : "Bars"
         artMode: false
@@ -210,7 +204,10 @@ Window {
 
         // Peak settings — live from config (settings panel writes).
         peaks: win.vizConfig.peaks !== false
-        peakFalloff: win.vizConfig.peakFalloff ?? 0.5
+        peakFalloff: win.vizConfig.peakFalloff ?? 0.1
+        peakSustainMs: win.vizConfig.peakSustainMs ?? 100
+        linearFall: win.vizConfig.linearFall !== false
+        noiseFloor: 0.02
         spikes: win.vizConfig.spikes === true
         fire: win.vizConfig.fire === true
         stacks: win.vizConfig.stacks === true
@@ -360,7 +357,7 @@ Window {
   // (the "needs multiple tries" bug). Skip one beat when another writer
   // was active in the last 1.5s — the 6s lease tolerates the delay.
   property double _lastExternalChange: 0
-  FileView { id: cfgWrite; path: Model.configPath; onFileChanged: { win._lastExternalChange = Date.now() } }
+  FileView { id: cfgWrite; path: Store.configPath; onFileChanged: { win._lastExternalChange = Date.now() } }
   // Heartbeat lease: refresh every 2s while open so the bar knows this
   // window is LIVE. If the process dies without clearing active (crash,
   // kill -9), the stale flag expires within ~6s and the mini returns.
@@ -374,21 +371,18 @@ Window {
   }
   function setDesktopActive(v) {
     var txt = cfgWrite.text()
-    txt = Model.writeConfigKey(txt, "desktop", "active", v ? "true" : "false")
-    if (v) txt = Model.writeConfigKey(txt, "desktop", "heartbeat", String(Date.now()))
+    txt = Store.writeConfigKey(txt, "desktop", "active", v ? "true" : "false")
+    if (v) txt = Store.writeConfigKey(txt, "desktop", "heartbeat", String(Date.now()))
     cfgWrite.setText(txt)
   }
   // Claim the shared flag once config text is available (covers
   // app-launcher + keybind paths that bypass BarWidget's detach()).
   property bool _claimed: false
   property bool _allowClose: false
-  property bool _lastLinearFall: false
   property bool _lastScope: false
   // Config-poll guard (perf): the TOML parse + full binding cascade runs
   // only when the file text actually changed — not 4x/sec unconditionally.
   property string _lastCfgText: ""
-  // Feed decimation parity (perf): see bridge onRead.
-  property int _frameSeq: 0
   Timer { id: closeTimer; interval: 200; repeat: false; onTriggered: win.close() }
   Timer {
     // Delayed quit: FileView.setText is async — quitting instantly in
@@ -411,7 +405,7 @@ Window {
       // Check enabled state: close window when visualization is disabled
       var enabled = true
       try {
-        var val = Model.readTomlValue(txt, "desktop", "enabled")
+        var val = Store.readTomlValue(txt, "desktop", "enabled")
         enabled = val !== "false"
       } catch(e) {}
       if (!enabled) {
@@ -420,12 +414,9 @@ Window {
         closeTimer.restart()
         return
       }
-      // Engine flags are spawn-time: restart the bridge when fall-mode or
-      // scope flips (scope toggles the --wave feed).
-      var lf = win.vizConfig.linearFall === true
+      // Scope is the only spawn-time flag now (it toggles --wave).
       var sc = win.vizConfig.scope === true
-      if (win._lastLinearFall !== lf || win._lastScope !== sc) {
-        win._lastLinearFall = lf
+      if (win._lastScope !== sc) {
         win._lastScope = sc
         if (bridge.running) { bridge.running = false; bridge.running = true }
       }

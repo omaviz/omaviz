@@ -1,0 +1,42 @@
+name: Tests (QML + JS + engine contract)
+
+# Runs the JS/QML test suites that guard the plugin's behaviour:
+#   * ModelStore  — config model, defaults invariant, TOML round-trips, store
+#   * Physics     — the shared bar/peak motion model
+#   * QML         — real qmllint syntax check, duplicate-property guard,
+#                   cross-surface architecture invariants
+#   * Engine      — drives the committed binary and asserts its frame contract
+#
+# The Rust engine's own unit tests + reproducibility live in repro-build.yml.
+
+on:
+  push:
+    paths: ["**/*.qml", "**/*.js", "**/*.cjs", "**/*.sh", "tests/**", "package.json", ".github/workflows/tests.yml"]
+  pull_request:
+    paths: ["**/*.qml", "**/*.js", "**/*.cjs", "**/*.sh", "tests/**", "package.json", ".github/workflows/tests.yml"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  js:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Show bundled engine (committed artifact)
+        run: ls -la bin/omaviz-engine && file bin/omaviz-engine || true
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+
+      - name: Install qmllint (Qt6 declarative)
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq qt6-declarative-dev-tools || \
+            echo "qmllint unavailable — that one guard self-skips"
+
+      - name: Run test suite
+        run: node --test tests/

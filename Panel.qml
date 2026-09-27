@@ -4,7 +4,7 @@ import Quickshell
 import Quickshell.Io
 import qs.Commons
 import qs.Ui
-import "Model.js" as Model
+import "ModelStore.js" as Store
 
 Panel {
   id: root
@@ -13,19 +13,19 @@ Panel {
   manageIpc: false
 
   // Live config binding — refreshed when hostWidget.config changes (via noteWrite)
-  readonly property var hcfg: root.hostWidget ? root.hostWidget.config : Model.defaultConfig()
+  readonly property var hcfg: root.hostWidget ? root.hostWidget.config : Store.defaultConfig()
   property var anchorItem: null
   property var hostWidget: null
 
   readonly property string sourceLabelText:
-    Model.sourceLabel(Model.spectrumData.source || "")
+    Store.sourceLabel(Store.spectrumData.source || "")
 
   readonly property bool isScope: root.hcfg.scope === true
   readonly property bool isSpectrum: !root.isScope
   readonly property bool peaksOn: root.hcfg.peaks !== false
   readonly property bool spikesOn: root.hcfg.spikes === true
   property bool showAdvanced: false
-  property bool vizEnabled: Model.getSharedConfig().enabled !== false
+  property bool vizEnabled: Store.getSharedConfig().enabled !== false
   function setVizEnabled(v) {
     vizEnabled = v
     if (root.hostWidget && root.hostWidget.writeEnabled) root.hostWidget.writeEnabled(v)
@@ -204,7 +204,10 @@ Panel {
           barCount: 64
           gapPx: root.hostWidget ? Math.min(6, Math.max(0, root.hostWidget.barGap)) : 1
           peaks: root.peaksOn
-          peakFalloff: (root.hcfg.peakFalloff ?? 0.5)
+          peakFalloff: (root.hcfg.peakFalloff ?? 0.1)
+          peakSustainMs: (root.hcfg.peakSustainMs ?? 100)
+          linearFall: root.hcfg.linearFall !== false
+          noiseFloor: 0.02
           spikes: root.spikesOn
           fire: root.hcfg.fire === true
           stacks: root.hcfg.stacks === true
@@ -324,7 +327,7 @@ Panel {
                   bar: root.bar
                   enabled: root.peaksOn
                   minimum: 0; maximum: 1; step: 0.05
-                  value: (root.hcfg.peakFalloff ?? 0.5)
+                  value: (root.hcfg.peakFalloff ?? 0.1)
                   onReleased: function(v) { if (root.hostWidget) root.hostWidget.writeVizOption("peak_falloff", Math.round(v * 20) / 20) }
                 }
               }

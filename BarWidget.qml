@@ -3,13 +3,13 @@ import Quickshell
 import Quickshell.Io
 import qs.Commons
 import qs.Ui
-import "Model.js" as Model
+import "ModelStore.js" as Store
 
 BarWidget {
   id: root
   moduleName: "org.omaviz.visualizer"
 
-  property var config: Model.defaultConfig()
+  property var config: Store.defaultConfig()
   // Live theme snapshot: persists the current Omarchy accent triple to
   // config whenever the theme changes, so the standalone desktop window
   // (no qs.* context) follows theme switches within its 100ms poll.
@@ -36,7 +36,7 @@ BarWidget {
     if (!root.config) return
     var top = root.colorHex(Color.accent)
     if (top === root._snappedAccent) return
-    var curTop = Model.readConfigFromText(root.readGuarded()).themeAccent || ""
+    var curTop = Store.readConfigFromText(root.readGuarded()).themeAccent || ""
     // File already fresh: adopt without writing (avoids a mount-time
     // setText, which FileView can drop with a "no path" warning).
     if (curTop === top) { root._snappedAccent = top; return }
@@ -60,7 +60,7 @@ BarWidget {
   function noteWrite(txt) {
     root._lastWriteAt = Date.now()
     root._lastWriteText = txt
-    root.config = Model.readConfigFromText(txt)
+    root.config = Store.loadFromTOML(txt)
     root.refreshDesktopLive()
   }
   function readGuarded() {
@@ -75,7 +75,7 @@ BarWidget {
   }
   readonly property int barCount: Math.max(8, (root.config && root.config.bands !== undefined) ? root.config.bands : 32)
 
-  function applyConfig(text) { root.config = Model.readConfigFromText(text) }
+  function applyConfig(text) { root.config = Store.loadFromTOML(text) }
 
   readonly property bool opened: panelLoader.item ? panelLoader.item.opened === true : false
   readonly property bool popoutSwitchClosing: panelLoader.item ? panelLoader.item.popoutSwitchClosing === true : false
@@ -116,20 +116,20 @@ BarWidget {
     running: true
     // High-res feed (128 bands): mini downsamples to 32, preview to 64 —
     // both map from rich source detail instead of a coarse 32-band feed.
-    // --wave always on (cheap scope feed); --fall-mode follows config.
-    command: [root.engineBin, "--bands", "128", "--wave"].concat(
-      root.config.linearFall === true ? ["--fall-mode", "linear"] : [])
+    // --wave always on (cheap scope feed). Physics (fall/peaks) is renderer
+    // side now, so no spawn-time flags and no restart-on-toggle.
+    command: [root.engineBin, "--bands", "128", "--wave"]
     stdout: SplitParser {
       onRead: function(data) {
         if (!root.vizEnabled) return
         var lines = String(data).split("\n")
         for (var i = 0; i < lines.length; i++) {
           var line = lines[i].trim()
-          if (line) Model.parseSpectrumLine(line)
+          if (line) Store.parseSpectrumLine(line)
         }
-        root.spectrumBands = Model.spectrumData.bands
-        root.spectrumWave = Model.spectrumData.wave
-        root.spectrumSilent = Model.spectrumData.silent
+        root.spectrumBands = Store.spectrumData.bands
+        root.spectrumWave = Store.spectrumData.wave
+        root.spectrumSilent = Store.spectrumData.silent
         root.noteSpectrumFrame()
       }
     }
@@ -184,18 +184,18 @@ BarWidget {
 
   FileView {
     id: configFile
-    path: Model.configPath
+    path: Store.configPath
     watchChanges: true
     printErrors: false
     onLoaded: {
-      root.config = Model.readConfigFromText(root.readGuarded())
+      root.config = Store.loadFromTOML(root.readGuarded())
       root.refreshDesktopLive()
     }
     onFileChanged: {
-      root.config = Model.readConfigFromText(root.readGuarded())
+      root.config = Store.loadFromTOML(root.readGuarded())
       root.refreshDesktopLive()
     }
-    onLoadFailed: root.config = Model.defaultConfig()
+    onLoadFailed: root.config = Store.loadFromTOML("")
   }
   // Poll config (watchChanges is unreliable) so shared flags like
   // desktop.active propagate — this is what hides the mini.
@@ -206,7 +206,7 @@ BarWidget {
 
   FileView {
     id: detachConfigWrite
-    path: Model.configPath
+    path: Store.configPath
     watchChanges: false
     printErrors: false
     Component.onCompleted: reload()
@@ -215,13 +215,13 @@ BarWidget {
     // Base the write on configFile (reloaded every 500ms), not the
     // write-only view — bounds staleness so concurrent writers can't
     // resurrect each other's flags from ancient caches (#16).
-    var txt = Model.writeConfigKey(root.readGuarded(), "desktop", "active", value ? "true" : "false")
+    var txt = Store.writeConfigKey(root.readGuarded(), "desktop", "active", value ? "true" : "false")
     root.noteWrite(txt)
     detachConfigWrite.setText(txt)
   }
 
   function writeEnabled(value) {
-    var txt = Model.writeEnabled(value, root.readGuarded())
+    var txt = Store.writeEnabled(value, root.readGuarded())
     root.noteWrite(txt)
     detachConfigWrite.setText(txt)
     root.vizEnabled = value
@@ -239,9 +239,9 @@ BarWidget {
       root.spectrumBands = []
       root.spectrumWave = []
       // Clear stale spectrum data
-      Model.spectrumData.bands = []
-      Model.spectrumData.wave = []
-      Model.spectrumData.silent = true
+      Store.spectrumData.bands = []
+      Store.spectrumData.wave = []
+      Store.spectrumData.silent = true
       if (root.config.desktopActive === true) {
         detachProc.running = false
         root.writeDesktopActive(false)
@@ -253,18 +253,16 @@ BarWidget {
   function writeVizOption(key, value) {
     writeVizOptions(key, value, null, null)
   }
-  // Engine-flag options need a process restart to take effect (CLI args
-  // are read at spawn). Restart is cheap (~100ms gap, backoff resets).
+  // Renderer-side options (e.g. linear_fall) apply live through the config
+  // poll — no engine restart, since the CLI no longer takes physics flags.
   function writeEngineOption(key, value) {
     writeVizOption(key, value)
-    spectrumProc.running = false
-    spectrumProc.running = true
   }
   // Audio-section options (e.g. sensitivity): same single-write pattern as
   // writeVizOptions but targeting [audio]. Applied QML-side, so every
   // surface picks it up live through the config poll — no restart needed.
   function writeAudioOption(key, value) {
-    var txt = Model.writeConfigKey(root.readGuarded(), "audio", key, vizVal(value))
+    var txt = Store.writeConfigKey(root.readGuarded(), "audio", key, vizVal(value))
     root.noteWrite(txt)
     detachConfigWrite.setText(txt)
   }
@@ -273,8 +271,8 @@ BarWidget {
     // stale base text and the second clobbers the first (e.g. Spikes+Fire).
     // Apply both keys to ONE base text, then a single setText.
     var txt = root.readGuarded()
-    txt = Model.writeConfigKey(txt, "desktop", key1, vizVal(value1))
-    if (key2) txt = Model.writeConfigKey(txt, "desktop", key2, vizVal(value2))
+    txt = Store.writeConfigKey(txt, "desktop", key1, vizVal(value1))
+    if (key2) txt = Store.writeConfigKey(txt, "desktop", key2, vizVal(value2))
     root.noteWrite(txt)
     detachConfigWrite.setText(txt)
   }
@@ -282,9 +280,9 @@ BarWidget {
   // one-base-text rule as writeVizOptions.
   function writeVizOptions3(key1, value1, key2, value2, key3, value3) {
     var txt = root.readGuarded()
-    txt = Model.writeConfigKey(txt, "desktop", key1, vizVal(value1))
-    if (key2) txt = Model.writeConfigKey(txt, "desktop", key2, vizVal(value2))
-    if (key3) txt = Model.writeConfigKey(txt, "desktop", key3, vizVal(value3))
+    txt = Store.writeConfigKey(txt, "desktop", key1, vizVal(value1))
+    if (key2) txt = Store.writeConfigKey(txt, "desktop", key2, vizVal(value2))
+    if (key3) txt = Store.writeConfigKey(txt, "desktop", key3, vizVal(value3))
     root.noteWrite(txt)
     detachConfigWrite.setText(txt)
   }
@@ -293,7 +291,7 @@ BarWidget {
     return value
   }
   function writeDesktopBeat() {
-    var txt = Model.writeConfigKey(root.readGuarded(), "desktop", "heartbeat", String(Date.now()))
+    var txt = Store.writeConfigKey(root.readGuarded(), "desktop", "heartbeat", String(Date.now()))
     detachConfigWrite.setText(txt)
     root.noteWrite(txt)
   }
@@ -354,7 +352,10 @@ BarWidget {
         // Rendered gap follows config (same value that sizes the container).
         gapPx: Math.min(6, Math.max(0, root.barGap))
         peaks: root.config.peaks !== false
-        peakFalloff: root.config.peakFalloff ?? 0.5
+        peakFalloff: root.config.peakFalloff ?? 0.1
+        peakSustainMs: root.config.peakSustainMs ?? 100
+        linearFall: root.config.linearFall !== false
+        noiseFloor: 0.02
         spikes: root.config.spikes === true
         fire: root.config.fire === true
         // Stacks stay off in the mini (segments need taller bars to read).

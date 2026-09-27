@@ -38,11 +38,6 @@ struct Cli {
     #[arg(long, default_value_t = 32)]
     bands: usize,
 
-    /// Bar motion: exp (attack/decay easing, default) or linear
-    /// (Winamp-style: instant rise, fixed-rate fall).
-    #[arg(long, default_value = "exp")]
-    fall_mode: String,
-
     /// FFT window size in samples (window latency = size/rate, e.g.
     /// 2048 @48kHz ≈ 43ms, 1024 ≈ 21ms). Smaller is snappier but
     /// coarsens bass resolution. Must be a power of two.
@@ -72,12 +67,6 @@ fn main() -> anyhow::Result<()> {
             cli.fft_size
         );
     }
-    let linear_fall = match cli.fall_mode.as_str() {
-        "linear" => true,
-        "exp" => false,
-        other => anyhow::bail!("--fall-mode must be exp|linear (got {other})"),
-    };
-
     // Resolve the backend up-front (errors on unsupported source).
     let backend = source::resolve(&cli.source)?;
     eprintln!(
@@ -99,6 +88,11 @@ fn main() -> anyhow::Result<()> {
     let idle_heartbeat = Duration::from_millis(200); // 5 Hz keepalive
     let mut fresh_chunk = false;
     let mut last_silent = false;
+    // Silence grace: after audio goes quiet the renderer still needs
+    // ~60 Hz frames to animate the bar/peak fall. Keep the full rate for
+    // this window, then drop to the 5 Hz heartbeat.
+    let mut silent_since: Option<std::time::Instant> = None;
+    let fall_grace = Duration::from_millis(2000);
     loop {
         // Drain all pending events, keeping the most recent per kind.
         let mut pending_chunk: Option<dsp::AudioChunk> = None;
@@ -142,9 +136,9 @@ fn main() -> anyhow::Result<()> {
             // emit every tick so frames keep flowing at ~60 Hz.
             if let Some(c) = pending_chunk {
                 match &mut analyzer {
-                    None => analyzer = Some(Analyzer::new(c.rate as f32, cli.bands, cli.fft_size, linear_fall)),
+                    None => analyzer = Some(Analyzer::new(c.rate as f32, cli.bands, cli.fft_size)),
                     Some(a) if (a.sample_rate() as u32) != c.rate => {
-                        *a = Analyzer::new(c.rate as f32, cli.bands, cli.fft_size, linear_fall);
+                        *a = Analyzer::new(c.rate as f32, cli.bands, cli.fft_size);
                     }
                     _ => {}
                 }
@@ -195,9 +189,21 @@ fn main() -> anyhow::Result<()> {
                 a.push(samples);
                 a.analyze();
                 let silent_now = a.is_silent();
-                // Steady silence carries no information — hold it to the
-                // heartbeat rate instead of re-emitting 60 identical frames.
-                if silent_now && last_silent && !due {
+                if silent_now {
+                    if silent_since.is_none() {
+                        silent_since = Some(std::time::Instant::now());
+                    }
+                } else {
+                    silent_since = None;
+                }
+                let in_grace = silent_now
+                    && silent_since
+                        .map(|t| t.elapsed() < fall_grace)
+                        .unwrap_or(false);
+                // Steady silence carries no information ONCE any fall has
+                // settled — hold it to the heartbeat rate. During the grace
+                // window (and always when audible) keep the full frame rate.
+                if silent_now && last_silent && !due && !in_grace {
                     std::thread::sleep(tick);
                     continue;
                 }

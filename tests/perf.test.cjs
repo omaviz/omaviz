@@ -8,6 +8,10 @@ const assert = require("node:assert/strict")
 
 const src = fs.readFileSync(path.join(__dirname, "..", "VisualCanvas.qml"), "utf8")
 const desk = fs.readFileSync(path.join(__dirname, "..", "Desktop.qml"), "utf8")
+const bar = fs.readFileSync(path.join(__dirname, "..", "BarWidget.qml"), "utf8")
+const allQml = {
+  qml: [src, desk, bar, fs.readFileSync(path.join(__dirname, "..", "Panel.qml"), "utf8")].join("\n")
+}
 
 test("palette LUTs exist (no per-bar QColor math)", () => {
   assert.ok(src.includes("_rebuildPalette"))
@@ -30,7 +34,7 @@ test("peaks + reflect + flat bodies batch into single fills", () => {
 })
 
 test("paint dedup skips pixel-identical frames", () => {
-  for (const fn of ["_advancePhysics", "_computeSig", "_modeSig", "_maybePaint", "_sizePeaks"]) {
+  for (const fn of ["_advancePhysics", "_computeSig", "_modeSig", "_maybePaint"]) {
     assert.ok(src.includes(fn), `missing ${fn}`)
   }
   assert.ok(src.includes("_lastBandsSig") && src.includes("_lastModeSig"))
@@ -43,9 +47,12 @@ test("paint dedup skips pixel-identical frames", () => {
 test("paint throttle caps rate, physics stays per-frame", () => {
   assert.ok(src.includes("_lastPaintMs"))
   assert.ok(src.includes("now - _lastPaintMs < 33"))
-  // physics advances on data, independent of paint throttle
+  // Physics is delegated to Physics.js and advances on data, independent of
+  // the paint throttle. The accelerating peak fall (x1.05) lives there now.
   const adv = src.slice(src.indexOf("function _advancePhysics"), src.indexOf("function _modeSig"))
-  assert.ok(adv.includes("_peakSpeed[i] * 1.05"))
+  assert.ok(adv.includes("Physics.step("), "advancePhysics must delegate to Physics.step")
+  const phys = fs.readFileSync(path.join(__dirname, "..", "Physics.js"), "utf8")
+  assert.ok(phys.includes("speeds[i] * 1.05"), "accelerating peak fall lives in Physics.js")
 })
 
 test("band mapping reuses scratch buffers (no per-frame alloc)", () => {
@@ -75,13 +82,15 @@ test("wave feed is scope-only with bridge restart on flip", () => {
   assert.ok(desk.includes("_lastScope"))
 })
 
-test("feed decimated to 30Hz with physics compensation", () => {
-  // bridge skips odd frames; canvas runs 2 physics substeps at 30Hz
-  assert.ok(desk.includes("win._frameSeq++"))
-  assert.ok(desk.includes("(win._frameSeq & 1) === 0) return"))
-  assert.ok(desk.includes("dataFps: 30"))
+test("every surface runs the SAME 60Hz feed (no decimation, no substeps)", () => {
+  // The mini, the panel preview and the desktop window all feed VisualCanvas
+  // at 60Hz, and physics has no rate-specific compensation — so the fall
+  // trajectory is identical everywhere.
+  assert.ok(!desk.includes("_frameSeq"), "desktop must not decimate frames")
+  assert.ok(desk.includes("dataFps: 60"))
   assert.ok(src.includes("property real dataFps: 60"))
-  assert.ok(src.includes("var steps = dataFps > 45 ? 1 : 2"))
+  assert.ok(!src.includes("var steps = dataFps > 45 ? 1 : 2"), "no substep hack")
+  assert.ok(!allQml.qml.includes("--fall-mode"), "no spawn-time physics flag")
 })
 
 test("wash paints overlap-free analytic columns", () => {

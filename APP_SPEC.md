@@ -37,7 +37,8 @@ repo root = the plugin (deployed to ~/.config/omarchy/plugins/org.omaviz.visuali
 ├── BarWidget.qml   (spawns bin/omaviz-engine, parses its stdout)
 ├── Panel.qml       (settings: Peaks toggle, Peak fall speed)
 ├── Desktop.qml     (detached window)
-├── Model.js        (.pragma library: config IO, spectrum parse)
+├── ModelStore.js   (.pragma library: config store — IO, defaults, get/set)
+├── Physics.js      (.pragma library: shared bar/peak motion model)
 ├── VisualCanvas.qml  (Canvas-2D renderer)
 ├── bin/
 │   └── omaviz-engine   (Rust: capture → FFT/DSP → JSON lines on stdout;
@@ -72,11 +73,29 @@ VisualCanvas (Canvas-2D) — used by mini, preview, AND desktop
 | `Panel.qml` | Settings panel. Shows PREVIEW, Peaks toggle, Peak fall speed (Slow/Med/Fast), SOURCE readout. |
 | `Desktop.qml` | Detached visualization window. Same VisualCanvas renderer, larger. |
 | `VisualCanvas.qml` | Canvas-2D renderer. Used by mini, preview, and desktop. |
-| `Model.js` | Config I/O, spectrum parsing, default config with peaks/peakFalloff. |
+| `ModelStore.js` | Config store: TOML I/O, defaults/validation, reactive get/set, spectrum parsing. |
+| `Physics.js` | Bar/peak motion model (instant attack, rate-limited release, peak sustain). Unit-tested. |
 
 ---
 
 ## 4. Rendering — `VisualCanvas.qml` (Canvas-2D, default)
+
+### 4.0 Physics ownership (v8.4)
+
+The engine emits **raw** band magnitudes at ~60 Hz — no smoothing, no
+fall-mode. ALL motion lives in `Physics.js` and is applied by `VisualCanvas`,
+so every surface (mini, panel preview, desktop, oscilloscope) shares one
+trajectory:
+
+| Phase | Behaviour |
+| --- | --- |
+| Attack | instant — the bar reaches the new target on the same frame |
+| Release | rate-limited (linear or exponential) — bars FALL when audio stops, never vanish |
+| Peak cap | rides above the bar, HOLDS for `peak_sustain_ms` (default 100), then falls with an accelerating speed (x1.05/frame) |
+
+`silent` from the engine is **advisory only** (it drives the settle
+optimisation); it never zeroes bars. This is what keeps faint-but-audible
+passages visible.
 
 The same renderer is used for **all three contexts** (mini, preview, desktop).
 Only the container size and position change.
@@ -229,7 +248,7 @@ bar_color_to = "#f59e0b"
 ```
 omaviz/  (repo root IS the plugin — manifest.json lives here)
 ├── manifest.json, BarWidget.qml, Panel.qml, Desktop.qml
-├── Model.js, VisualCanvas.qml
+├── ModelStore.js, Physics.js, VisualCanvas.qml
 ├── assets/omaviz.desktop  (app-launcher entry)
 ├── bin/omaviz-engine   (COMMITTED engine binary)
 ├── tests/model.test.cjs (node tests)
