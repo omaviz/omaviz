@@ -32,11 +32,30 @@ jobs:
         with:
           node-version: "24"
 
-      - name: Install qmllint (Qt6 declarative)
+      - name: Install runtime + tooling deps
         run: |
           sudo apt-get update -qq
+          # The shipped engine links against PipeWire — the plugin's real audio
+          # backend, and present on every Omarchy system. The bare runner does
+          # not ship it (t64-suffixed on Ubuntu 24.04), so the engine cannot
+          # even start without this.
+          sudo apt-get install -y -qq libpipewire-0.3-0t64 \
+            || sudo apt-get install -y -qq libpipewire-0.3-0
+          # qmllint backs the QML syntax guards (that one guard self-skips).
           sudo apt-get install -y -qq qt6-declarative-dev-tools || \
             echo "qmllint unavailable — that one guard self-skips"
+
+      # Fail loudly and specifically if the binary cannot load, instead of
+      # surfacing as a pile of confusing empty-frame assertions below.
+      - name: Verify the bundled engine can actually load
+        run: |
+          if ldd bin/omaviz-engine | grep -qi "not found"; then
+            echo "::error::bundled engine has unresolved shared libraries:"
+            ldd bin/omaviz-engine
+            exit 1
+          fi
+          echo "engine runtime deps resolved:"
+          ldd bin/omaviz-engine
 
       # Run the same entry point developers run, so the two cannot drift.
       # NOTE: `node --test tests/` (a bare directory) does NOT discover tests on
