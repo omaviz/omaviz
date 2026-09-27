@@ -4,7 +4,7 @@ import Quickshell
 import Quickshell.Io
 import qs.Commons
 import qs.Ui
-import "Model.js" as Model
+import "ModelStore.js" as Store
 
 Panel {
   id: root
@@ -13,21 +13,27 @@ Panel {
   manageIpc: false
 
   // Live config binding — refreshed when hostWidget.config changes (via noteWrite)
-  readonly property var hcfg: root.hostWidget ? root.hostWidget.config : Model.defaultConfig()
+  readonly property var hcfg: root.hostWidget ? root.hostWidget.config : Store.defaultConfig()
   property var anchorItem: null
   property var hostWidget: null
 
   readonly property string sourceLabelText:
-    Model.sourceLabel(Model.spectrumData.source || "")
+    Store.sourceLabel(Store.spectrumData.source || "")
 
   readonly property bool isScope: root.hcfg.scope === true
   readonly property bool isSpectrum: !root.isScope
   readonly property bool peaksOn: root.hcfg.peaks !== false
   readonly property bool spikesOn: root.hcfg.spikes === true
   property bool showAdvanced: false
-  property bool vizEnabled: Model.getSharedConfig().enabled !== false
+  // Bind to the live config object, not to Store.sharedConfig: a plain JS
+  // object property is not observable, and sharedConfig lagged the real
+  // config — so the switch showed a stale value until something else forced
+  // a re-evaluation. hcfg is a fresh object per config load, so this updates.
+  readonly property bool vizEnabled: root.hcfg ? (root.hcfg.enabled !== false) : true
   function setVizEnabled(v) {
-    vizEnabled = v
+    // Do NOT assign vizEnabled imperatively — that would break the reactive
+    // binding above. Writing through the host is enough: the config reload
+    // pushes the new value back into hcfg.
     if (root.hostWidget && root.hostWidget.writeEnabled) root.hostWidget.writeEnabled(v)
   }
 
@@ -204,7 +210,10 @@ Panel {
           barCount: 64
           gapPx: root.hostWidget ? Math.min(6, Math.max(0, root.hostWidget.barGap)) : 1
           peaks: root.peaksOn
-          peakFalloff: (root.hcfg.peakFalloff ?? 0.5)
+          peakFalloff: (root.hcfg.peakFalloff ?? 0.1)
+          peakSustainMs: (root.hcfg.peakSustainMs ?? 100)
+          linearFall: root.hcfg.linearFall !== false
+          noiseFloor: 0.02
           spikes: root.spikesOn
           fire: root.hcfg.fire === true
           stacks: root.hcfg.stacks === true
@@ -324,7 +333,7 @@ Panel {
                   bar: root.bar
                   enabled: root.peaksOn
                   minimum: 0; maximum: 1; step: 0.05
-                  value: (root.hcfg.peakFalloff ?? 0.5)
+                  value: (root.hcfg.peakFalloff ?? 0.1)
                   onReleased: function(v) { if (root.hostWidget) root.hostWidget.writeVizOption("peak_falloff", Math.round(v * 20) / 20) }
                 }
               }

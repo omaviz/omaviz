@@ -1,0 +1,65 @@
+name: Tests (QML + JS + engine contract)
+
+# Runs the JS/QML test suites that guard the plugin's behaviour:
+#   * ModelStore  — config model, defaults invariant, TOML round-trips, store
+#   * Physics     — the shared bar/peak motion model
+#   * QML         — real qmllint syntax check, duplicate-property guard,
+#                   cross-surface architecture invariants
+#   * Engine      — drives the committed binary and asserts its frame contract
+#
+# The Rust engine's own unit tests + reproducibility live in repro-build.yml.
+
+on:
+  push:
+    paths: ["**/*.qml", "**/*.js", "**/*.cjs", "**/*.sh", "tests/**", "package.json", ".github/workflows/tests.yml"]
+  pull_request:
+    paths: ["**/*.qml", "**/*.js", "**/*.cjs", "**/*.sh", "tests/**", "package.json", ".github/workflows/tests.yml"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  js:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Show bundled engine (committed artifact)
+        run: ls -la bin/omaviz-engine && file bin/omaviz-engine || true
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+
+      - name: Install runtime + tooling deps
+        run: |
+          sudo apt-get update -qq
+          # The shipped engine links against PipeWire — the plugin's real audio
+          # backend, and present on every Omarchy system. The bare runner does
+          # not ship it (t64-suffixed on Ubuntu 24.04), so the engine cannot
+          # even start without this.
+          sudo apt-get install -y -qq libpipewire-0.3-0t64 \
+            || sudo apt-get install -y -qq libpipewire-0.3-0
+          # qmllint backs the QML syntax guards (that one guard self-skips).
+          sudo apt-get install -y -qq qt6-declarative-dev-tools || \
+            echo "qmllint unavailable — that one guard self-skips"
+
+      # Fail loudly and specifically if the binary cannot load, instead of
+      # surfacing as a pile of confusing empty-frame assertions below.
+      - name: Verify the bundled engine can actually load
+        run: |
+          if ldd bin/omaviz-engine | grep -qi "not found"; then
+            echo "::error::bundled engine has unresolved shared libraries:"
+            ldd bin/omaviz-engine
+            exit 1
+          fi
+          echo "engine runtime deps resolved:"
+          ldd bin/omaviz-engine
+
+      # Run the same entry point developers run, so the two cannot drift.
+      # NOTE: `node --test tests/` (a bare directory) does NOT discover tests on
+      # Node 24 — it tries to execute `tests` as a script — so the glob is
+      # explicit and Node-version independent.
+      - name: Run test suite
+        run: npm test

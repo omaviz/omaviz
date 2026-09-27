@@ -67,6 +67,22 @@ cd ~/omaviz
 
 Requires: Omarchy (quickshell), PipeWire, `cargo` (only for `--build`).
 
+## Testing
+
+```bash
+npm test              # all JS/QML suites (node >= 24)
+npm run test:rust     # engine unit tests (cargo)
+npm run verify        # both
+```
+
+| Suite | What it proves |
+| --- | --- |
+| `tests/modelstore.test.cjs` | config defaults/schema, TOML round-trips, the store funnel (get/set/onChanged) |
+| `tests/physics.test.cjs` | the shared motion model: instant attack, rate-limited release, peak sustain + accelerating fall |
+| `tests/qml.test.cjs` | real `qmllint` syntax check, duplicate-property guard, cross-surface invariants |
+| `tests/engine.test.cjs` | drives the committed binary and asserts its frame contract (60 Hz, raw bands, faint-signal handling) |
+| `engine/` (cargo) | DSP + frame + source unit tests |
+
 **Safety:** the installer never deletes files it doesn't own. A plugin
 directory that isn't omaviz-managed (no `.omaviz-managed` marker) is left
 untouched unless you pass `--force` (which takes a timestamped backup
@@ -113,7 +129,8 @@ BarWidget.qml    # bar mini + engine spawn + all config writes
 Panel.qml        # settings panel (preview + options)
 Desktop.qml      # detached window (standalone quickshell -p, NO qs.* imports)
 VisualCanvas.qml # THE shared renderer (all modes, all options)
-Model.js         # config parse/write, spectrum parsing
+ModelStore.js    # config store: parse/write, defaults, reactive get/set, spectrum parse
+Physics.js       # shared bar/peak motion model (unit-tested)
 assets/ bin/ tests/  # launcher entry, COMMITTED engine binary, node tests
 engine/          # Rust source: PipeWire capture → FFT → bands + wave frames
 install.sh / build.sh / uninstall.sh
