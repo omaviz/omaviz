@@ -38,5 +38,9 @@ jobs:
           sudo apt-get install -y -qq qt6-declarative-dev-tools || \
             echo "qmllint unavailable — that one guard self-skips"
 
+      # Run the same entry point developers run, so the two cannot drift.
+      # NOTE: `node --test tests/` (a bare directory) does NOT discover tests on
+      # Node 24 — it tries to execute `tests` as a script — so the glob is
+      # explicit and Node-version independent.
       - name: Run test suite
-        run: node --test tests/
+        run: npm test
