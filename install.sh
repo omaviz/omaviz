@@ -51,6 +51,37 @@ backup() {
   say "backed up: $path -> $bk"
 }
 
+# True only when a *desktop entry* is one THIS project created. Very old omaviz
+# versions installed `omaviz-desktop.desktop` whose Exec ran the `omaviz` CLI;
+# later ones point at our plugin's Desktop.qml. Ownership is judged from the
+# Exec/TryExec *command*, never from the word "omaviz" appearing anywhere in the
+# file: a user-owned entry that merely mentions the plugin (in Name, Comment, or
+# a path inside its own command) is not ours to delete. Requires a [Desktop
+# Entry] section and that EVERY command in it is one we shipped.
+is_our_legacy_launcher() {
+  local file="$1" line cmd cmdword seen=0
+  grep -q '^\[Desktop Entry\]' "$file" 2>/dev/null || return 1
+  while IFS= read -r line; do
+    case "$line" in
+      Exec=*|TryExec=*) ;;
+      *) continue ;;
+    esac
+    seen=1
+    cmd="${line#*=}"
+    cmd="${cmd%%[[:space:]]*}"         # first token = the command itself
+    cmd="${cmd%\"}"; cmd="${cmd#\"}"   # strip surrounding quotes
+    cmdword="${cmd##*/}"               # basename
+    if [ "$cmdword" = "omaviz" ]; then
+      continue                         # the CLI we used to ship
+    fi
+    case "$line" in
+      *plugins/*omaviz*) continue ;;   # a path inside an omaviz plugin dir
+      *) return 1 ;;                   # foreign command -> not ours
+    esac
+  done <"$file"
+  [ "$seen" = 1 ]
+}
+
 # ---------------------------------------------------------------- engine
 # Default: the committed binary in bin/ is used as-is (zero-build).
 # Only build if explicitly requested OR the binary is missing.
@@ -172,7 +203,9 @@ say "plugin -> $PLUGIN_DIR"
 #   - no existing file            -> install ours
 #   - ours (marker comment inside)-> replace
 #   - foreign file                -> back it up, then install ours
-#   - legacy omaviz-desktop.desktop -> remove ONLY if it references omaviz
+#   - legacy omaviz-desktop.desktop -> remove ONLY if provably ours (its
+#     Exec/TryExec is the `omaviz` CLI or an omaviz plugin path); a user file
+#     that merely mentions omaviz is left alone
 step "installing app launcher"
 mkdir -p "$APPS_DIR"
 if [ -f "$LAUNCHER" ] && ! grep -q "^# omaviz-managed$" "$LAUNCHER"; then
@@ -182,10 +215,12 @@ fi
   echo "# omaviz-managed"
   sed "s|^Exec=.*|Exec=quickshell -p $PLUGIN_DIR/Desktop.qml|" "$SRC/assets/omaviz.desktop"
 } > "$LAUNCHER"
-# Legacy entry from older omaviz versions: remove only if it is actually ours
-# (references the omaviz plugin path); never touch unrelated .desktop files.
+# Legacy entry from older omaviz versions: remove ONLY when the file is
+# provably ours — a desktop entry whose command is the `omaviz` CLI we shipped,
+# or a path inside an omaviz plugin dir. A user-owned .desktop that merely
+# mentions omaviz is left untouched (see is_our_legacy_launcher).
 if [ -f "$LEGACY_LAUNCHER" ]; then
-  if grep -q "omaviz" "$LEGACY_LAUNCHER"; then
+  if is_our_legacy_launcher "$LEGACY_LAUNCHER"; then
     rm -f "$LEGACY_LAUNCHER"
     say "removed legacy launcher: $LEGACY_LAUNCHER"
   else
