@@ -63,3 +63,9 @@ jobs:
       # explicit and Node-version independent.
       - name: Run test suite
         run: npm test
+
+      # Installer/uninstaller safety: runs the REAL scripts against a throwaway
+      # $HOME with stubbed omarchy commands, asserting the marketplace contract
+      # (never delete unowned files; marker-scoped uninstall; no traversal).
+      - name: Run installer safety tests
+        run: npm run test:installer

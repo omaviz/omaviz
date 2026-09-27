@@ -10,9 +10,11 @@
 # to disable there. Removing the plugin directory removes the bundled engine.
 #
 # Safety model (marketplace review): never deletes files omaviz does not own.
-# The plugin dir is only removed if it carries our management marker (or
-# --force, which backs it up first); the launcher is only removed if it is
-# ours (marker comment); foreign files are always left in place.
+# Uninstall is MARKER-SCOPED, symmetric with install.sh's managed update: it
+# removes only the paths omaviz shipped (recorded in the marker), so files that
+# survive a managed update also survive an uninstall. The plugin directory
+# itself is removed only if it is empty afterwards. The launcher is removed
+# only if it is ours (marker comment); foreign files are always left in place.
 set -euo pipefail
 
 SRC="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -44,14 +46,62 @@ backup() {
 }
 
 # ---------------------------------------------------------------- plugin
+# Marker-scoped removal — symmetric with install.sh's managed update.
+# Delete ONLY the paths we shipped (recorded in the marker); never foreign
+# files the user placed in the plugin dir.
+#
+# We deliberately do NOT call `omarchy plugin remove` here: for a git-managed
+# install (the marketplace clones the repo, so `.git` is always present) that
+# command falls back to `rm -rf "$PLUGIN_DIR"`, which would delete unmanaged
+# user files — the very thing this safety model forbids.
+# `omarchy plugin disable` unloads the plugin from the shell without touching
+# any files, which is all we need before removing our own.
+validate_marker() {
+  local mf="$1" line
+  [ -f "$mf" ] || return 0
+  while IFS= read -r line; do
+    if [ -z "$line" ]; then
+      echo "invalid marker entry (empty line) in $mf" >&2
+      return 1
+    fi
+    case "$line" in
+      *..*) echo "invalid marker entry (path traversal): $line" >&2; return 1 ;;
+      /*)   echo "invalid marker entry (absolute path): $line" >&2; return 1 ;;
+    esac
+  done < "$mf"
+  return 0
+}
+remove_managed_paths() {
+  local mf="$1" f
+  [ -f "$mf" ] || return 0
+  while IFS= read -r f; do
+    rm -rf "${PLUGIN_DIR:?}/$f"
+  done < "$mf"
+}
+
 step "removing Omarchy plugin (bundled engine included)"
 if [ -e "$PLUGIN_DIR" ]; then
   if [ -f "$PLUGIN_DIR/$MARKER" ]; then
+    # Validate ALL marker lines first: refuse without deleting anything if the
+    # marker is corrupt or hostile (all-or-nothing, no partial delete).
+    validate_marker "$PLUGIN_DIR/$MARKER" || {
+      echo "refusing to touch $PLUGIN_DIR: invalid marker" >&2
+      exit 1
+    }
     if command -v omarchy >/dev/null; then
-      omarchy plugin remove org.omaviz.visualizer --yes 2>/dev/null || true
+      omarchy plugin disable org.omaviz.visualizer 2>/dev/null || true
     fi
-    rm -rf "$PLUGIN_DIR"
-    say "removed $PLUGIN_DIR"
+    remove_managed_paths "$PLUGIN_DIR/$MARKER"
+    rm -f "$PLUGIN_DIR/$MARKER"
+    if rmdir "$PLUGIN_DIR" 2>/dev/null; then
+      say "removed $PLUGIN_DIR"
+    else
+      say "removed omaviz's own files from $PLUGIN_DIR"
+      say "kept the directory — it still contains files omaviz does not own:"
+      find "$PLUGIN_DIR" -mindepth 1 -maxdepth 1 -printf '      %f\n' 2>/dev/null | sort || true
+      say "delete it yourself if you want it gone:"
+      say "  omarchy plugin remove org.omaviz.visualizer --yes"
+    fi
   elif [ "$FORCE" = 1 ]; then
     say "$PLUGIN_DIR is not omaviz-managed; --force given"
     backup "$PLUGIN_DIR"
