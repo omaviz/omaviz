@@ -57,11 +57,29 @@ BarWidget {
   // root.config (dropdowns snapping back = select-twice bug).
   property double _lastWriteAt: 0
   property string _lastWriteText: ""
+  // The one place config text becomes live state. Everything (panel bindings,
+  // the engine, the desktop lease) derives from this, so a value can never be
+  // shown that the config does not actually contain.
+  function syncFromConfig(txt) {
+    root.config = Store.loadFromTOML(txt)
+    var on = root.config.enabled !== false
+    if (root.vizEnabled !== on) {
+      root.vizEnabled = on
+      spectrumProc.running = on
+      if (!on) {
+        root.spectrumBands = []
+        root.spectrumWave = []
+        Store.spectrumData.bands = []
+        Store.spectrumData.wave = []
+        Store.spectrumData.silent = true
+      }
+    }
+    root.refreshDesktopLive()
+  }
   function noteWrite(txt) {
     root._lastWriteAt = Date.now()
     root._lastWriteText = txt
-    root.config = Store.loadFromTOML(txt)
-    root.refreshDesktopLive()
+    root.syncFromConfig(txt)
   }
   function readGuarded() {
     if (root._lastWriteText !== "" && Date.now() - root._lastWriteAt < 1500)
@@ -75,7 +93,7 @@ BarWidget {
   }
   readonly property int barCount: Math.max(8, (root.config && root.config.bands !== undefined) ? root.config.bands : 32)
 
-  function applyConfig(text) { root.config = Store.loadFromTOML(text) }
+  function applyConfig(text) { root.syncFromConfig(text) }
 
   readonly property bool opened: panelLoader.item ? panelLoader.item.opened === true : false
   readonly property bool popoutSwitchClosing: panelLoader.item ? panelLoader.item.popoutSwitchClosing === true : false
@@ -187,15 +205,9 @@ BarWidget {
     path: Store.configPath
     watchChanges: true
     printErrors: false
-    onLoaded: {
-      root.config = Store.loadFromTOML(root.readGuarded())
-      root.refreshDesktopLive()
-    }
-    onFileChanged: {
-      root.config = Store.loadFromTOML(root.readGuarded())
-      root.refreshDesktopLive()
-    }
-    onLoadFailed: root.config = Store.loadFromTOML("")
+    onLoaded: root.syncFromConfig(root.readGuarded())
+    onFileChanged: root.syncFromConfig(root.readGuarded())
+    onLoadFailed: root.syncFromConfig("")
   }
   // Poll config (watchChanges is unreliable) so shared flags like
   // desktop.active propagate — this is what hides the mini.
@@ -222,32 +234,11 @@ BarWidget {
 
   function writeEnabled(value) {
     var txt = Store.writeEnabled(value, root.readGuarded())
-    root.noteWrite(txt)
+    root.noteWrite(txt)            // syncFromConfig flips vizEnabled + engine
     detachConfigWrite.setText(txt)
-    root.vizEnabled = value
-    if (value) {
-      // ON: restart engine
-      spectrumProc.running = true
-      // Clear desktop lease so it can be re-opened
-      root.refreshDesktopLive()
-    } else {
-      // OFF: stop engine, close desktop immediately
-      spectrumProc.running = false
-      // Immediately mark desktop as not live (override 6s lease)
-      root.desktopLive = false
-      // Clear bands so mini shows floor
-      root.spectrumBands = []
-      root.spectrumWave = []
-      // Clear stale spectrum data
-      Store.spectrumData.bands = []
-      Store.spectrumData.wave = []
-      Store.spectrumData.silent = true
-      if (root.config.desktopActive === true) {
-        detachProc.running = false
-        root.writeDesktopActive(false)
-      }
-      // Force config reload so panel picks up enabled=false immediately
-      configFile.reload()
+    if (!value && root.config.desktopActive === true) {
+      detachProc.running = false
+      root.writeDesktopActive(false)
     }
   }
   function writeVizOption(key, value) {

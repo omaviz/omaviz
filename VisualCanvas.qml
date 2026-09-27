@@ -416,10 +416,21 @@ Canvas {
     // bottom→top color across bars (matches Fire behavior).
     var sharedGrad = null
     if (!useFlat) {
+      // The bar body gradient must be the ACTIVE palette: theme (or custom
+      // From->To when barColorCustom) in normal modes, the flame ramp only
+      // when Fire is on. It used to be built from fireColorAt() unconditionally,
+      // whose base is hardcoded deep red — that is why the base bar colour was
+      // always red no matter the theme or custom colour.
       sharedGrad = ctx.createLinearGradient(0, baseY, 0, baseY - areaH)
-      sharedGrad.addColorStop(0, fireColorAt(0))
-      sharedGrad.addColorStop(0.25, fireColorAt(0.25))
-      sharedGrad.addColorStop(1, fireColorAt(1))
+      if (fire) {
+        sharedGrad.addColorStop(0, fireColorAt(0))
+        sharedGrad.addColorStop(0.25, fireColorAt(0.25))
+        sharedGrad.addColorStop(1, fireColorAt(1))
+      } else {
+        sharedGrad.addColorStop(0, _plainLUT[0])
+        sharedGrad.addColorStop(0.5, _plainLUT[50])
+        sharedGrad.addColorStop(1, _plainLUT[100])
+      }
     }
     if (useFlat) { ctx.fillStyle = flatFill; ctx.beginPath() }
     // Batched plain bars (perf): opaque gap-separated bodies are paint-

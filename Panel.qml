@@ -25,9 +25,15 @@ Panel {
   readonly property bool peaksOn: root.hcfg.peaks !== false
   readonly property bool spikesOn: root.hcfg.spikes === true
   property bool showAdvanced: false
-  property bool vizEnabled: Store.getSharedConfig().enabled !== false
+  // Bind to the live config object, not to Store.sharedConfig: a plain JS
+  // object property is not observable, and sharedConfig lagged the real
+  // config — so the switch showed a stale value until something else forced
+  // a re-evaluation. hcfg is a fresh object per config load, so this updates.
+  readonly property bool vizEnabled: root.hcfg ? (root.hcfg.enabled !== false) : true
   function setVizEnabled(v) {
-    vizEnabled = v
+    // Do NOT assign vizEnabled imperatively — that would break the reactive
+    // binding above. Writing through the host is enough: the config reload
+    // pushes the new value back into hcfg.
     if (root.hostWidget && root.hostWidget.writeEnabled) root.hostWidget.writeEnabled(v)
   }
 

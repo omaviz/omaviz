@@ -338,3 +338,15 @@ test("sourceLabel maps backend names and passes unknown through", () => {
   assert.equal(Store.sourceLabel("weird"), "weird")
   assert.equal(Store.sourceLabel(""), "Unknown")
 })
+
+// REGRESSION: the panel bound its ON/OFF switch to Store.sharedConfig.enabled,
+// a shadow copy that loadFromTOML never updated — so the switch showed a stale
+// value on the first load and needed several clicks.
+test("loadFromTOML keeps the shared-config view in sync", () => {
+  Store.loadFromTOML("[desktop]\nenabled = false\n")
+  assert.equal(Store.getSharedConfig().enabled, false, "disabled config must reach sharedConfig")
+  Store.loadFromTOML("[desktop]\nenabled = true\n")
+  assert.equal(Store.getSharedConfig().enabled, true)
+  Store.loadFromTOML("")
+  assert.equal(Store.getSharedConfig().enabled, true, "absent key => enabled")
+})

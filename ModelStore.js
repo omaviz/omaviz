@@ -420,6 +420,11 @@ function _notify(p, v) {
 // the new state object (never undefined).
 function loadFromTOML(tomlText) {
   _state = readConfigFromText(tomlText)
+  // Keep the legacy shared-config view in step: the panel used to bind to
+  // sharedConfig.enabled, which never changed because loadFromTOML only
+  // replaced _state. That made the ON/OFF control show a stale value on the
+  // first load (the "settings don't sync on first try" bug).
+  sharedConfig.enabled = _state.enabled !== false
   revision++
   var all = _listeners["*"]
   if (all) { for (var j = 0; j < all.length; j++) all[j](_state, "*") }

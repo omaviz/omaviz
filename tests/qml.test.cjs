@@ -121,3 +121,44 @@ test("no QML component declares the same property twice in one scope", () => {
     })
   }
 })
+
+// REGRESSION: the bar body was filled with a gradient built from fireColorAt()
+// in EVERY mode. The fire ramp's base is hardcoded deep red, which is why the
+// base bar colour was always red regardless of theme or custom colours.
+test("bar body gradient is palette-derived unless Fire is on", () => {
+  const src = read("VisualCanvas.qml")
+  assert.ok(src.includes("sharedGrad.addColorStop(0, _plainLUT[0])"),
+    "non-fire bar gradient must come from the palette LUT")
+  assert.ok(src.includes("sharedGrad.addColorStop(1, _plainLUT[100])"))
+  // fireColorAt may only feed the gradient inside the fire branch.
+  const grad = src.slice(src.indexOf("var sharedGrad = null"), src.indexOf("if (useFlat) { ctx.fillStyle"))
+  const fireStops = (grad.match(/sharedGrad\.addColorStop\([^)]*fireColorAt\(/g) || []).length
+  const palStops = (grad.match(/sharedGrad\.addColorStop\([^)]*_plainLUT\[/g) || []).length
+  assert.ok(grad.includes("if (fire) {"), "fire colour must be guarded by `if (fire)`")
+  assert.equal(fireStops, 3, `expected 3 fire gradient stops, got ${fireStops}`)
+  assert.equal(palStops, 3, `expected 3 palette gradient stops, got ${palStops}`)
+  // and the palette LUT must be built from the theme/custom pair
+  const pal = src.slice(src.indexOf("function _rebuildPalette"), src.indexOf("function _lutIdx"))
+  assert.ok(pal.includes("_palBot = [bq.r, bq.g, bq.b]") && pal.includes("_palTop = [tq.r, tq.g, tq.b]"))
+})
+
+// REGRESSION: Panel.vizEnabled read Store.sharedConfig (a non-observable JS
+// object property), so the ON/OFF switch never reflected the real config.
+test("panel ON/OFF is bound to the reactive config, not to sharedConfig", () => {
+  const src = read("Panel.qml")
+  assert.ok(!src.includes("getSharedConfig()"), "must not bind to the shadow sharedConfig")
+  assert.match(src, /readonly property bool vizEnabled: root\.hcfg \? \(root\.hcfg\.enabled !== false\) : true/)
+  // and it must not be assigned imperatively (that would break the binding)
+  const setter = src.slice(src.indexOf("function setVizEnabled"), src.indexOf("// ---- Size-freeze"))
+  assert.ok(!/^\s*vizEnabled = /m.test(setter), "setVizEnabled must not assign vizEnabled")
+})
+
+test("BarWidget routes every config load through syncFromConfig", () => {
+  const src = read("BarWidget.qml")
+  assert.ok(src.includes("function syncFromConfig(txt)"))
+  // exactly ONE place assigns root.config (inside syncFromConfig)
+  assert.equal((src.match(/root\.config = Store\.loadFromTOML\(/g) || []).length, 1)
+  for (const call of ["onLoaded: root.syncFromConfig", "onFileChanged: root.syncFromConfig"]) {
+    assert.ok(src.includes(call), `missing ${call}`)
+  }
+})
