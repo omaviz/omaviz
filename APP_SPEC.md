@@ -1,7 +1,7 @@
-# omaviz — Application Specification (v8.4.0)
+# omaviz — Application Specification (v8.4.1)
 
 > **Plugin id:** `org.omaviz.visualizer`
-> **Version:** 8.4.0 (spec + manifest, git tag)
+> **Version:** 8.4.1 (spec + manifest, git tag)
 > **Status:** Single-package Omarchy QML plugin. Audio analysis is bundled as
 > one native binary (`bin/omaviz-engine`) shipped **inside** the plugin
 > directory. No systemd service, no Unix socket, no `~/.local/bin` binaries.

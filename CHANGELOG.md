@@ -1,5 +1,36 @@
 # Changelog
 
+## 8.4.1
+
+Installer/uninstaller safety — resolves the open marketplace review blocker.
+
+### Fixed
+- **Uninstall deleted files omaviz does not own.** `uninstall.sh` treated the
+  presence of `.omaviz-managed` as ownership of the whole plugin directory and
+  `rm -rf`'d it, so files a user had placed there survived a managed update but
+  were destroyed on uninstall. Removal is now **marker-scoped** — symmetric
+  with `install.sh`'s managed update — and the directory is removed only if it
+  is empty afterwards; anything foreign is kept and listed.
+- **Uninstall invoked a destructive manager command.** `omarchy plugin remove`
+  falls back to `rm -rf "$PLUGIN_DIR"` for git-managed installs (which is what
+  a marketplace install always is, since the repo is cloned), so it would have
+  deleted unmanaged files regardless. It is replaced by
+  `omarchy plugin disable`, which unloads the plugin without touching files.
+- **The management marker was incomplete.** `rsync` also installed
+  `package.json` and `.gitignore`, which the marker never listed, so even a
+  pristine install left files behind. Both are now excluded from the installed
+  set (repo metadata, not runtime), so an installed directory matches its
+  marker exactly and uninstalls cleanly.
+
+### Changed
+- Marker validation is **all-or-nothing in both scripts**: every line is
+  validated before anything is deleted, so a corrupt or hostile marker (empty
+  line, `..` traversal, absolute path) refuses without a partial delete.
+  `install.sh` and `uninstall.sh` now share the same `validate_marker` /
+  `remove_managed_paths` helpers and cannot drift apart.
+- New `tests/installer.test.sh` (35 scenarios, wired into CI) runs the real
+  scripts against a throwaway `$HOME` with stubbed omarchy commands.
+
 ## 8.4.0
 
 Architecture and behaviour release. Engine output contract changed (raw bands);
