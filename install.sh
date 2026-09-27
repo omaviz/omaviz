@@ -92,55 +92,53 @@ if [ -e "$PLUGIN_DIR" ] && [ ! -f "$PLUGIN_DIR/$MARKER" ]; then
 fi
 mkdir -p "$PLUGIN_DIR"
 
-# Validate marker lines: reject empties, absolute paths, and any path
-# containing '..' (path traversal). This prevents a corrupted or foreign
-# marker from making rm -rf delete files outside the plugin directory.
-validate_marker_line() {
-  local line="$1"
-  # reject empty lines
-  [ -z "$line" ] && return 1
-  # reject lines with .. (path traversal)
-  case "$line" in
-    *..*) return 1 ;;
-  esac
-  # reject absolute paths (starting with /)
-  case "$line" in
-    /*) return 1 ;;
-  esac
+# --- managed-path helpers (SHARED contract with uninstall.sh) --------------
+# Validate EVERY line of the marker BEFORE deleting anything. A corrupted or
+# foreign marker must never let a path escape the plugin directory (empty
+# lines, '..' traversal, absolute paths) — and must not cause a partial
+# delete either: validation is all-or-nothing, then removal runs.
+validate_marker() {
+  local mf="$1" line
+  [ -f "$mf" ] || return 0
+  while IFS= read -r line; do
+    if [ -z "$line" ]; then
+      echo "invalid marker entry (empty line) in $mf" >&2
+      return 1
+    fi
+    case "$line" in
+      *..*) echo "invalid marker entry (path traversal): $line" >&2; return 1 ;;
+      /*)   echo "invalid marker entry (absolute path): $line" >&2; return 1 ;;
+    esac
+  done < "$mf"
   return 0
+}
+remove_managed_paths() {
+  local mf="$1" f
+  [ -f "$mf" ] || return 0
+  while IFS= read -r f; do
+    rm -rf "${PLUGIN_DIR:?}/$f"
+  done < "$mf"
+}
+
+validate_marker "$PLUGIN_DIR/$MARKER" || {
+  echo "refusing to touch $PLUGIN_DIR: invalid marker" >&2
+  exit 1
 }
 if command -v rsync >/dev/null; then
   # Remove only files WE shipped in a previous run (listed in the marker),
   # never foreign files a user may have dropped into the plugin dir.
-  if [ -f "$PLUGIN_DIR/$MARKER" ]; then
-    while IFS= read -r f; do
-      # validate each marker entry (rejects empty, path traversal, absolute paths)
-      validate_marker_line "$f" || {
-        echo "refusing to touch $PLUGIN_DIR: invalid marker entry: $f" >&2
-        exit 1
-      }
-      rm -rf "${PLUGIN_DIR:?}/$f"
-    done < "$PLUGIN_DIR/$MARKER"
-  fi
+  remove_managed_paths "$PLUGIN_DIR/$MARKER"
   rsync -a \
     --exclude '/engine/' --exclude '/docs/' --exclude '/.git/' \
     --exclude '/tools/' --exclude '/.github/' \
     --exclude '/*.sh' --exclude '/*.md' --exclude '/LICENSE' --exclude '/preview.png' \
+    --exclude '/package.json' --exclude '/.gitignore' \
     --exclude "/$MARKER" \
     "$SRC/" "$PLUGIN_DIR/"
 else
   # Non-rsync path: never rm -rf the whole dir. Remove only the files we
   # manage (marker lists them), then copy fresh ones in.
-  if [ -f "$PLUGIN_DIR/$MARKER" ]; then
-    while IFS= read -r f; do
-      # validate each marker entry (rejects empty, path traversal, absolute paths)
-      validate_marker_line "$f" || {
-        echo "refusing to touch $PLUGIN_DIR: invalid marker entry: $f" >&2
-        exit 1
-      }
-      rm -rf "${PLUGIN_DIR:?}/$f"
-    done < "$PLUGIN_DIR/$MARKER"
-  fi
+  remove_managed_paths "$PLUGIN_DIR/$MARKER"
   cp "$SRC"/manifest.json "$PLUGIN_DIR/"
   cp "$SRC"/*.qml "$SRC"/ModelStore.js "$SRC"/Physics.js "$PLUGIN_DIR/"
   # Optional file classes — copy only those that exist (glob would otherwise
