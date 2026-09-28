@@ -1,0 +1,152 @@
+name: Release
+
+# Purpose: turning a signed-off tag into a verified, attested release.
+#
+# The marketplace installs from the DEFAULT BRANCH (see README), so GitHub
+# releases do not control distribution — they are the human-facing record: the
+# exact engine binary, its digest, and the provenance that binds it to the
+# reviewed source. That is why every guard below is about integrity, not
+# packaging.
+#
+# Guards, all of which fail the release rather than publish something wrong:
+#   1. the tag must point at a commit ON master (a tag off-branch would
+#      misrepresent what the marketplace review actually covered);
+#   2. manifest.json and package.json versions must equal the tag;
+#   3. the committed bin/omaviz-engine must be byte-identical to a fresh
+#      pinned-container rebuild of it — the same gate the repro workflow runs.
+#
+# Only first-party actions and the gh CLI are used, so this adds no new
+# third-party supply-chain surface to the reviewed repository.
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing tag to release (e.g. v8.4.3)
+        required: true
+
+permissions:
+  contents: write        # create the release
+  id-token: write        # Sigstore keyless signing
+  attestations: write    # persist the attestation
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout (full history — the ancestry guard needs it)
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Resolve the tag
+        id: v
+        run: |
+          if [ -n "${{ inputs.tag }}" ]; then
+            TAG="${{ inputs.tag }}"
+          else
+            TAG="${GITHUB_REF_NAME}"
+          fi
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "version=${TAG#v}" >> "$GITHUB_OUTPUT"
+
+      - name: Guard — the tag must be on master
+        run: |
+          set -euo pipefail
+          git fetch --no-tags origin master:refs/remotes/origin/master
+          TARGET="$(git rev-parse "${{ steps.v.outputs.tag }}^{commit}")"
+          if ! git merge-base --is-ancestor "$TARGET" origin/master; then
+            echo "::error::tag ${{ steps.v.outputs.tag }} ($TARGET) is not an ancestor of master."
+            echo "Releases must point at a commit the marketplace review covered." >&2
+            exit 1
+          fi
+          echo "tag ${{ steps.v.outputs.tag }} is on master ($TARGET)"
+
+      - name: Guard — versions must equal the tag
+        run: |
+          set -euo pipefail
+          want="${{ steps.v.outputs.version }}"
+          mver="$(jq -r .version manifest.json)"
+          pver="$(jq -r .version package.json)"
+          echo "tag=$want manifest=$mver package=$pver"
+          [ "$mver" = "$want" ] || { echo "::error::manifest.json is $mver, tag says $want"; exit 1; }
+          [ "$pver" = "$want" ] || { echo "::error::package.json is $pver, tag says $want"; exit 1; }
+
+      - name: Guard — the shipped engine must be reproducible
+        run: |
+          set -euo pipefail
+          # Single source of truth for the pinned toolchain: read the digest out
+          # of repro-build.yml so the two workflows can never drift apart.
+          IMAGE="$(grep -oP '^\s*IMAGE:\s*\K\S+' .github/workflows/repro-build.yml)"
+          echo "pinned image: $IMAGE"
+          docker run --rm -v "$PWD:/src" -w /src/engine "$IMAGE" \
+            bash -euo pipefail -c '
+              export DEBIAN_FRONTEND=noninteractive
+              apt-get update -qq
+              apt-get install -y -qq --no-install-recommends \
+                libpipewire-0.3-dev libclang-dev clang pkg-config > /dev/null
+              cargo build --release --locked > /dev/null 2>&1
+              sha256sum target/release/omaviz-engine | awk "{print \$1}"
+            ' > /tmp/ci-sha
+          CI_SHA="$(cat /tmp/ci-sha)"
+          COMMITTED_SHA="$(sha256sum bin/omaviz-engine | awk '{print $1}')"
+          echo "CI build:  $CI_SHA"
+          echo "committed: $COMMITTED_SHA"
+          if [ "$CI_SHA" != "$COMMITTED_SHA" ]; then
+            echo "::error::bin/omaviz-engine is not reproducible from this tag"
+            exit 1
+          fi
+          echo "engine-digest=$COMMITTED_SHA" >> "$GITHUB_ENV"
+
+      - name: Attest the released binary (Sigstore keyless)
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-name: omaviz-engine
+          subject-path: bin/omaviz-engine
+
+      - name: Assemble release assets + notes
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/rel
+          cp bin/omaviz-engine /tmp/rel/omaviz-engine
+          ( cd /tmp/rel && sha256sum omaviz-engine > SHA256SUMS )
+          cat /tmp/rel/SHA256SUMS
+
+          # Release notes = the CHANGELOG section for this version.
+          awk -v v="${{ steps.v.outputs.version }}" '
+            $0 ~ "^## "v"$" { found=1; next }
+            found && /^## / { exit }
+            found { print }
+          ' CHANGELOG.md > /tmp/notes-body.md
+          [ -s /tmp/notes-body.md ] || echo "_No changelog section for this version._" > /tmp/notes-body.md
+
+          {
+            echo "Engine build verified reproducible from source at this tag."
+            echo
+            echo '```'
+            echo "sha256  ${{ env.engine-digest }}"
+            echo '```'
+            echo
+            echo "Verify locally:"
+            echo
+            echo '```'
+            echo "sha256sum -c SHA256SUMS"
+            echo "gh attestation verify omaviz-engine --repo ${{ github.repository }}"
+            echo '```'
+            echo
+            echo "---"
+            echo
+            cat /tmp/notes-body.md
+          } > /tmp/notes.md
+
+      - name: Create the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh release create "${{ steps.v.outputs.tag }}" \
+            --title "omaviz ${{ steps.v.outputs.version }}" \
+            --notes-file /tmp/notes.md \
+            /tmp/rel/omaviz-engine /tmp/rel/SHA256SUMS

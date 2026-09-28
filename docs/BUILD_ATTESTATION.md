@@ -10,7 +10,7 @@ the maintainer's machine.
 
 | Artifact | Value |
 |---|---|
-| Engine binary | `bin/omaviz-engine` — SHA256 `fbccdaddca176ef2983d298d99f94d814bc9ea0754007aaa568e639f9efcd589` |
+| Engine binary | `bin/omaviz-engine` — SHA256 `00dc4b2a1dacd9d723ce4ba5fea7fa2d0e1a249bc39ace3bed88f3e7c09589e1` |
 | Source | `engine/` (Rust), committed in this repository |
 | Lockfile | `engine/Cargo.lock` — pins every crate version + SHA256 checksum |
 | Toolchain | Rust 1.98.1 (`rustc 1.98.1 (48a229cea 2026-09-01)`) |
@@ -77,13 +77,18 @@ re-derived from the reviewed source and the build fails if it doesn't match.
 
 ## Bootstrapping note
 
-The binary currently committed was itself **built and attested by this CI
-workflow** (first during [PR #4](https://github.com/omaviz/omaviz/pull/4),
-run [35952135827](https://github.com/omaviz/omaviz/actions/runs/35952135827),
-subject `sha256:fbccdaddca176ef2983d298d99f94d814bc9ea0754007aaa568e639f9efcd589`).
-Every subsequent push re-verifies it byte-for-byte — the binary match gate
-fails if the committed binary ever diverges from a fresh pinned-container
-rebuild of the source.
+The committed binary was produced by this workflow's own pinned-container build
+(run [36288972474](https://github.com/omaviz/omaviz/actions/runs/36288972474),
+`CI build: 00dc4b2a…`) and committed verbatim — never built on a maintainer's
+machine. Every push since re-derives it from source and fails if it differs, so
+the digest above is continuously re-verified rather than asserted once.
+
+To check it yourself:
+
+```
+sha256sum bin/omaviz-engine          # must print 00dc4b2a…
+gh attestation verify bin/omaviz-engine --repo omaviz/omaviz
+```
 
 ## Re-pinning the toolchain
 

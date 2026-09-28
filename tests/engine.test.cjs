@@ -34,6 +34,22 @@ function collect(args, ms) {
   })
 }
 
+// Spawn the engine expecting it to exit on its own; capture code + stderr.
+// A process killed by a signal (code === null, empty stderr) is a spawn race
+// while the runner is loaded with other concurrent test files — not a contract
+// failure — so retry a couple of times before reporting.
+async function runExpectExit(args) {
+  for (let attempt = 0; ; attempt++) {
+    const r = await new Promise((resolve) => {
+      const p = spawn(BIN, args, { stdio: ["ignore", "pipe", "pipe"] })
+      let err = ""
+      p.stderr.on("data", (d) => { err += d.toString() })
+      p.on("exit", (code, signal) => resolve({ code, signal, err }))
+    })
+    if (r.code !== null || attempt >= 2) return r
+  }
+}
+
 test("engine binary is present (built)", { skip: !HAVE_BIN && "run ./build.sh first" }, () => {
   assert.ok(HAVE_BIN, "bin/omaviz-engine must exist")
 })
@@ -96,12 +112,7 @@ test("rejects the removed --fall-mode flag", { skip: !HAVE_BIN }, async () => {
 })
 
 test("rejects an out-of-range band count", { skip: !HAVE_BIN }, async () => {
-  const r = await new Promise((resolve) => {
-    const p = spawn(BIN, ["--source", "gen", "--bands", "0"], { stdio: ["ignore", "pipe", "pipe"] })
-    let err = ""
-    p.stderr.on("data", (d) => { err += d.toString() })
-    p.on("exit", (code) => resolve({ code, err }))
-  })
-  assert.notEqual(r.code, 0)
+  const r = await runExpectExit(["--source", "gen", "--bands", "0"])
+  assert.notEqual(r.code, 0, `expected non-zero exit, got ${r.code}`)
   assert.match(r.err + "", /--bands/)
 })

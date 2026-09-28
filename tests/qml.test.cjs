@@ -98,9 +98,12 @@ test("installer ships ModelStore.js + Physics.js and never the old Model.js", ()
   assert.ok(s.includes("ModelStore.js"), "install.sh must ship ModelStore.js")
   assert.ok(s.includes("Physics.js"), "install.sh must ship Physics.js")
   assert.ok(!/Model\.js/.test(s), "install.sh must not reference Model.js")
-  // Both the copy path and the marker must agree.
-  assert.equal((s.match(/ModelStore\.js/g) || []).length, 2, "copy + marker must both list ModelStore.js")
-  assert.equal((s.match(/Physics\.js/g) || []).length, 2, "copy + marker must both list Physics.js")
+  // The marker is now derived from what was actually installed (each path is
+  // claimed only when the installed file is byte-identical to $SRC), so the
+  // copy path and the marker cannot disagree. The old hand-maintained text
+  // list had to be kept in sync manually — and silently wasn't.
+  assert.ok(/cmp -s "[^"]*PLUGIN_DIR[^"]*" "[^"]*SRC/.test(s),
+    "marker must be generated from the installed files, not a hand-written list")
 })
 
 // qmllint reports duplicate property names as a WARNING-free parse, but the

@@ -1,5 +1,54 @@
 # Changelog
 
+## 8.4.3
+
+Installer hardening — every deletion and overwrite site in both scripts audited.
+
+### Fixed
+- **A foreign launcher could be deleted by path coincidence.** The legacy-entry
+  check treated any `Exec=`/`TryExec=` line containing `plugins/…omaviz` as
+  ours, so an unrelated entry running e.g.
+  `/home/user/plugins/tools/omaviz-helper` was removed. Ownership now comes from
+  the command alone — it must be a command this project actually shipped
+  (`omaviz`), matched on the final path segment. No substrings, no path guesses.
+- **Our own directories were removed wholesale.** The marker listed bare
+  directories (`assets/`, `bin/`, `tests/`), so a managed update or an uninstall
+  `rm -rf`'d them and took any file the user had placed inside with them. The
+  marker now records individual files, removal is per-file, and directories are
+  only `rmdir`'d when empty. A marker in the old format is handled
+  non-recursively, so a stale marker cannot delete user files either.
+- **Ownership is proven, not assumed.** A path is recorded in the marker only
+  when the file installed there is byte-identical to its source counterpart, so
+  a file the user added — or one of ours that they edited — is never claimed and
+  therefore never removed.
+- **Symlinks are no longer followed.** Both scripts refuse a symlinked plugin
+  directory outright (every path is resolved relative to it, so a link would
+  redirect deletions at its target), and a symlinked launcher is moved aside
+  instead of written through — which previously overwrote its target file.
+- **A `.git` file could leak into the plugin directory.** `rsync --exclude
+  '/.git/'` matches only a *directory*; in a worktree or submodule `.git` is a
+  file, so it was copied into the live plugin dir. The exclude is now `/.git`.
+- Backup names are uniquified, so two backups in the same second cannot clobber
+  each other.
+
+### Tests
+- `tests/installer.test.sh`: 35 → 71 scenarios, covering every case above —
+  the reported path-coincidence case, files placed inside our own directories,
+  old-format markers, symlinked plugin dirs and launchers, backup collisions,
+  and a guard that nothing dev-only ships inside the plugin.
+
+### Docs
+- `docs/BUILD_ATTESTATION.md` named an engine digest from before the 8.4.0
+  engine rebuild. It now states the digest actually shipped and the CI run that
+  produced it.
+
+### CI
+- New `release.yml`: pushing a tag creates a verified, attested GitHub release.
+  It refuses to publish unless the tag is on `master`, the manifest and package
+  versions equal the tag, and the committed engine is byte-identical to a fresh
+  pinned-container rebuild. The release carries the binary, `SHA256SUMS`, and a
+  Sigstore attestation.
+
 ## 8.4.2
 
 Installer safety — the second marketplace review blocker.
