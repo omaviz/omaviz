@@ -299,6 +299,52 @@ printf 'bars = 32\n' >"$HOME/.config/omaviz/config.toml"
 run_uninstall
 check "no --purge keeps config" "[ -f \"$HOME/.config/omaviz/config.toml\" ]"
 
+# ========================= symlinked directories inside the plugin directory
+# Reported in review: a symlinked INTERMEDIATE directory must not redirect a
+# marker-driven operation outside the plugin dir. `rm -f` does not follow a
+# symlink at the leaf but does resolve every component above it, so
+# `assets/omaviz.desktop` must not reach through a linked `assets/`.
+step "a symlinked directory inside the plugin dir never redirects a delete"
+
+new_home 24
+run_install
+mkdir -p "$HOME/user-assets"
+printf 'user data\n' >"$HOME/user-assets/omaviz.desktop"
+mv "$(PD)/assets" "$HOME/assets-real"
+ln -s "$HOME/user-assets" "$(PD)/assets"
+run_uninstall
+check "uninstall exits 0"                      "[ $? -eq 0 ]"
+check "the OUTSIDE file was not deleted"       "[ -f \"$HOME/user-assets/omaviz.desktop\" ]"
+check "and it still has its contents"          "grep -q 'user data' \"$HOME/user-assets/omaviz.desktop\""
+check "the symlink itself survived"            "[ -L \"$(PD)/assets\" ]"
+check "our files elsewhere were still removed" "[ ! -e \"$(PD)/bin/omaviz-engine\" ] && [ ! -e \"$(PD)/manifest.json\" ]"
+check "the plugin dir was kept (link remains)" "[ -d \"$(PD)\" ]"
+
+new_home 25
+run_install
+mkdir -p "$HOME/user-assets"
+mv "$(PD)/assets" "$HOME/assets-real"
+ln -s "$HOME/user-assets" "$(PD)/assets"
+run_install
+check "managed re-install refuses"             "[ $? -ne 0 ]"
+check "nothing was written outside"            "[ -z \"$(ls -A \"$HOME/user-assets\")\" ]"
+run_install --force
+check "--force still exits 0"                  "[ $? -eq 0 ]"
+check "the link was moved aside, not followed" "ls -d \"$(PD).bak-\"* >/dev/null 2>&1"
+check "the user dir is still empty"            "[ -z \"$(ls -A \"$HOME/user-assets\")\" ]"
+check "a clean plugin dir was installed"       "[ -f \"$(PD)/manifest.json\" ] && [ ! -L \"$(PD)/assets\" ]"
+
+# A symlink at the LEAF is unlinked, never followed: the file it points at lives
+# outside the plugin dir and is not ours to delete.
+new_home 26
+run_install
+printf 'outside\n' >"$HOME/target"
+ln -s "$HOME/target" "$(PD)/manifest.json"
+run_uninstall
+check "uninstall exits 0"                      "[ $? -eq 0 ]"
+check "the symlink target survived"            "[ -f \"$HOME/target\" ]"
+check "its contents are untouched"             "grep -q outside \"$HOME/target\""
+
 # ================================================================ summary
 printf '\n\033[1m== installer/uninstaller safety ==\033[0m\n'
 printf '  %d passed, %d failed\n' "$PASS" "$FAIL"
