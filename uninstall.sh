@@ -38,9 +38,15 @@ done
 say()  { printf '  %s\n' "$*"; }
 step() { printf '\n== %s ==\n' "$*"; }
 
+# Uniquifies the name so a second backup in the same second cannot clobber the
+# first. `mv` moves a symlink itself, never its target.
 backup() {
-  local path="$1"
-  local bk="${path}.bak-$(date +%Y%m%d-%H%M%S)"
+  local path="$1" bk n=1
+  bk="${path}.bak-$(date +%Y%m%d-%H%M%S)"
+  while [ -e "$bk" ] || [ -L "$bk" ]; do
+    bk="${path}.bak-$(date +%Y%m%d-%H%M%S)-$n"
+    n=$((n + 1))
+  done
   mv "$path" "$bk"
   say "backed up: $path -> $bk"
 }
@@ -56,28 +62,57 @@ backup() {
 # user files — the very thing this safety model forbids.
 # `omarchy plugin disable` unloads the plugin from the shell without touching
 # any files, which is all we need before removing our own.
+# --- managed-path helpers (SHARED contract with install.sh) -----------------
+# The marker records ONLY files the installer wrote, as relative paths, one per
+# line. '#' lines are comments. Validation covers EVERY line BEFORE anything is
+# deleted: a corrupt or hostile marker must not escape the plugin directory
+# (traversal, absolute paths) and must not cause a partial delete.
 validate_marker() {
-  local mf="$1" line
+  local mf="$1" entry
   [ -f "$mf" ] || return 0
-  while IFS= read -r line; do
-    if [ -z "$line" ]; then
-      echo "invalid marker entry (empty line) in $mf" >&2
-      return 1
-    fi
-    case "$line" in
-      *..*) echo "invalid marker entry (path traversal): $line" >&2; return 1 ;;
-      /*)   echo "invalid marker entry (absolute path): $line" >&2; return 1 ;;
+  while IFS= read -r entry; do
+    case "$entry" in
+      ''|\#*) continue ;;                                    # blank / comment
+      *..*) echo "invalid marker entry (path traversal): $entry" >&2; return 1 ;;
+      /*)   echo "invalid marker entry (absolute path): $entry" >&2; return 1 ;;
     esac
   done < "$mf"
   return 0
 }
+# Remove ONLY what the marker proves we installed.
+#   * a plain path          -> rm -f  (a file we shipped)
+#   * a path ending in '/'  -> NEVER recursive. A marker from the older v1
+#                              format listed whole directories; `rm -rf` on one
+#                              of those would destroy files the user added
+#                              inside it. Such an entry is only rmdir'd, so a
+#                              directory still holding anything survives.
 remove_managed_paths() {
-  local mf="$1" f
+  local mf="$1" entry
   [ -f "$mf" ] || return 0
-  while IFS= read -r f; do
-    rm -rf "${PLUGIN_DIR:?}/$f"
+  while IFS= read -r entry; do
+    case "$entry" in
+      ''|\#*) continue ;;
+      */) rmdir "${PLUGIN_DIR:?}/${entry%/}" 2>/dev/null || true ;;
+      *)  rm -f "${PLUGIN_DIR:?}/$entry" ;;
+    esac
   done < "$mf"
 }
+# Drop directories that became empty, deepest-first. `rmdir` never recurses, so
+# any directory still holding a user's file is left exactly as it is.
+prune_empty_dirs() {
+  local d
+  [ -d "$PLUGIN_DIR" ] || return 0
+  while IFS= read -r d; do
+    rmdir "$d" 2>/dev/null || true
+  done < <(find "$PLUGIN_DIR" -mindepth 1 -depth -type d 2>/dev/null)
+}
+
+# Never operate through a symlinked plugin dir: every path below is resolved
+# relative to $PLUGIN_DIR, so a symlink would aim our deletions at its target.
+if [ -L "$PLUGIN_DIR" ]; then
+  echo "refusing to touch $PLUGIN_DIR: it is a symlink" >&2
+  exit 1
+fi
 
 step "removing Omarchy plugin (bundled engine included)"
 if [ -e "$PLUGIN_DIR" ]; then
@@ -93,6 +128,7 @@ if [ -e "$PLUGIN_DIR" ]; then
     fi
     remove_managed_paths "$PLUGIN_DIR/$MARKER"
     rm -f "$PLUGIN_DIR/$MARKER"
+    prune_empty_dirs
     if rmdir "$PLUGIN_DIR" 2>/dev/null; then
       say "removed $PLUGIN_DIR"
     else

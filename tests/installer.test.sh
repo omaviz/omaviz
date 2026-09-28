@@ -57,6 +57,13 @@ check "plugin dir created"              "[ -d \"$(PD)\" ]"
 check "marker written"                  "[ -f \"$(PD)/.omaviz-managed\" ]"
 check "bundled engine installed + exec" "[ -x \"$(PD)/bin/omaviz-engine\" ]"
 check "our launcher installed"          "[ -f \"$(LAUNCHER)\" ]"
+# A `.git` FILE (worktree/submodule) is not matched by the '/.git/' directory
+# pattern, so it used to be copied into the plugin dir. Nothing dev-only may
+# ship inside the plugin.
+check "no dev-only files leaked into the plugin dir" \
+  "[ ! -e \"$(PD)/.git\" ] && [ ! -e \"$(PD)/.gitignore\" ] && [ ! -e \"$(PD)/package.json\" ] && [ ! -e \"$(PD)/engine\" ] && [ ! -e \"$(PD)/docs\" ] && [ ! -e \"$(PD)/tools\" ]"
+check "no repository script is installed" \
+  "! ls \"$(PD)\"/*.sh >/dev/null 2>&1"
 
 # ======================================== user files survive a managed update
 step "user files survive a managed re-install"
@@ -161,24 +168,117 @@ printf '[Desktop Entry]\nType=Application\nName=Omaviz\nExec=omaviz start\n' >"$
 run_install
 check "our stale legacy entry removed"       "[ ! -e \"$(LEGACY)\" ]"
 
-# (c) a legacy entry whose Exec points inside our plugin dir is ours too
+# (c) REPORTED CASE: a foreign command that merely lives under a path
+#     containing plugins/…omaviz is NOT ours and must survive
 new_home 13
 mkdir -p "$HOME/.local/share/applications"
-printf '[Desktop Entry]\nType=Application\nName=Omaviz\nExec=quickshell -p %s/Desktop.qml\n' "$(PD)" >"$(LEGACY)"
+printf '[Desktop Entry]\nType=Application\nName=Helper\nExec=/home/user/plugins/tools/omaviz-helper %%f\n' >"$(LEGACY)"
 run_install
-check "legacy entry with our plugin path removed" "[ ! -e \"$(LEGACY)\" ]"
+check "foreign command under plugins/...omaviz survives" "[ -f \"$(LEGACY)\" ]"
 
-# (d) a lookalike command is NOT ours (must not prefix-match)
+# (d) same, but the foreign command names our own plugin directory
 new_home 14
+mkdir -p "$HOME/.local/share/applications"
+printf '[Desktop Entry]\nType=Application\nName=Other\nExec=/opt/plugins/org.omaviz.visualizer/tools/omaviz-helper %%f\n' >"$(LEGACY)"
+run_install
+check "foreign command naming our plugin dir survives" "[ -f \"$(LEGACY)\" ]"
+
+# (e) a lookalike command is NOT ours (must not prefix-match)
+new_home 15
 mkdir -p "$HOME/.local/share/applications"
 printf '[Desktop Entry]\nType=Application\nName=omaviz-notes\nExec=omaviz-notes-editor %%f\n' >"$(LEGACY)"
 run_install
 check "lookalike command survives"           "[ -f \"$(LEGACY)\" ]"
 
-# (e) absent file -> the whole path is a clean no-op
-new_home 15
+# (f) our CLI by absolute path is still ours
+new_home 16
+mkdir -p "$HOME/.local/share/applications"
+printf '[Desktop Entry]\nType=Application\nName=Omaviz\nExec=/usr/local/bin/omaviz start\n' >"$(LEGACY)"
+run_install
+check "our CLI by absolute path removed"     "[ ! -e \"$(LEGACY)\" ]"
+
+# (g) EVERY command must be ours: our Exec + a foreign TryExec -> not ours
+new_home 17
+mkdir -p "$HOME/.local/share/applications"
+printf '[Desktop Entry]\nType=Application\nName=Omaviz\nExec=omaviz start\nTryExec=omaviz-helper\n' >"$(LEGACY)"
+run_install
+check "entry with a foreign TryExec survives" "[ -f \"$(LEGACY)\" ]"
+
+# (h) absent file -> the whole path is a clean no-op
+new_home 18
 run_install
 check "no legacy file -> install exits 0"    "[ $? -eq 0 ]"
+
+# ====== user files INSIDE our own directories must survive install+uninstall
+# (a v1 marker listed bare directories like assets/; rm -rf on one of those
+#  deleted whatever the user had put inside it)
+step "user files inside our directories survive"
+new_home 19
+run_install
+check "marker is file-based (no bare dir entry)" "! grep -qx 'assets/' \"$(PD)/.omaviz-managed\""
+check "marker records our own asset file"        "grep -qx 'assets/omaviz.desktop' \"$(PD)/.omaviz-managed\""
+mkdir -p "$(PD)/assets/notes"
+printf 'mine\n' >"$(PD)/assets/my-custom.frag"
+printf 'keep\n' >"$(PD)/assets/notes/keep.txt"
+printf 'mine\n' >"$(PD)/bin/user-tool"
+run_install
+check "user file in assets/ survives re-install"    "[ -f \"$(PD)/assets/my-custom.frag\" ]"
+check "user subdir in assets/ survives re-install"  "[ -f \"$(PD)/assets/notes/keep.txt\" ]"
+run_uninstall
+check "uninstall exits 0"                           "[ $? -eq 0 ]"
+check "user file in assets/ survives uninstall"     "[ -f \"$(PD)/assets/my-custom.frag\" ]"
+check "user subdir in assets/ survives uninstall"   "[ -f \"$(PD)/assets/notes/keep.txt\" ]"
+check "user file in bin/ survives uninstall"        "[ -f \"$(PD)/bin/user-tool\" ]"
+check "our own asset file IS removed"               "[ ! -e \"$(PD)/assets/omaviz.desktop\" ]"
+check "our own engine IS removed"                   "[ ! -e \"$(PD)/bin/omaviz-engine\" ]"
+check "plugin dir kept (user files remain)"         "[ -d \"$(PD)\" ]"
+
+# a marker from the older format must not be able to rm -rf a directory
+step "a v1 marker (bare directories) cannot delete user files"
+new_home 20
+run_install
+printf 'mine\n' >"$(PD)/assets/user-kept.frag"
+printf '# omaviz-managed-marker v1\nmanifest.json\nassets/\nbin/\ntests/\n' >"$(PD)/.omaviz-managed"
+run_uninstall
+check "uninstall exits 0"                 "[ $? -eq 0 ]"
+check "v1 dir entry did not rm -rf"       "[ -f \"$(PD)/assets/user-kept.frag\" ]"
+check "v1 marker still removed our file"  "[ ! -e \"$(PD)/manifest.json\" ]"
+check "plugin dir kept (user file remains)" "[ -d \"$(PD)\" ]"
+
+# ================================================== symlinks are never followed
+step "symlinks are refused, never followed"
+new_home 21
+mkdir -p "$HOME/elsewhere"
+printf 'precious\n' >"$HOME/elsewhere/precious.txt"
+mkdir -p "$(dirname "$(PD)")"
+ln -s "$HOME/elsewhere" "$(PD)"
+run_install
+check "install refuses a symlinked plugin dir"   "[ $? -ne 0 ]"
+run_uninstall
+check "uninstall refuses a symlinked plugin dir" "[ $? -ne 0 ]"
+check "symlink target untouched"                 "[ -f \"$HOME/elsewhere/precious.txt\" ]"
+
+new_home 22
+mkdir -p "$HOME/.local/share/applications"
+printf 'user content\n' >"$HOME/target-file"
+ln -s "$HOME/target-file" "$(LAUNCHER)"
+run_install
+check "install exits 0"                    "[ $? -eq 0 ]"
+check "launcher is now a real file"        "[ -f \"$(LAUNCHER)\" ] && [ ! -L \"$(LAUNCHER)\" ]"
+check "symlink target NOT overwritten"     "grep -q 'user content' \"$HOME/target-file\""
+check "the link itself was backed up"      "ls \"$(LAUNCHER).bak-\"* >/dev/null 2>&1"
+
+# ================================================== backups never clobber
+step "backups never clobber each other"
+new_home 23
+mkdir -p "$(PD)"
+printf 'first\n' >"$(PD)/foreign.txt"
+run_uninstall --force
+mkdir -p "$(PD)"
+printf 'second\n' >"$(PD)/foreign.txt"
+run_uninstall --force
+check "two distinct backups exist" "ls -d \"$HOME/.config/omarchy/plugins/org.omaviz.visualizer.bak-\"* 2>/dev/null | grep -qc ."
+check "both originals preserved"   "grep -rq 'first' \"$HOME/.config/omarchy/plugins/\" && grep -rq 'second' \"$HOME/.config/omarchy/plugins/\""
 
 # ======================================================= --purge behaviour
 step "--purge removes only omaviz's own config"

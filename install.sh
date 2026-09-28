@@ -44,22 +44,32 @@ say()  { printf '  %s\n' "$*"; }
 step() { printf '\n== %s ==\n' "$*"; }
 
 # Backup $1 to $1.bak-<timestamp> (preserves the original for the user).
+# Uniquifies the name so a second backup in the same second cannot clobber the
+# first. `mv` moves a symlink itself, never its target.
 backup() {
-  local path="$1"
-  local bk="${path}.bak-$(date +%Y%m%d-%H%M%S)"
+  local path="$1" bk n=1
+  bk="${path}.bak-$(date +%Y%m%d-%H%M%S)"
+  while [ -e "$bk" ] || [ -L "$bk" ]; do
+    bk="${path}.bak-$(date +%Y%m%d-%H%M%S)-$n"
+    n=$((n + 1))
+  done
   mv "$path" "$bk"
   say "backed up: $path -> $bk"
 }
 
-# True only when a *desktop entry* is one THIS project created. Very old omaviz
-# versions installed `omaviz-desktop.desktop` whose Exec ran the `omaviz` CLI;
-# later ones point at our plugin's Desktop.qml. Ownership is judged from the
-# Exec/TryExec *command*, never from the word "omaviz" appearing anywhere in the
-# file: a user-owned entry that merely mentions the plugin (in Name, Comment, or
-# a path inside its own command) is not ours to delete. Requires a [Desktop
-# Entry] section and that EVERY command in it is one we shipped.
+# Commands this project has actually shipped in a desktop entry. Ownership is
+# judged ONLY against these exact command names — never against a path or a
+# substring. An entry whose command is some other program that merely lives
+# under a path containing "plugins" or "omaviz" (e.g.
+# /home/user/plugins/tools/omaviz-helper) is NOT ours and must not be removed.
+OUR_LAUNCHER_COMMANDS="omaviz"
+
+# True only when a desktop entry is one THIS project created: it must have a
+# [Desktop Entry] section AND every Exec=/TryExec= command in it must be one of
+# OUR_LAUNCHER_COMMANDS. Anything else is left untouched.
 is_our_legacy_launcher() {
-  local file="$1" line cmd cmdword seen=0
+  local file="$1" line cmd word seen=0
+  [ -f "$file" ] || return 1
   grep -q '^\[Desktop Entry\]' "$file" 2>/dev/null || return 1
   while IFS= read -r line; do
     case "$line" in
@@ -70,13 +80,10 @@ is_our_legacy_launcher() {
     cmd="${line#*=}"
     cmd="${cmd%%[[:space:]]*}"         # first token = the command itself
     cmd="${cmd%\"}"; cmd="${cmd#\"}"   # strip surrounding quotes
-    cmdword="${cmd##*/}"               # basename
-    if [ "$cmdword" = "omaviz" ]; then
-      continue                         # the CLI we used to ship
-    fi
-    case "$line" in
-      *plugins/*omaviz*) continue ;;   # a path inside an omaviz plugin dir
-      *) return 1 ;;                   # foreign command -> not ours
+    word="${cmd##*/}"                  # basename only — no path heuristic
+    case " $OUR_LAUNCHER_COMMANDS " in
+      *" $word "*) continue ;;         # a command we shipped
+      *) return 1 ;;                   # anything else -> not ours
     esac
   done <"$file"
   [ "$seen" = 1 ]
@@ -124,52 +131,78 @@ fi
 mkdir -p "$PLUGIN_DIR"
 
 # --- managed-path helpers (SHARED contract with uninstall.sh) --------------
-# Validate EVERY line of the marker BEFORE deleting anything. A corrupted or
-# foreign marker must never let a path escape the plugin directory (empty
-# lines, '..' traversal, absolute paths) — and must not cause a partial
-# delete either: validation is all-or-nothing, then removal runs.
+# The marker records ONLY files this installer wrote, as relative paths, one
+# per line. '#' lines are comments. Validation runs over EVERY line BEFORE
+# anything is deleted: a corrupt or hostile marker must not escape the plugin
+# directory (traversal, absolute paths) and must not cause a partial delete.
 validate_marker() {
-  local mf="$1" line
+  local mf="$1" entry
   [ -f "$mf" ] || return 0
-  while IFS= read -r line; do
-    if [ -z "$line" ]; then
-      echo "invalid marker entry (empty line) in $mf" >&2
-      return 1
-    fi
-    case "$line" in
-      *..*) echo "invalid marker entry (path traversal): $line" >&2; return 1 ;;
-      /*)   echo "invalid marker entry (absolute path): $line" >&2; return 1 ;;
+  while IFS= read -r entry; do
+    case "$entry" in
+      ''|\#*) continue ;;                                    # blank / comment
+      *..*) echo "invalid marker entry (path traversal): $entry" >&2; return 1 ;;
+      /*)   echo "invalid marker entry (absolute path): $entry" >&2; return 1 ;;
     esac
   done < "$mf"
   return 0
 }
+# Remove ONLY what the marker proves we installed.
+#   * a plain path          -> rm -f  (a file we shipped)
+#   * a path ending in '/'  -> NEVER recursive. A marker from the older v1
+#                              format listed whole directories; deleting those
+#                              with `rm -rf` would destroy files the user added
+#                              inside them. Such an entry is only rmdir'd, so a
+#                              directory still holding anything survives, and
+#                              re-installing simply overwrites our own files.
 remove_managed_paths() {
-  local mf="$1" f
+  local mf="$1" entry
   [ -f "$mf" ] || return 0
-  while IFS= read -r f; do
-    rm -rf "${PLUGIN_DIR:?}/$f"
+  while IFS= read -r entry; do
+    case "$entry" in
+      ''|\#*) continue ;;
+      */) rmdir "${PLUGIN_DIR:?}/${entry%/}" 2>/dev/null || true ;;
+      *)  rm -f "${PLUGIN_DIR:?}/$entry" ;;
+    esac
   done < "$mf"
 }
+# Drop directories that became empty, deepest-first. `rmdir` never recurses,
+# so any directory still holding a user's file is left exactly as it is.
+prune_empty_dirs() {
+  local d
+  [ -d "$PLUGIN_DIR" ] || return 0
+  while IFS= read -r d; do
+    rmdir "$d" 2>/dev/null || true
+  done < <(find "$PLUGIN_DIR" -mindepth 1 -depth -type d 2>/dev/null)
+}
+
+# Never operate through a symlinked plugin dir: every path below is resolved
+# relative to $PLUGIN_DIR, so a symlink would aim our deletions at its target.
+if [ -L "$PLUGIN_DIR" ]; then
+  echo "refusing to touch $PLUGIN_DIR: it is a symlink" >&2
+  exit 1
+fi
 
 validate_marker "$PLUGIN_DIR/$MARKER" || {
   echo "refusing to touch $PLUGIN_DIR: invalid marker" >&2
   exit 1
 }
+# Remove only files WE shipped in a previous run (listed in the marker) — never
+# foreign files a user may have dropped into the plugin dir — then prune the
+# directories that emptied out. Both steps are non-recursive.
+remove_managed_paths "$PLUGIN_DIR/$MARKER"
+prune_empty_dirs
+
 if command -v rsync >/dev/null; then
-  # Remove only files WE shipped in a previous run (listed in the marker),
-  # never foreign files a user may have dropped into the plugin dir.
-  remove_managed_paths "$PLUGIN_DIR/$MARKER"
   rsync -a \
-    --exclude '/engine/' --exclude '/docs/' --exclude '/.git/' \
+    --exclude '/engine/' --exclude '/docs/' --exclude '/.git' \
     --exclude '/tools/' --exclude '/.github/' \
     --exclude '/*.sh' --exclude '/*.md' --exclude '/LICENSE' --exclude '/preview.png' \
     --exclude '/package.json' --exclude '/.gitignore' \
     --exclude "/$MARKER" \
     "$SRC/" "$PLUGIN_DIR/"
 else
-  # Non-rsync path: never rm -rf the whole dir. Remove only the files we
-  # manage (marker lists them), then copy fresh ones in.
-  remove_managed_paths "$PLUGIN_DIR/$MARKER"
+  # Non-rsync path: plain copies of the same file set.
   cp "$SRC"/manifest.json "$PLUGIN_DIR/"
   cp "$SRC"/*.qml "$SRC"/ModelStore.js "$SRC"/Physics.js "$PLUGIN_DIR/"
   # Optional file classes — copy only those that exist (glob would otherwise
@@ -180,16 +213,16 @@ else
   cp -r "$SRC/assets" "$SRC/bin" "$SRC/tests" "$PLUGIN_DIR/"
 fi
 chmod +x "$PLUGIN_DIR/bin/omaviz-engine"
-# (Re)write the management marker AFTER the copy: records exactly the paths
-# this installer owns, so future runs (and uninstall) only ever touch these.
+# (Re)write the management marker AFTER the copy: records the paths this
+# installer owns — proven, not assumed. A path is claimed only when the file we
+# just placed at that path is byte-identical to its counterpart in $SRC. Files
+# the user added (or ours that they edited) are therefore never claimed, so no
+# later run and no uninstall can remove them.
 {
-  echo "manifest.json"
-  for f in "$SRC"/*.qml "$SRC"/ModelStore.js "$SRC"/Physics.js "$SRC"/*.frag "$SRC"/*.qsb; do
-    [ -e "$f" ] && echo "${f#"$SRC"/}"
-  done
-  echo "assets/"
-  echo "bin/"
-  echo "tests/"
+  echo "# omaviz-managed-marker v2 — files below are installed by the omaviz installer"
+  while IFS= read -r rel; do
+    [ -f "$SRC/$rel" ] && cmp -s "$PLUGIN_DIR/$rel" "$SRC/$rel" && printf '%s\n' "$rel"
+  done < <(find "$PLUGIN_DIR" -type f ! -name "$MARKER" -printf '%P\n' 2>/dev/null | sort)
 } > "$PLUGIN_DIR/$MARKER"
 say "plugin -> $PLUGIN_DIR"
 
@@ -203,22 +236,33 @@ say "plugin -> $PLUGIN_DIR"
 #   - no existing file            -> install ours
 #   - ours (marker comment inside)-> replace
 #   - foreign file                -> back it up, then install ours
-#   - legacy omaviz-desktop.desktop -> remove ONLY if provably ours (its
-#     Exec/TryExec is the `omaviz` CLI or an omaviz plugin path); a user file
-#     that merely mentions omaviz is left alone
+#   - a symlink                   -> back up the LINK (never write through it)
+#   - legacy omaviz-desktop.desktop -> remove ONLY if its Exec/TryExec is a
+#     command this project actually shipped (see is_our_legacy_launcher)
 step "installing app launcher"
 mkdir -p "$APPS_DIR"
-if [ -f "$LAUNCHER" ] && ! grep -q "^# omaviz-managed$" "$LAUNCHER"; then
+if [ -L "$LAUNCHER" ]; then
+  # Writing with `>` would follow the symlink and overwrite whatever it points
+  # at. Move the link itself aside first, then create a real file.
+  backup "$LAUNCHER"
+elif [ -f "$LAUNCHER" ] && ! grep -q "^# omaviz-managed$" "$LAUNCHER"; then
   backup "$LAUNCHER"
 fi
 {
-  echo "# omaviz-managed"
-  sed "s|^Exec=.*|Exec=quickshell -p $PLUGIN_DIR/Desktop.qml|" "$SRC/assets/omaviz.desktop"
+  printf '# omaviz-managed\n'
+  # Build the Exec line with printf (not sed) so a path containing sed's
+  # delimiter or an '&' cannot corrupt the entry.
+  while IFS= read -r l; do
+    case "$l" in
+      Exec=*) printf 'Exec=quickshell -p %s/Desktop.qml\n' "$PLUGIN_DIR" ;;
+      *)      printf '%s\n' "$l" ;;
+    esac
+  done < "$SRC/assets/omaviz.desktop"
 } > "$LAUNCHER"
-# Legacy entry from older omaviz versions: remove ONLY when the file is
-# provably ours — a desktop entry whose command is the `omaviz` CLI we shipped,
-# or a path inside an omaviz plugin dir. A user-owned .desktop that merely
-# mentions omaviz is left untouched (see is_our_legacy_launcher).
+# Legacy entry from older omaviz versions: removed ONLY when the file is
+# provably ours — a desktop entry whose every Exec/TryExec command is one we
+# shipped. An entry running some other program that merely lives under a path
+# containing "plugins" or "omaviz" is NOT ours and is left untouched.
 if [ -f "$LEGACY_LAUNCHER" ]; then
   if is_our_legacy_launcher "$LEGACY_LAUNCHER"; then
     rm -f "$LEGACY_LAUNCHER"
