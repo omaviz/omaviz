@@ -1,5 +1,31 @@
 # Changelog
 
+## 8.4.4
+
+Marker-driven operations can no longer be redirected outside the plugin folder.
+
+### Fixed
+- **A symlinked directory inside the plugin folder redirected a delete.** The
+  scripts refused a symlinked plugin folder at the top level, but still resolved
+  every component *below* it. Replacing `assets/` with a symlink to a user
+  directory made the marker entry `assets/omaviz.desktop` delete that outside
+  file during a managed update or an uninstall. Every marker entry is now
+  resolved component-by-component and skipped unless it is provably contained —
+  no absolute path, no traversal, no symlinked intermediate directory — so `rm`
+  and `rmdir` can never reach outside the plugin folder.
+- **The same boundary was open on the write side.** `rsync`, `chmod` and the
+  launcher write all resolve intermediate components, so a linked subdirectory
+  received our files outside the plugin folder. Installing into a plugin folder
+  that contains a symlink is now refused outright; `--force` backs the whole
+  directory up (`mv` moves a link, never through it) and installs fresh.
+
+### Tests
+- `tests/installer.test.sh`: 71 → 86 scenarios, covering the reported
+  arrangement for both an uninstall and a managed update, the `--force` escape
+  hatch, and a symlink at the leaf (unlinked, never followed). The new
+  scenarios were confirmed to fail against the previous commit (4 failures)
+  before the fix went in.
+
 ## 8.4.3
 
 Installer hardening — every deletion and overwrite site in both scripts audited.

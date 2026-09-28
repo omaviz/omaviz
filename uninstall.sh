@@ -79,6 +79,23 @@ validate_marker() {
   done < "$mf"
   return 0
 }
+# True only when the relative path stays inside $PLUGIN_DIR: not absolute, no
+# traversal, and NO INTERMEDIATE DIRECTORY IS A SYMLINK. `rm -f` does not follow
+# a symlink at the leaf, but it DOES resolve every component above it — so
+# replacing `assets/` with a link to a user directory would make the marker
+# entry `assets/omaviz.desktop` delete a file OUTSIDE the plugin dir, exactly
+# the boundary this script promises to respect.
+managed_path_is_contained() {
+  local rel="$1" cur="$PLUGIN_DIR" part
+  [ -n "$rel" ] || return 1
+  case "$rel" in /*|*..*) return 1 ;; esac
+  while [ "$rel" != "${rel%%/*}" ]; do        # while an intermediate remains
+    part="${rel%%/*}"; rel="${rel#*/}"
+    cur="$cur/$part"
+    [ -d "$cur" ] && [ ! -L "$cur" ] || return 1
+  done
+  [ -n "$rel" ]
+}
 # Remove ONLY what the marker proves we installed.
 #   * a plain path          -> rm -f  (a file we shipped)
 #   * a path ending in '/'  -> NEVER recursive. A marker from the older v1
@@ -86,14 +103,23 @@ validate_marker() {
 #                              of those would destroy files the user added
 #                              inside it. Such an entry is only rmdir'd, so a
 #                              directory still holding anything survives.
+# Either way the entry is skipped unless it is provably contained, so a
+# symlinked intermediate can never redirect the operation out of the plugin dir.
 remove_managed_paths() {
-  local mf="$1" entry
+  local mf="$1" entry rel
   [ -f "$mf" ] || return 0
   while IFS= read -r entry; do
     case "$entry" in
       ''|\#*) continue ;;
-      */) rmdir "${PLUGIN_DIR:?}/${entry%/}" 2>/dev/null || true ;;
-      *)  rm -f "${PLUGIN_DIR:?}/$entry" ;;
+    esac
+    rel="${entry%/}"
+    if ! managed_path_is_contained "$rel"; then
+      echo "skipped marker entry (leaves the plugin dir): $entry" >&2
+      continue
+    fi
+    case "$entry" in
+      */) rmdir "${PLUGIN_DIR:?}/$rel" 2>/dev/null || true ;;
+      *)  rm -f "${PLUGIN_DIR:?}/$rel" ;;
     esac
   done < "$mf"
 }
