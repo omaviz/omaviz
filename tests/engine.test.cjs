@@ -35,9 +35,11 @@ function collect(args, ms) {
 }
 
 // Spawn the engine expecting it to exit on its own; capture code + stderr.
-// A process killed by a signal (code === null, empty stderr) is a spawn race
-// while the runner is loaded with other concurrent test files — not a contract
-// failure — so retry a couple of times before reporting.
+// A process killed by a signal (code === null) or one that produced no stderr
+// at all is a spawn race on a loaded runner — not a contract failure — so
+// retry a couple of times before reporting the real result. Every test that
+// asserts on argument-validation stderr must go through this: leaving one on a
+// raw inline spawn is what made CI flake twice.
 async function runExpectExit(args) {
   for (let attempt = 0; ; attempt++) {
     const r = await new Promise((resolve) => {
@@ -46,7 +48,7 @@ async function runExpectExit(args) {
       p.stderr.on("data", (d) => { err += d.toString() })
       p.on("exit", (code, signal) => resolve({ code, signal, err }))
     })
-    if (r.code !== null || attempt >= 2) return r
+    if ((r.code !== null && r.err !== "") || attempt >= 2) return r
   }
 }
 
@@ -101,12 +103,7 @@ test("a quiet signal is NOT flagged silent (faint audio stays visible)", { skip:
 })
 
 test("rejects the removed --fall-mode flag", { skip: !HAVE_BIN }, async () => {
-  const r = await new Promise((resolve) => {
-    const p = spawn(BIN, ["--fall-mode", "linear"], { stdio: ["ignore", "pipe", "pipe"] })
-    let err = ""
-    p.stderr.on("data", (d) => { err += d.toString() })
-    p.on("exit", (code) => resolve({ code, err }))
-  })
+  const r = await runExpectExit(["--fall-mode", "linear"])
   assert.notEqual(r.code, 0, "must exit non-zero")
   assert.match(r.err + "", /--fall-mode|unexpected argument/i)
 })
