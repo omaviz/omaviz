@@ -74,7 +74,23 @@ BarWidget {
         Store.spectrumData.silent = true
       }
     }
+    // Scope is a SPAWN-TIME flag (it toggles the engine's `--wave` feed): the
+    // process must be bounced when it flips, or Bars mode would keep paying
+    // ~0.7KB/line of JSON parse for a snippet it never reads.
+    var sc = root.config.scope === true
+    if (root._lastScope !== sc) {
+      root._lastScope = sc
+      if (on) root.restartSpectrum()
+    }
     root.refreshDesktopLive()
+  }
+  // Bounce the engine without tripping the failure backoff (see onExited).
+  function restartSpectrum() {
+    if (!spectrumProc.running) { spectrumProc.running = true; return }
+    root._restarting = true
+    spectrumProc.running = false
+    spectrumProc.running = true
+    Qt.callLater(function() { root._restarting = false })
   }
   function noteWrite(txt) {
     root._lastWriteAt = Date.now()
@@ -134,9 +150,13 @@ BarWidget {
     running: true
     // High-res feed (128 bands): mini downsamples to 32, preview to 64 —
     // both map from rich source detail instead of a coarse 32-band feed.
-    // --wave always on (cheap scope feed). Physics (fall/peaks) is renderer
-    // side now, so no spawn-time flags and no restart-on-toggle.
-    command: [root.engineBin, "--bands", "128", "--wave"]
+    // `--wave` is scope-only (Bars mode never reads the snippet), so it is
+    // added only while the oscilloscope is selected; syncFromConfig bounces
+    // the process when scope flips. Physics (fall/peaks) is renderer-side, so
+    // those are not spawn-time flags.
+    command: root.config.scope === true
+      ? [root.engineBin, "--bands", "128", "--wave"]
+      : [root.engineBin, "--bands", "128"]
     stdout: SplitParser {
       onRead: function(data) {
         if (!root.vizEnabled) return
@@ -152,6 +172,7 @@ BarWidget {
       }
     }
     onExited: function(code, status) {
+      if (root._restarting) { root._restarting = false; return }
       if (!root.vizEnabled) return
       // Indefinite backoff retry: engine death must never permanently kill
       // the mini. Interval grows 1.5s → 30s cap; silence shows meanwhile.
@@ -162,6 +183,8 @@ BarWidget {
   }
 
   property int _bridgeRetries: 0
+  property bool _restarting: false
+  property bool _lastScope: false
   // Successful frames reset the backoff so the next failure starts fast.
   function noteSpectrumFrame() { root._bridgeRetries = 0 }
   Timer { id: bridgeRetryTimer; interval: 1500; repeat: false; onTriggered: { spectrumProc.running = true } }
@@ -337,7 +360,6 @@ BarWidget {
         bands: root.desktopLive ? [] : root.spectrumBands
         silent: root.desktopLive ? true : root.spectrumSilent
         visual: root.config.scope === true ? "Oscilloscope" : "Bars"
-        artMode: root.config.artMode === true
         colorSync: root.config.colorSync === true
         barCount: root.barCount
         // Rendered gap follows config (same value that sizes the container).

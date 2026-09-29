@@ -17,6 +17,12 @@ Panel {
   property var anchorItem: null
   property var hostWidget: null
 
+  // Panel foreground palette — the panel is hosted by the bar (bar.foreground)
+  // or runs detached (shell Color.foreground). Defined ONCE, used ~18 times.
+  readonly property color fg: root.bar ? root.bar.foreground : Color.foreground
+  readonly property color fgMuted: Qt.darker(fg, 1.4)
+  readonly property color fgFaint: Qt.darker(fg, 1.6)
+
   readonly property string sourceLabelText:
     Store.sourceLabel(Store.spectrumData.source || "")
 
@@ -105,7 +111,7 @@ Panel {
           ToggleSwitch {
             id: onOffSwitch
             checked: root.vizEnabled
-            foreground: root.bar ? root.bar.foreground : Color.foreground
+            foreground: root.fg
             accent: Color.accent
             anchors.right: parent.right
             anchors.verticalCenter: parent.verticalCenter
@@ -113,7 +119,7 @@ Panel {
           }
           Text {
             text: root.vizEnabled ? "ON" : "OFF"
-            color: root.vizEnabled ? Color.accent : Qt.darker(root.bar ? root.bar.foreground : Color.foreground, 1.6)
+            color: root.vizEnabled ? Color.accent : root.fgFaint
             font.family: Style.font.family
             font.pixelSize: Style.font.bodySmall
             font.bold: true
@@ -128,7 +134,7 @@ Panel {
           width: parent.width
           visible: !root.vizEnabled
           text: "Turn on to see all options"
-          color: Qt.darker(root.bar ? root.bar.foreground : Color.foreground, 1.6)
+          color: root.fgFaint
           font.family: Style.font.family
           font.pixelSize: Style.font.bodySmall
           horizontalAlignment: Text.AlignCenter
@@ -202,11 +208,10 @@ Panel {
           silent: root.hostWidget ? root.hostWidget.spectrumSilent : true
           wave: root.hostWidget ? root.hostWidget.spectrumWave : []
           visual: root.isScope ? "Oscilloscope" : "Bars"
-          artMode: false
           wash: root.hcfg.artwork !== false
           reflect: root.hcfg.reflect === true
           scopeLineWidth: (root.hcfg.scopeThickness ?? 2)
-          colorSync: true
+          colorSync: root.hcfg.colorSync !== false
           barCount: 64
           gapPx: root.hostWidget ? Math.min(6, Math.max(0, root.hostWidget.barGap)) : 1
           peaks: root.peaksOn
@@ -231,7 +236,7 @@ Panel {
       }
       Text {
         text: "Click preview to open full-screen visualization"
-        color: Qt.darker(root.bar ? root.bar.foreground : Color.foreground, 1.6)
+        color: root.fgFaint
         font.family: Style.font.family
         font.pixelSize: Style.font.bodySmall
         width: parent.width
@@ -248,7 +253,7 @@ Panel {
         spacing: Style.space(8)
         Text {
           text: "OPTIONS"
-          color: Qt.darker(root.bar ? root.bar.foreground : Color.foreground, 1.4)
+          color: root.fgMuted
           font.family: Style.font.family
           font.pixelSize: Style.font.caption
           font.bold: true
@@ -322,7 +327,7 @@ Panel {
                 spacing: Style.space(4)
                 Text {
                   text: "Peak fall speed"
-                  color: root.bar ? root.bar.foreground : Color.foreground
+                  color: root.fg
                   font.family: Style.font.family
                   font.pixelSize: Style.font.body
                   width: parent.width
@@ -392,7 +397,7 @@ Panel {
                     anchors.verticalCenter: parent.verticalCenter
                     Text {
                       text: "Custom colors"
-                      color: root.bar ? root.bar.foreground : Color.foreground
+                      color: root.fg
                       font.family: Style.font.family
                       font.pixelSize: Style.font.body
                       font.bold: true
@@ -401,7 +406,7 @@ Panel {
                     }
                     Text {
                       text: "Off = theme colors"
-                      color: Qt.darker(root.bar ? root.bar.foreground : Color.foreground, 1.4)
+                      color: root.fgMuted
                       font.family: Style.font.family
                       font.pixelSize: Style.font.bodySmall
                       width: parent.width
@@ -411,7 +416,7 @@ Panel {
                   ToggleSwitch {
                     id: customSwitch
                     checked: root.hcfg.barColorCustom === true
-                    foreground: root.bar ? root.bar.foreground : Color.foreground
+                    foreground: root.fg
                     accent: Color.accent
                     anchors.verticalCenter: parent.verticalCenter
                     onToggled: if (root.hostWidget) root.hostWidget.writeVizOption("bar_color_custom", !checked)
@@ -426,7 +431,7 @@ Panel {
 
                   Text {
                     text: "Custom tones"
-                    color: root.bar ? root.bar.foreground : Color.foreground
+                    color: root.fg
                     font.family: Style.font.family
                     font.pixelSize: Style.font.body
                     width: parent.width
@@ -434,7 +439,7 @@ Panel {
                   }
                   Text {
                     text: "From (base) · To (tip)"
-                    color: Qt.darker(root.bar ? root.bar.foreground : Color.foreground, 1.4)
+                    color: root.fgMuted
                     font.family: Style.font.family
                     font.pixelSize: Style.font.bodySmall
                     width: parent.width
@@ -483,7 +488,7 @@ Panel {
               }
               Text {
                 text: "Tap a preset or type hex · applies to mini, preview, desktop + wave."
-                color: Qt.darker(root.bar ? root.bar.foreground : Color.foreground, 1.4)
+                color: root.fgMuted
                 font.family: Style.font.family
                 font.pixelSize: Style.font.bodySmall
                 width: parent.width
@@ -559,7 +564,7 @@ Panel {
             visible: root.isScope
             Text {
               text: "Waveform. Follows color + input gain."
-              color: Qt.darker(root.bar ? root.bar.foreground : Color.foreground, 1.4)
+              color: root.fgMuted
               font.family: Style.font.family
               font.pixelSize: Style.font.bodySmall
               width: parent.width
@@ -567,7 +572,7 @@ Panel {
             }
             Text {
               text: "Line thickness"
-              color: root.bar ? root.bar.foreground : Color.foreground
+              color: root.fg
               font.family: Style.font.family
               font.pixelSize: Style.font.body
               width: parent.width
@@ -618,7 +623,7 @@ Panel {
                 spacing: Style.space(4)
                 Text {
                   text: "Input gain"
-                  color: root.bar ? root.bar.foreground : Color.foreground
+                  color: root.fg
                   font.family: Style.font.family
                   font.pixelSize: Style.font.body
                   width: parent.width
@@ -652,7 +657,7 @@ Panel {
         spacing: Style.space(8)
         Text {
           text: "SOURCE"
-          color: Qt.darker(root.bar ? root.bar.foreground : Color.foreground, 1.4)
+          color: root.fgMuted
           font.family: Style.font.family
           font.pixelSize: Style.font.bodySmall
           font.letterSpacing: 1
@@ -693,7 +698,7 @@ Panel {
         font.pixelSize: 13
         font.bold: true
         font.letterSpacing: 1.5
-        color: card.selected ? Color.accent : (root.bar ? root.bar.foreground : Color.foreground)
+        color: card.selected ? Color.accent : (root.fg)
       }
     }
 
@@ -748,7 +753,7 @@ Panel {
           width: parent.width - 26
           anchors.verticalCenter: parent.verticalCenter
           text: hexField.value
-          color: root.bar ? root.bar.foreground : Color.foreground
+          color: root.fg
           font.family: "monospace"
           font.pixelSize: Style.font.bodySmall
           maximumLength: 7

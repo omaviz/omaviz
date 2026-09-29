@@ -56,9 +56,9 @@ bin/omaviz-engine  (capture thread → Analyzer → 60Hz frame loop)
    │  {"bands":[..32],"energy":f,"beat":f,"silent":b,"source":"pipewire"}
    ▼
 Quickshell BarWidget.spectrumProc (Process)
-   │  SplitParser → Model.parseSpectrumLine
+   │  SplitParser → Store.parseSpectrumLine
    ▼
-Model.spectrumData { bands, energy, beat, silent, source }
+Store.spectrumData { bands, energy, beat, silent, source }
    ▼
 VisualCanvas (Canvas-2D) — used by mini, preview, AND desktop
 ```
@@ -70,7 +70,7 @@ VisualCanvas (Canvas-2D) — used by mini, preview, AND desktop
 | File | Purpose |
 |------|---------|
 | `BarWidget.qml` | Waybar mini widget. Spawns engine, renders spectrum, handles detach/attach. |
-| `Panel.qml` | Settings panel. Shows PREVIEW, Peaks toggle, Peak fall speed (Slow/Med/Fast), SOURCE readout. |
+| `Panel.qml` | Settings panel. VISUALIZATIONS cards, live PREVIEW, OPTIONS (main + Advanced sub-view), BAR COLOR, SOURCE readout. |
 | `Desktop.qml` | Detached visualization window. Same VisualCanvas renderer, larger. |
 | `VisualCanvas.qml` | Canvas-2D renderer. Used by mini, preview, and desktop. |
 | `ModelStore.js` | Config store: TOML I/O, defaults/validation, reactive get/set, spectrum parsing. |
@@ -104,16 +104,18 @@ Only the container size and position change.
 
 | Property | Default | Description |
 |----------|---------|-------------|
-| `gapPx` | config `gap` | Space between bars in pixels (0 in spikes) |
-| `minBarHeight` | `0` | Minimum bar height (0 = allow flat) |
+| `gapPx` | config `gap` (1) | Space between bars in pixels (0 in spikes) |
 | `peaks` | `true` | Show peak-hold markers (2px white; 1px hot in spikes) |
-| `peakFalloff` | `0.5` | Peak falloff speed (0=holds, 1=falls fast) |
+| `peakFalloff` | `0.1` | Peak falloff speed (0=holds, 1=falls fast) |
+| `peakSustainMs` | `100` | How long a cap holds at its high-water mark before falling |
 | `spikes` | `false` | Dense thin gapless flame spikes (~2px, width-derived count) |
 | `spikeBars` | `0` | Spike count cap (0=auto; mini passes 32) |
-| `fire` | `false` | Vertical red→orange→white-hot flame gradient (container-shared) |
+| `fire` | `false` | Vertical red→tip flame gradient (container-shared) |
 | `stacks` | `false` | Winamp segments: 3px blocks + 1px gaps (preview/desktop; desktop doubles via stackScale) |
-| `sensitivity` | `1.0` | Input gain multiplier |
+| `sensitivity` | `1.0` | Input gain multiplier (also scales the oscilloscope amplitude) |
 | `themeBottom`/`themeTop` | amber | Theme-anchored colors; live shell accent when `colorSync` |
+
+The bar floor is unconditional (1px) — there is no `minBarHeight` setting.
 
 ### Bar rendering
 
@@ -137,7 +139,7 @@ Only the container size and position change.
 
 ---
 
-## 5. Settings Panel (v8.2.0)
+## 5. Settings Panel (v8.4.4)
 
 **VISUALIZATIONS**: Two caps-text cards first (SPECTRUM / OSCILLOSCOPE) —
 workflow starts by picking the viz. Artwork is not a viz anymore: it
@@ -146,7 +148,7 @@ bars, reactive-glow fallback). No auto-white rule — the Color setting
 governs bars everywhere.
 
 **PREVIEW**: Live visualization (same renderer, larger) + helper text below
-(left-aligned, muted): double-click opens the desktop window.
+(left-aligned, muted): single-click opens the desktop window.
 
 **OPTIONS main**: Peaks + Peak fall speed · Reflection + Artwork backdrop ·
 BAR COLOR · **Advanced »** link (slides to sub-view, « Back returns; viz
@@ -161,12 +163,14 @@ follows the LIVE Omarchy accent (bar snapshots accent triple to config
 for the standalone desktop window). Mini Mono overrides this on mini only.
 
 **ADVANCED**: Spikes + Stacks (spectrum) · Fire · Line thickness (scope) ·
-Linear fall (engine restart) · Sensitivity slider (writes
-`[audio]`, applied QML-side, no restart) · Mono (mini only).
+Linear fall (renderer-side, no engine restart) · Sensitivity slider (writes
+`[audio]`, applied QML-side; also scales the oscilloscope amplitude) ·
+Mono (mini only).
 
-**Retired from UI, still honored in code**: Dots, Min height (now
-automatic: 1px floor while playing, 0 when silent), `artwork_mode`
-(migrates to spectrum + backdrop on).
+**Retired from UI, still honored in code**: Dots (static underlay),
+`artwork_mode`/`immersive` (migrate to spectrum + backdrop on). Full keys
+`min_bar_height` and `splits` are gone — the bar floor is unconditional and
+Stacks is the canonical key.
 
 **OPTIONS** (live-wired via `writeVizOption(s)` / `writeAudioOption` —
 disk + instant local update):
@@ -186,47 +190,55 @@ disk + instant local update):
 ```toml
 [audio]
 sensitivity = 1.0
-smoothing = 0.5
 bands = 32
 
 [mini]
-gap = "1"
-width_scale = "1.5"
-visual = "equalizer"
-style = "classic"
-color_sync = false
+gap = 1
+width_scale = 1.5
+color_sync = true
 
 [desktop]
-active = "false"
-heartbeat = "0"
-color_source = "theme"
-density = 128
-custom_color = "#5ec8ff"
+# lifecycle flags (written by the widget, not user settings)
+# active = false
+# heartbeat = 0
+enabled = true
 theme_bottom = "#e68e0d"
 theme_top = "#f59e0b"
-fire = "false"
+theme_accent = "#f59e0b"
 peaks = true
-peak_falloff = 0.5
-spikes = "false"
-stacks = "false"
-bar_color_custom = "false"
+peak_falloff = 0.1
+peak_sustain_ms = 100
+spikes = false
+stacks = false
+mono = false
+linear_fall = true
+scope = false
+scope_thickness = 2
+dots = true
+reflect = true
+artwork = false
+fire = false
+bar_color_custom = false
 bar_color_from = "#e68e0d"
 bar_color_to = "#f59e0b"
-# retired from UI (still parsed): dots, mono, min_bar_height, artwork_mode
+gpu = true
+# retired keys still READ (never written): artwork_mode, immersive, splits,
+# min_bar_height
 ```
 
 ---
 
 ## 7. Detach / desktop window lifecycle
 
-- **Double-click** mini or preview → opens detached desktop window
-  (right-click removed); **single-click** mini → settings panel
+- **Single-click** the mini → settings panel; **single-click** the live
+  preview inside the panel → detached desktop window (right-click removed)
 - Mini visibility follows shared `desktop.active` + 2s heartbeat lease —
   any launch path (bar, app launcher, `SUPER+V`) converges; close from any
   path brings the mini back
 - Desktop self-claims the flag on open; `onClosing` clears it with a flush
   delay then `Qt.quit()` (no zombie windowless processes)
-- Desktop height capped at 300px, bottom-anchored
+- Desktop window is 600×200; the visualization container is bottom-anchored
+  and fills `max(100px, 95% of window height)`
 - No title bar: 68px hover tray fades in on mouse-over (48px artwork
   thumbnail or same-size fallback, larger monospace track/artist/theme
   source lines) with a steady 16px × close button; fades out ~200ms
@@ -251,7 +263,7 @@ omaviz/  (repo root IS the plugin — manifest.json lives here)
 ├── ModelStore.js, Physics.js, VisualCanvas.qml
 ├── assets/omaviz.desktop  (app-launcher entry)
 ├── bin/omaviz-engine   (COMMITTED engine binary)
-├── tests/model.test.cjs (node tests)
+├── tests/*.test.cjs     (node: modelstore, physics, qml, engine, perf, panel)
 ├── engine/              (Rust omaviz-engine source)
 ├── build.sh             (cargo build → bin/)
 ├── install.sh           (copy plugin files + omarchy plugin enable)

@@ -29,11 +29,11 @@ test("defaultConfig carries the redesign keys with theme defaults", () => {
   assert.equal(d.barColorCustom, false)
   assert.equal(d.barColorFrom, "#e68e0d")
   assert.equal(d.barColorTo, "#f59e0b")
-  assert.equal(d.artMode, false)
+  assert.equal(d.artMode, undefined, "artMode is no longer exported")
   assert.equal(d.artwork, false) // backdrop off for fresh installs
   assert.equal(d.mono, false)
   assert.equal(d.dots, true)
-  assert.equal(d.minBarHeight, false)
+  assert.equal(d.minBarHeight, undefined, "minBarHeight is no longer exported")
   assert.equal(d.gap, 1)
   assert.equal(d.peaks, true)
   assert.equal(d.peakFalloff, 0.1)
@@ -116,28 +116,24 @@ test("bar color keys parse and invalid tones fall back to theme pair", () => {
 
 test("artwork_mode retires to spectrum + backdrop on", () => {
   const d = Store.readConfigFromText("[desktop]\nartwork_mode = true\n")
-  assert.equal(d.artMode, false)
   assert.equal(d.scope, false)
   assert.equal(d.artwork, true)
 
   const d2 = Store.readConfigFromText("[desktop]\nimmersive = true\nartwork = false\n")
-  assert.equal(d2.artMode, false)
   assert.equal(d2.artwork, true)
 })
 
 test("plain spectrum config is untouched by the migration", () => {
   const d = Store.readConfigFromText("[desktop]\nscope = false\nartwork = false\n")
-  assert.equal(d.artMode, false)
   assert.equal(d.scope, false)
   assert.equal(d.artwork, false)
 })
 
 test("removed-from-UI keys stay readable in code", () => {
-  const toml = "[desktop]\ndots = false\nmono = true\nmin_bar_height = true\n"
+  const toml = "[desktop]\ndots = false\nmono = true\n"
   const d = Store.readConfigFromText(toml)
   assert.equal(d.dots, false)
   assert.equal(d.mono, true)
-  assert.equal(d.minBarHeight, true)
 })
 
 test("sensitivity reads from [audio] and is clamped to a sane range", () => {
@@ -349,4 +345,35 @@ test("loadFromTOML keeps the shared-config view in sync", () => {
   assert.equal(Store.getSharedConfig().enabled, true)
   Store.loadFromTOML("")
   assert.equal(Store.getSharedConfig().enabled, true, "absent key => enabled")
+})
+
+// ---------------------------------------------------------------- security
+// SECURITY REGRESSION: the module used to hardcode a literal home directory,
+// which mis-resolved config + engine paths for every OTHER user of the plugin.
+test("ModelStore.js embeds no hardcoded user home path", () => {
+  const src = fs.readFileSync(path.join(__dirname, "..", "ModelStore.js"), "utf8")
+  assert.ok(!/\/home\/[A-Za-z0-9._-]+/.test(src), "source must not contain a literal /home/<user> path")
+  assert.ok(!/"\/(Users|home)\//.test(src), "source must not contain a literal home path")
+  // ...but the config path is still well-formed (resolved at runtime).
+  assert.ok(Store.configPath.endsWith("/omaviz/config.toml"), Store.configPath)
+  assert.ok(Store.engineBin.endsWith("/bin/omaviz-engine"), Store.engineBin)
+})
+
+// SECURITY REGRESSION: an unescaped interior double-quote in a written value
+// produced invalid TOML, and the whole config file then mis-parsed.
+test("writeConfigKey escapes an interior double-quote; readTomlValue round-trips it", () => {
+  const raw = 'a"b'
+  const text = Store.writeConfigKey("", "desktop", "weird", raw)
+  const line = text.split("\n").find(l => l.startsWith("weird"))
+  assert.ok(line.includes('\\"'), `interior quote must be escaped: ${line}`)
+  assert.equal(Store.readTomlValue(text, "desktop", "weird"), raw)
+})
+
+test("writeConfigKey keeps ordinary values unchanged in shape", () => {
+  const text = Store.writeConfigKey("", "desktop", "fire", true)
+  assert.ok(text.includes("fire = true"), text)
+  const text2 = Store.writeConfigKey("", "mini", "gap", 1)
+  assert.ok(text2.includes("gap = 1"), text2)
+  const text3 = Store.writeConfigKey("", "desktop", "bar_color_from", "#e68e0d")
+  assert.ok(text3.includes('bar_color_from = "#e68e0d"'), text3)
 })

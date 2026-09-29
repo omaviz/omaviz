@@ -1,5 +1,30 @@
 # Changelog
 
+## Unreleased
+
+Hardening pass across security, reliability, consistency and maintainability.
+
+### Fixed
+- **Hardcoded home path removed.** `ModelStore.js` no longer embeds a literal
+  user home directory; paths resolve from `Quickshell.env` / `environment`, and
+  the plugin dir derives from the module URL — so config + engine paths are
+  correct for every user, not just the original developer.
+- **TOML writes escape interior double-quotes** — a stray `"` in a value can no
+  longer emit an invalid line that mis-parses the whole config file.
+- **Desktop engine restarts now back off** (1.5s → 30s, reset on a healthy
+  frame) instead of hot-looping when capture fails; the bar already did this.
+- **`color_sync` is honored on every surface** (mini, preview, desktop) — it was
+  hardcoded `true` on the preview and desktop canvases.
+- **Oscilloscope honors Input gain.** The waveform amplitude now scales with
+  `[audio] sensitivity`, so a quiet snippet is not a flat line.
+- **No double physics step** after a resize: a paint resizes its buffers only and
+  never advances the simulation.
+
+### Changed
+- Removed dead code: `artMode` (renderer path), `minBarHeight`, `_peaksSettled`.
+- `APP_SPEC.md` refreshed to v8.4.4 — single-click detach, real config keys and
+  current renderer parameters.
+
 ## 8.4.4
 
 Marker-driven operations can no longer be redirected outside the plugin folder.

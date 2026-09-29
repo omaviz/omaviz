@@ -21,24 +21,74 @@
 // isHexColor, ...) so the migration is a pure rename.
 
 // ---- Paths ----
-// NOTE: .pragma library modules cannot see the Quickshell global at load
-// time ("Quickshell is not defined"), so we resolve HOME defensively.
-// In the shell runtime Quickshell is defined; under node/standalone it is
-// not, so fall back rather than throw.
-var home = "/home/kishan"
-try {
-  if (typeof Quickshell !== "undefined" && Quickshell.env) {
-    home = Quickshell.env("HOME") || home
-  } else if (typeof environment !== "undefined" && environment.HOME) {
-    home = environment.HOME
+// Resolve the user's home WITHOUT a hardcoded username: a literal home path
+// would mis-resolve config + engine paths for EVERY other user of this plugin.
+//   1. Quickshell.env("HOME")   — shell runtime
+//   2. environment.HOME         — node / standalone fallback
+//   3. derived from this file's own URL  (<home>/.config/omarchy/plugins/<id>/)
+// Never throw: a .pragma library evaluates at load time, and an exception
+// here kills the whole plugin. A .pragma library cannot see the Quickshell
+// global at load time in every context, hence the defensive probe.
+function _deriveHome() {
+  try {
+    if (typeof Quickshell !== "undefined" && Quickshell.env) {
+      var h = Quickshell.env("HOME")
+      if (h) return h
+    }
+  } catch (e) { /* fall through */ }
+  try {
+    if (typeof environment !== "undefined" && environment.HOME) {
+      return environment.HOME
+    }
+  } catch (e) { /* fall through */ }
+  // Last resort: this module lives at <home>/.config/omarchy/plugins/<id>/.
+  try {
+    if (typeof Qt !== "undefined" && Qt.resolvedUrl) {
+      var u = String(Qt.resolvedUrl(".")).replace(/^file:\/\//, "")
+      var marker = "/.config/omarchy/plugins/"
+      var i = u.indexOf(marker)
+      if (i > 0) return u.slice(0, i)
+    }
+  } catch (e) { /* fall through */ }
+  return ""
+}
+
+// Plugin dir is derivable from THIS module's URL (not HOME), so a non-standard
+// install location or the standalone Desktop.qml still resolves correctly.
+function _derivePluginDir() {
+  try {
+    if (typeof Qt !== "undefined" && Qt.resolvedUrl) {
+      var dir = String(Qt.resolvedUrl(".")).replace(/^file:\/\//, "")
+      if (dir) return dir.replace(/\/$/, "")
+    }
+  } catch (e) { /* fall through */ }
+  return _home + "/.config/omarchy/plugins/org.omaviz.visualizer"
+}
+
+// Config dir honours XDG_CONFIG_HOME when set, else ~/.config.
+function _deriveConfigDir() {
+  var xdg = ""
+  try {
+    if (typeof Quickshell !== "undefined" && Quickshell.env) {
+      xdg = Quickshell.env("XDG_CONFIG_HOME") || ""
+    }
+  } catch (e) { /* fall through */ }
+  if (!xdg) {
+    try {
+      if (typeof environment !== "undefined" && environment.XDG_CONFIG_HOME) {
+        xdg = environment.XDG_CONFIG_HOME
+      }
+    } catch (e) { /* fall through */ }
   }
-} catch (e) { /* keep default */ }
-var configPath = home + "/.config/omaviz/config.toml"
-// v7 bundled engine: lives INSIDE the plugin package (no systemd, no socket,
+  return xdg ? xdg : (_home + "/.config")
+}
+
+var _home = _deriveHome()
+var configPath = _deriveConfigDir() + "/omaviz/config.toml"
+// Bundled engine: lives INSIDE the plugin package (no systemd, no socket,
 // no ~/.local/bin). The bar widget and the detached desktop window both spawn
-// this. Path is derivable from HOME so the standalone Desktop.qml (which has no
-// moduleName) can reach it without Quickshell shell globals.
-var pluginDir = home + "/.config/omarchy/plugins/org.omaviz.visualizer"
+// this.
+var pluginDir = _derivePluginDir()
 var engineBin = pluginDir + "/bin/omaviz-engine"
 
 // ---- TOML helpers ----
@@ -61,6 +111,9 @@ function readTomlValue(tomlText, section, key) {
       var v = parts.slice(1).join("=").trim()
       if (k === key) {
         v = v.replace(/^["']|["']$/g, "")
+        // Undo writeConfigKey's escaping so a value round-trips exactly.
+        var _bs2 = String.fromCharCode(92) + String.fromCharCode(34)
+        v = v.split(_bs2).join(String.fromCharCode(34))
         return v
       }
     }
@@ -144,14 +197,12 @@ function readConfigFromText(tomlText) {
   d.mono = readTomlValue(tomlText, "desktop", "mono") === "true"
   d.linearFall = readTomlValue(tomlText, "desktop", "linear_fall") !== "false"
   d.scope = readTomlValue(tomlText, "desktop", "scope") === "true"
-  // artwork_mode RETIRED (merged into Spectrum + Artwork-backdrop toggle):
-  // an old artwork_mode=true means "spectrum bars with the backdrop on".
-  // The key stays readable so old configs don't break; the panel never
-  // writes it anymore.
-  var _artMode = readTomlValue(tomlText, "desktop", "artwork_mode") === "true"
+  // artwork_mode RETIRED (merged into Spectrum + Artwork-backdrop toggle): an
+  // old artwork_mode=true means "spectrum bars with the backdrop on". The key
+  // stays READABLE so old configs migrate, but it is never written again and
+  // no `artMode` state is exported (the renderer reads `artwork` only).
+  var _artModeRetired = readTomlValue(tomlText, "desktop", "artwork_mode") === "true"
     || readTomlValue(tomlText, "desktop", "immersive") === "true"   // pre-rename key
-  d.artMode = false
-  if (_artMode) d._migrateArtwork = true
   // Bar color: off = theme dominant colors, on = custom From->To tones.
   // Invalid values fall back to the theme pair (never break rendering).
   d.barColorCustom = readTomlValue(tomlText, "desktop", "bar_color_custom") === "true"
@@ -164,13 +215,12 @@ function readConfigFromText(tomlText) {
   // mean false — matching defaultConfig(). Using `!== "false"` here silently
   // turned the backdrop ON for every config that predates the key.
   d.artwork = readTomlValue(tomlText, "desktop", "artwork") === "true"
-  if (d._migrateArtwork) { d.artwork = true; delete d._migrateArtwork }
+  if (_artModeRetired) d.artwork = true
   d.scopeThickness = readTomlFloat(tomlText, "desktop", "scope_thickness") ?? 2
   if (d.scopeThickness !== d.scopeThickness || d.scopeThickness < 1) d.scopeThickness = 1
   if (d.scopeThickness > 5) d.scopeThickness = 5
   d.dots = readTomlValue(tomlText, "desktop", "dots") !== "false"
   d.reflect = readTomlValue(tomlText, "desktop", "reflect") !== "false"
-  d.minBarHeight = readTomlValue(tomlText, "desktop", "min_bar_height") === "true"
   return d
 }
 
@@ -188,7 +238,7 @@ function defaultConfig() {
     themeTop: "#f59e0b",
     fire: false,
     peaks: true, peakFalloff: 0.1, peakSustainMs: 100, spikes: false, stacks: false, mono: false,
-    linearFall: true, scope: false, artMode: false, artwork: false, scopeThickness: 2, dots: true, reflect: true, minBarHeight: false,
+    linearFall: true, scope: false, artwork: false, scopeThickness: 2, dots: true, reflect: true,
     barColorCustom: false, barColorFrom: "#e68e0d", barColorTo: "#f59e0b",
     themeAccent: "#f59e0b",
     gpu: true,
@@ -212,9 +262,17 @@ function writeConfigKey(tomlText, section, key, value) {
   }
 
   var v = String(value)
-  // Quote strings, but never double-quote a value that is already quoted.
-  if (typeof value === "string" && !/^[\[{]/.test(v.trim()) && !/^".*"$/.test(v.trim())) {
-    v = '"' + v.replace(/^"|"$/g, '') + '"'
+  // Quote strings defensively: an interior double-quote MUST be escaped or the
+  // emitted line is invalid TOML (and the whole file then mis-parses). Already-
+  // quoted inputs pass through; arrays / inline tables stay raw.
+  if (typeof value === "string" && !/^[\[{]/.test(v.trim())) {
+    if (/^".*"$/.test(v.trim())) {
+      v = v.trim()
+    } else {
+      var _q = String.fromCharCode(34)   // "
+      var _bs = String.fromCharCode(92)  // backslash
+      v = _q + v.split(_q).join(_bs + _q) + _q
+    }
   }
   var entry = key + " = " + v
 
