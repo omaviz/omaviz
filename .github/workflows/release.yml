@@ -23,6 +23,10 @@ on:
       tag:
         description: Existing tag to release (e.g. v8.4.3)
         required: true
+      validate_only:
+        description: Check marketplace credentials without publishing or submitting
+        type: boolean
+        default: false
 
 concurrency:
   group: plugin-release
@@ -34,7 +38,26 @@ permissions:
   attestations: write    # persist the attestation
 
 jobs:
+  credentials:
+    runs-on: ubuntu-latest
+    permissions: {}
+    steps:
+      - name: Check marketplace credential without creating an issue
+        env:
+          GH_TOKEN: ${{ secrets.MARKETPLACE_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [ -z "$GH_TOKEN" ]; then
+            echo "::warning::MARKETPLACE_TOKEN is missing; releases will provide a manual verification link."
+            exit 0
+          fi
+          gh api user --silent
+          gh api repos/omacom/omarchy-plugin-marketplace --silent
+          echo "Marketplace credential authenticated; submission permissions are checked when creating the request." >> "$GITHUB_STEP_SUMMARY"
+
   release:
+    needs: credentials
+    if: inputs.validate_only != true
     runs-on: ubuntu-latest
     steps:
       - name: Checkout (full history — the ancestry guard needs it)

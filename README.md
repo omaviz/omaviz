@@ -221,8 +221,16 @@ Merging a PR alone does not create a release or submit a marketplace request.
 Optional automatic submission requires the repository Actions secret
 `MARKETPLACE_TOKEN`, using a dedicated credential allowed to create issues in
 `omacom/omarchy-plugin-marketplace`. The ordinary repository `GITHUB_TOKEN`
-cannot write to another repository. Do not grant the credential code-write
-access. Submission runs only after a successful release and only while its
+cannot write to another repository. An outside contributor currently needs a
+classic PAT with `public_repo`; that scope also permits public code operations,
+so prefer a dedicated account with minimal repository privileges and an expiry.
+If the marketplace organization grants access, use a fine-grained credential
+limited to Issues write instead. Add the value under repository Settings →
+Secrets and variables → Actions → New repository secret; never commit it.
+
+Use Release's `validate_only` input to authenticate the configured token without
+publishing a release or creating an issue. This read-only check cannot prove
+issue-write permission; that is verified by the actual submission. Submission runs only after a successful release and only while its
 commit remains `master` HEAD. Reruns reuse the existing request, including closed
 requests; a rejected request needs maintainer attention. Missing credentials
 produce a warning and leave the form link available. Submission failures fail

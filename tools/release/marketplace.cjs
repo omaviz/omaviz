@@ -19,7 +19,18 @@ function request({id, repository, commit}) {
   const body = `${marker}\n\n### Verification action\n\n${fields['verification-action']}\n\n### Plugin ID\n\n${id}\n\n### Repository URL\n\n${fields.repository}\n\n### Target commit\n\n${commit}\n\n### Verification acknowledgment\n\n- [x] I understand that only the exact target commit can become a verified marketplace snapshot and that verification is not a security audit.\n\n### Standard installation acknowledgment\n\n- [ ] I confirm that this listed root plugin supports the standard Omarchy installation path and does not require manual setup.\n`;
   return {title, body, url: url.href, marker};
 }
-module.exports = {request};
+function submit({id, repository, commit}, gh) {
+  const data = request({id, repository, commit});
+  const currentHead = () => gh(['api', `repos/${repository}/commits/master`, '--jq', '.sha']);
+  if (currentHead() !== commit) return {status: 'stale'};
+  const pages = JSON.parse(gh(['api', '--paginate', '--slurp', `repos/${target}/issues?state=all&per_page=100`]));
+  const existing = pages.flat().find(issue => !issue.pull_request && issue.body?.includes(data.marker));
+  if (existing) return {status: 'existing', url: existing.html_url};
+  // Pagination may take time; check again immediately before sending.
+  if (currentHead() !== commit) return {status: 'stale'};
+  return {status: 'created', url: gh(['issue', 'create', '--repo', target, '--title', data.title, '--body', data.body])};
+}
+module.exports = {request, submit};
 if (require.main === module) {
   const manifest = JSON.parse(fs.readFileSync('manifest.json', 'utf8'));
   const repository = process.env.GITHUB_REPOSITORY;
@@ -31,15 +42,11 @@ if (require.main === module) {
     console.log('::warning::MARKETPLACE_TOKEN is not configured; use the verification link in the release notes.');
   } else {
     const gh = args => execFileSync('gh', args, {encoding: 'utf8'}).trim();
-    // The upstream form requires current HEAD. Never submit an older release.
-    const head = gh(['api', `repos/${repository}/commits/master`, '--jq', '.sha']);
-    if (head !== commit) {
-      console.log('::warning::Release is no longer master HEAD; skipping stale marketplace submission.');
-    } else {
-      const pages = JSON.parse(gh(['api', '--paginate', '--slurp', `repos/${target}/issues?state=all&per_page=100`]));
-      const existing = pages.flat().find(issue => !issue.pull_request && issue.body?.includes(data.marker));
-      if (existing) console.log(`Marketplace request already exists: ${existing.html_url}`);
-      else console.log(gh(['issue', 'create', '--repo', target, '--title', data.title, '--body', data.body]));
-    }
+    const result = submit({id: manifest.id, repository, commit}, gh);
+    const message = result.status === 'stale'
+      ? 'Release is no longer master HEAD; skipping stale marketplace submission.'
+      : `Marketplace request ${result.status}: ${result.url}`;
+    console.log((result.status === 'stale' ? '::warning::' : '') + message);
+    if (process.env.GITHUB_STEP_SUMMARY) fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, message + '\n');
   }
 }
