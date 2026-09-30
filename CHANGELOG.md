@@ -1,3 +1,7 @@
+## 8.5.3 — Marketplace submission recovery
+
+- Filter marketplace issue pages before returning data to the release helper, preventing buffer exhaustion in large catalogs while preserving duplicate detection.
+
 ## 8.5.2 — Panel consistency and release verification
 
 - Match the heights of all paired settings controls and display the installed manifest version in the footer.
