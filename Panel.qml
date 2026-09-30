@@ -1,5 +1,6 @@
 import QtQuick
 import QtQuick.Controls
+import QtQuick.Layouts
 import Quickshell
 import Quickshell.Io
 import qs.Commons
@@ -14,6 +15,15 @@ Panel {
 
   // Live config binding — refreshed when hostWidget.config changes (via noteWrite)
   readonly property var hcfg: root.hostWidget ? root.hostWidget.config : Store.defaultConfig()
+  property string pluginVersion: ""
+  FileView {
+    path: String(Qt.resolvedUrl("manifest.json")).replace(/^file:\/\//, "")
+    onLoaded: {
+      try { root.pluginVersion = JSON.parse(text()).version || "" }
+      catch (error) { console.warn("omaviz: cannot read plugin version", error) }
+    }
+  }
+
   property var anchorItem: null
   property var hostWidget: null
 
@@ -310,12 +320,14 @@ Panel {
 
         // Peaks + fall speed (fall speed is the only "drop" control; the
         // fixed-rate drop lives in Advanced as "Linear fall").
-        Row {
+        RowLayout {
           width: parent.width
           spacing: Style.space(14)
 
           Toggle {
-            width: (parent.width - Style.space(14)) / 2
+            Layout.fillWidth: true
+            Layout.preferredWidth: 1
+            Layout.fillHeight: true
             label: "Peaks"
             description: "Peak-hold markers"
             checked: root.peaksOn
@@ -323,8 +335,10 @@ Panel {
           }
 
           BorderSurface {
-            width: (parent.width - Style.space(14)) / 2
-            height: fallCol.implicitHeight + Style.spacing.huge
+            Layout.fillWidth: true
+            Layout.preferredWidth: 1
+            Layout.fillHeight: true
+            implicitHeight: fallCol.implicitHeight + Style.spacing.huge
             radius: Style.cornerRadius
             color: Style.controlFill(false, false, Color.foreground, Color.accent)
             borderSpec: Border.controlSpec("normal", Color.foreground, Color.accent)
@@ -553,12 +567,14 @@ Panel {
       PanelSeparator { }
       PanelSectionHeader { text: "MOTION" }
 
-      Row {
+      RowLayout {
         width: parent.width
         spacing: Style.space(14)
         BorderSurface {
-          width: (parent.width - Style.space(14)) / 2
-          height: respCol.implicitHeight + Style.spacing.huge
+          Layout.fillWidth: true
+          Layout.preferredWidth: 1
+          Layout.fillHeight: true
+          implicitHeight: respCol.implicitHeight + Style.spacing.huge
           radius: Style.cornerRadius
           color: Style.controlFill(false, false, Color.foreground, Color.accent)
           borderSpec: Border.controlSpec("normal", Color.foreground, Color.accent)
@@ -588,7 +604,9 @@ Panel {
           }
         }
         Toggle {
-          width: (parent.width - Style.space(14)) / 2
+          Layout.fillWidth: true
+          Layout.preferredWidth: 1
+          Layout.fillHeight: true
           label: "Mono (mini only)"
           description: "B&W mini bars"
           checked: root.hcfg.mono === true
@@ -687,12 +705,14 @@ Panel {
         spacing: Style.space(8)
         visible: root.showAdvanced
 
-        Row {
+        RowLayout {
           width: parent.width
           spacing: Style.space(14)
 
           Toggle {
-            width: (parent.width - Style.space(14)) / 2
+            Layout.fillWidth: true
+            Layout.preferredWidth: 1
+            Layout.fillHeight: true
             label: "Linear fall"
             description: "Fixed-rate drop"
             checked: root.hcfg.linearFall === true
@@ -700,7 +720,9 @@ Panel {
           }
 
           Toggle {
-            width: (parent.width - Style.space(14)) / 2
+            Layout.fillWidth: true
+            Layout.preferredWidth: 1
+            Layout.fillHeight: true
             label: "Dots"
             description: "Faint dot grid"
             checked: root.hcfg.dots !== false
@@ -708,12 +730,14 @@ Panel {
           }
         }
 
-        Row {
+        RowLayout {
           width: parent.width
           spacing: Style.space(14)
 
           Toggle {
-            width: (parent.width - Style.space(14)) / 2
+            Layout.fillWidth: true
+            Layout.preferredWidth: 1
+            Layout.fillHeight: true
             label: "Artwork backdrop"
             description: "Immersive backdrop"
             checked: root.hcfg.artwork !== false
@@ -721,8 +745,10 @@ Panel {
           }
 
           BorderSurface {
-            width: (parent.width - Style.space(14)) / 2
-            height: Math.max(54, backendLabel.implicitHeight + Style.spacing.huge)
+            Layout.fillWidth: true
+            Layout.preferredWidth: 1
+            Layout.fillHeight: true
+            implicitHeight: Math.max(54, backendLabel.implicitHeight + Style.spacing.huge)
             radius: Style.cornerRadius
             color: Style.controlFill(false, false, Color.foreground, Color.accent)
             borderSpec: Border.controlSpec("normal", Color.foreground, Color.accent)
@@ -759,7 +785,7 @@ Panel {
       PanelSeparator { }
 
       // ---- Footer ----
-      Row {
+      RowLayout {
         width: parent.width
         spacing: Style.space(8)
         Text {
@@ -768,14 +794,21 @@ Panel {
           font.family: Style.font.family
           font.pixelSize: Style.font.bodySmall
           font.letterSpacing: 1
-          anchors.verticalCenter: parent.verticalCenter
         }
         Text {
+          Layout.fillWidth: true
+          Layout.minimumWidth: 0
           text: root.sourceLabelText + " · default sink"
+          elide: Text.ElideRight
           color: Color.accent
           font.family: Style.font.family
           font.pixelSize: Style.font.body
-          anchors.verticalCenter: parent.verticalCenter
+        }
+        Text {
+          text: root.pluginVersion ? "v" + root.pluginVersion : ""
+          color: root.fgMuted
+          font.family: Style.font.family
+          font.pixelSize: Style.font.bodySmall
         }
       }
     }

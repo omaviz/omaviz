@@ -1,3 +1,10 @@
+## 8.5.2 — Panel consistency and release verification
+
+- Match the heights of all paired settings controls and display the installed manifest version in the footer.
+- Release the requested tag on manual runs, validate tag input, and include decorated changelog headings.
+- Generate exact-commit marketplace verification links; optionally submit deduplicated requests with a dedicated credential.
+- Run functional CI on every PR, including binary and metadata changes and avoid write-only attestations on pull requests.
+
 ## 8.5.1 — GPU exploration without renderer changes
 
 - Report the actual compositing backend instead of the ineffective GPU switch.

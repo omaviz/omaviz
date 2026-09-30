@@ -6,7 +6,7 @@ desktop visualizer window, and an oscilloscope that dances to whatever
 is playing. Same soul, zero nostalgia tax: buttery Canvas rendering,
 theme-aware, and configured with two clicks.
 
-![version](https://img.shields.io/badge/version-8.5.1-amber) ![license](https://img.shields.io/badge/license-MIT-blue)
+![version](https://img.shields.io/badge/version-8.5.2-amber) ![license](https://img.shields.io/badge/license-MIT-blue)
 
 ## Why omaviz
 
@@ -28,10 +28,12 @@ theme-aware, and configured with two clicks.
 
 ## The tour
 
+Fresh native captures from v8.5.2.
+
 | | |
 |---|---|
-| ![desktop window with artwork backdrop](docs/screenshots/Desktop-window-with-artwork.png) | ![fire flame gradient](docs/screenshots/fire.png) |
-| *Desktop window + artwork backdrop + floor reflection* | *Fire: its own saved red-to-yellow palette* |
+| ![desktop visualizer with floor reflection](docs/screenshots/Desktop-window.png) | ![fire flame gradient](docs/screenshots/fire.png) |
+| *Desktop visualizer + floor reflection* | *Fire: its own saved red-to-yellow palette* |
 | ![stacked bars](docs/screenshots/Stacked-bars.png) | ![oscilloscope waveform](docs/screenshots/oscilloscope.png) |
 | *Stacks: segmented Winamp-style bars* | *Oscilloscope: true time-domain waveform* |
 | ![custom color tones](docs/screenshots/Custom-colors.png) | ![theme following](docs/screenshots/Theme-enabled.png) |
@@ -136,7 +138,7 @@ with a dotted-skin backdrop and a B&W Mono mode for tiny sizes.
 Single-click the mini for the settings panel below; single-click the live
 preview inside it to detach the desktop window:
 
-![settings panel with mini in the bar](docs/screenshots/Mini.png)
+![Settings panel with aligned controls, compositing backend and version footer](docs/screenshots/Settings.png)
 
 ## Engine
 
@@ -206,3 +208,33 @@ See [architecture](docs/ARCHITECTURE.md) for ownership, failure handling, and va
 GPU compositing is selected by Qt automatically; Advanced shows the actual backend.
 The old `gpu` setting never controlled painting and is now ignored.
 See [GPU exploration and parity checks](docs/GPU_EXPLORATION.md).
+
+### Releases and marketplace verification
+
+The settings footer shows the installed `manifest.json` version. Paired controls
+share the height of the taller control, including Motion and Advanced rows.
+
+Push a `vX.Y.Z` tag on `master` (matching manifest/package versions), or dispatch
+Release with an existing tag. The workflow checks out that exact commit, runs
+Rust tests, verifies the bundled engine rebuild, and publishes attested assets.
+Every release includes a prefilled [marketplace verification form](https://github.com/omacom/omarchy-plugin-marketplace/issues/new?template=verify-plugin.yml).
+Merging a PR alone does not create a release or submit a marketplace request.
+
+Optional automatic submission requires the repository Actions secret
+`MARKETPLACE_TOKEN`, using a dedicated credential allowed to create issues in
+`omacom/omarchy-plugin-marketplace`. The ordinary repository `GITHUB_TOKEN`
+cannot write to another repository. An outside contributor currently needs a
+classic PAT with `public_repo`; that scope also permits public code operations,
+so prefer a dedicated account with minimal repository privileges and an expiry.
+If the marketplace organization grants access, use a fine-grained credential
+limited to Issues write instead. Add the value under repository Settings →
+Secrets and variables → Actions → New repository secret; never commit it.
+
+Use Release's `validate_only` input to authenticate the configured token without
+publishing a release or creating an issue. This read-only check cannot prove
+issue-write permission; that is verified by the actual submission. Submission runs only after a successful release and only while its
+commit remains `master` HEAD. Reruns reuse the existing request, including closed
+requests; a rejected request needs maintainer attention. Missing credentials
+produce a warning and leave the form link available. Submission failures fail
+the workflow after publication, so rerunning can retry without a new release.
+The marketplace retains its own validation and maintainer approval gates.

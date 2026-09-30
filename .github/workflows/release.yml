@@ -2,11 +2,8 @@ name: Release
 
 # Purpose: turning a signed-off tag into a verified, attested release.
 #
-# The marketplace installs from the DEFAULT BRANCH (see README), so GitHub
-# releases do not control distribution — they are the human-facing record: the
-# exact engine binary, its digest, and the provenance that binds it to the
-# reviewed source. That is why every guard below is about integrity, not
-# packaging.
+# Releases record the exact tagged engine, digest and build provenance.
+# Marketplace publication is a separate commit-bound validation workflow.
 #
 # Guards, all of which fail the release rather than publish something wrong:
 #   1. the tag must point at a commit ON master (a tag off-branch would
@@ -26,6 +23,14 @@ on:
       tag:
         description: Existing tag to release (e.g. v8.4.3)
         required: true
+      validate_only:
+        description: Check marketplace credentials without publishing or submitting
+        type: boolean
+        default: false
+
+concurrency:
+  group: plugin-release
+  cancel-in-progress: false
 
 permissions:
   contents: write        # create the release
@@ -33,7 +38,26 @@ permissions:
   attestations: write    # persist the attestation
 
 jobs:
+  credentials:
+    runs-on: ubuntu-latest
+    permissions: {}
+    steps:
+      - name: Check marketplace credential without creating an issue
+        env:
+          GH_TOKEN: ${{ secrets.MARKETPLACE_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [ -z "$GH_TOKEN" ]; then
+            echo "::warning::MARKETPLACE_TOKEN is missing; releases will provide a manual verification link."
+            exit 0
+          fi
+          gh api user --silent
+          gh api repos/omacom/omarchy-plugin-marketplace --silent
+          echo "Marketplace credential authenticated; submission permissions are checked when creating the request." >> "$GITHUB_STEP_SUMMARY"
+
   release:
+    needs: credentials
+    if: inputs.validate_only != true
     runs-on: ubuntu-latest
     steps:
       - name: Checkout (full history — the ancestry guard needs it)
@@ -41,18 +65,29 @@ jobs:
         with:
           fetch-depth: 0
 
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+
+      - name: Preserve release helper for older tags
+        run: cp tools/release/marketplace.cjs "$RUNNER_TEMP/marketplace.cjs"
+
       - name: Resolve the tag
         id: v
+        env:
+          INPUT_TAG: ${{ inputs.tag }}
         run: |
           set -euo pipefail
-          if [ -n "${{ inputs.tag }}" ]; then
-            TAG="${{ inputs.tag }}"
+          if [ -n "$INPUT_TAG" ]; then
+            TAG="$INPUT_TAG"
           else
             TAG="${GITHUB_REF_NAME}"
           fi
           # The marketplace badge is commit-bound, so the promotion block below
           # needs the full 40-char SHA, not the tag name.
-          COMMIT="$(git rev-parse "${TAG}^{commit}")"
+          [[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "::error::Invalid release tag"; exit 1; }
+          COMMIT="$(git rev-parse "refs/tags/${TAG}^{commit}")"
+          git checkout --detach "$COMMIT"
           echo "tag=$TAG" >> "$GITHUB_OUTPUT"
           echo "version=${TAG#v}" >> "$GITHUB_OUTPUT"
           echo "commit=$COMMIT" >> "$GITHUB_OUTPUT"
@@ -93,7 +128,8 @@ jobs:
               apt-get update -qq
               apt-get install -y -qq --no-install-recommends \
                 libpipewire-0.3-dev libclang-dev clang pkg-config > /dev/null
-              cargo build --release --locked > /dev/null 2>&1
+              cargo test --release --locked >&2
+              cargo build --release --locked >&2
               sha256sum target/release/omaviz-engine | awk "{print \$1}"
             ' > /tmp/ci-sha
           CI_SHA="$(cat /tmp/ci-sha)"
@@ -122,15 +158,11 @@ jobs:
 
           # Release notes = the CHANGELOG section for this version.
           awk -v v="${{ steps.v.outputs.version }}" '
-            $0 ~ "^## "v"$" { found=1; next }
+            $1 == "##" && $2 == v { found=1; next }
             found && /^## / { exit }
             found { print }
           ' CHANGELOG.md > /tmp/notes-body.md
           [ -s /tmp/notes-body.md ] || echo "_No changelog section for this version._" > /tmp/notes-body.md
-
-          # Derived, never hardcoded, so a rename cannot leave a stale instruction.
-          PLUGIN_ID="$(jq -r .id manifest.json)"
-          REPO_URL="https://github.com/${{ github.repository }}"
 
           {
             echo "Engine build verified reproducible from source at this tag."
@@ -152,27 +184,7 @@ jobs:
             echo
             echo "---"
             echo
-            echo "## Marketplace promotion (maintainer action)"
-            echo
-            echo "This tag does **not** update the marketplace listing. \`omarchy plugin add\`"
-            echo "clones the default branch's current HEAD, and the listing's verified badge is"
-            echo "bound to a **commit**, not a tag — so after the next daily catalog refresh"
-            echo "(04:17 UTC) the listing reads \`Update unverified\` until this commit is"
-            echo "promoted. Do it now; it is the second of the two manual release steps and"
-            echo "the only one CI cannot fail loudly for:"
-            echo
-            echo "1. Open the plugin verification form:"
-            echo "   https://github.com/omacom/omarchy-plugin-marketplace/issues/new?template=verify-plugin.yml"
-            echo "2. Select **Verify and publish a newer upstream commit**."
-            echo "3. Issue title: \`[Verify]: Omaviz\`"
-            echo "4. Plugin ID: \`${PLUGIN_ID}\`"
-            echo "5. Repository root URL: \`${REPO_URL}\`"
-            echo "6. Commit SHA: \`${{ steps.v.outputs.commit }}\`"
-            echo
-            echo "The currently verified snapshot stays live while the update is pending, so"
-            echo "users are unaffected until the new commit passes compatibility validation and"
-            echo "the Automated Security Baseline. Until then they install this commit while the"
-            echo "listing still advertises the previous one as verified."
+            RELEASE_COMMIT="${{ steps.v.outputs.commit }}" node "$RUNNER_TEMP/marketplace.cjs"
           } > /tmp/notes.md
 
       - name: Create or update the release
@@ -197,3 +209,9 @@ jobs:
               --notes-file /tmp/notes.md \
               /tmp/rel/omaviz-engine /tmp/rel/SHA256SUMS
           fi
+
+      - name: Request marketplace verification when configured
+        env:
+          GH_TOKEN: ${{ secrets.MARKETPLACE_TOKEN }}
+          RELEASE_COMMIT: ${{ steps.v.outputs.commit }}
+        run: node "$RUNNER_TEMP/marketplace.cjs" --submit
