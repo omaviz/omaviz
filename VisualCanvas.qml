@@ -30,6 +30,8 @@ Canvas {
   property real noiseFloor: 0.02
   property bool spikes: false
   property bool fire: false
+  property color fireColorFrom: "#be1400"
+  property color fireColorTo: "#fde047"
   property bool stacks: false
   // Stack segment scale: desktop doubles block size (1 = preview/mini).
   property int stackScale: 1
@@ -130,14 +132,17 @@ Canvas {
     var tq = Qt.lighter(barColorCustom ? barColorTo : (colorSync ? themeTop : Qt.color("#ffffff")), 1.2)
     _palBot = [bq.r, bq.g, bq.b]
     _palTop = [tq.r, tq.g, tq.b]
-    var tipC = Qt.lighter(barColorCustom ? barColorTo : themeTop, 1.2)
+    var baseC = fireColorFrom
+    var tipC = fireColorTo
     var tipR = Math.round(tipC.r * 255), tipG = Math.round(tipC.g * 255), tipB = Math.round(tipC.b * 255)
     var f = [], p = [], w = []
     for (var k = 0; k <= 100; k++) {
       var t = k / 100, r, g, bl
       if (t < 0.3) {
         var kc = t / 0.3
-        r = Math.round(190 + kc * 65); g = Math.round(20 + kc * 110); bl = Math.round(kc * 10)
+        r = Math.round(baseC.r * 255 + kc * (255 - baseC.r * 255))
+        g = Math.round(baseC.g * 255 + kc * (130 - baseC.g * 255))
+        bl = Math.round(baseC.b * 255 + kc * (10 - baseC.b * 255))
       } else {
         var k3 = (t - 0.3) / 0.7
         r = Math.round(255 + (tipR - 255) * k3)
@@ -157,10 +162,7 @@ Canvas {
     return Math.round(t * 100)
   }
 
-  // Fire color at height fraction t (0 = base, 1 = tip): the base always
-  // ignites from deep red; the tip lands on the active 2nd color — the
-  // custom swatch To, or the live theme accent in theme mode — so theme
-  // switches stay visible with Fire on.
+  // Flame keeps its own saved base and tip, independent of theme/custom tones.
   function fireColorAt(t) {
     return _fireLUT[_lutIdx(Math.min(1, Math.max(0, t)))]
   }
@@ -280,6 +282,8 @@ Canvas {
   onReflectChanged: requestPaint()
   onSpikesChanged: requestPaint()
   onFireChanged: requestPaint()
+  onFireColorFromChanged: requestPaint()
+  onFireColorToChanged: requestPaint()
   onStacksChanged: requestPaint()
   onStackScaleChanged: requestPaint()
   onSensitivityChanged: requestPaint()
@@ -326,7 +330,7 @@ Canvas {
     var n = b.length
     if (!n) return
     // Palette refresh (theme-bound only): drawWave below already needs it.
-    var sig = themeBottom + "|" + themeTop + "|" + barColorFrom + "|" + barColorTo + "|" + (barColorCustom ? 1 : 0) + "|" + (colorSync ? 1 : 0)
+    var sig = fireColorFrom + "|" + fireColorTo + "|" + themeBottom + "|" + themeTop + "|" + barColorFrom + "|" + barColorTo + "|" + (barColorCustom ? 1 : 0) + "|" + (colorSync ? 1 : 0)
     if (sig !== _palSig) { _palSig = sig; _rebuildPalette() }
     if (visual === "Wave" || visual === "Oscilloscope") { drawWave(ctx); return }
     // Reflection zone: bars live in the top ~2/3 anchored at baseY, the

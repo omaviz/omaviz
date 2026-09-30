@@ -40,7 +40,7 @@ Panel {
   // Gradient direction for the bar field.
   readonly property string gradDir:
     root.hcfg.barGradientDir === "horizontal" ? "horizontal" : "vertical"
-  // Custom tones are active under Custom mode, and also shape the Flame tip.
+  // Each colour mode edits its own persisted tones.
   readonly property bool tonesActive: root.customOn || root.fireOn
 
   property bool showAdvanced: false
@@ -235,6 +235,8 @@ Panel {
           noiseFloor: 0.02
           spikes: root.spikesOn
           fire: root.fireOn
+          fireColorFrom: root.hcfg.fireColorFrom || "#be1400"
+          fireColorTo: root.hcfg.fireColorTo || "#fde047"
           stacks: root.stacksOn
           sensitivity: (root.hcfg.sensitivity ?? 1.0)
           barColorCustom: root.customOn
@@ -427,7 +429,7 @@ Panel {
             opacity: root.tonesActive ? 1.0 : 0.45
 
             Text {
-              text: "Custom tones"
+              text: root.fireOn ? "Flame tones" : "Custom tones"
               color: root.fg
               font.family: Style.font.family
               font.pixelSize: Style.font.body
@@ -448,13 +450,13 @@ Panel {
 
               HexField {
                 width: (parent.width - Style.space(8)) / 2
-                value: root.hcfg.barColorFrom || "#e68e0d"
-                onAccept: function(v) { if (root.hostWidget) root.hostWidget.writeVizOption("bar_color_from", v) }
+                value: root.fireOn ? root.hcfg.fireColorFrom : root.hcfg.barColorFrom
+                onAccept: function(v) { if (root.hostWidget) root.hostWidget.writeVizOption(root.fireOn ? "fire_color_from" : "bar_color_from", v) }
               }
               HexField {
                 width: (parent.width - Style.space(8)) / 2
-                value: root.hcfg.barColorTo || "#f59e0b"
-                onAccept: function(v) { if (root.hostWidget) root.hostWidget.writeVizOption("bar_color_to", v) }
+                value: root.fireOn ? root.hcfg.fireColorTo : root.hcfg.barColorTo
+                onAccept: function(v) { if (root.hostWidget) root.hostWidget.writeVizOption(root.fireOn ? "fire_color_to" : "bar_color_to", v) }
               }
             }
           }
@@ -505,7 +507,7 @@ Panel {
                   GradientStop { position: 0.0; color: modelData[0] }
                   GradientStop { position: 1.0; color: modelData[1] }
                 }
-                border.width: (!root.fireOn && root.hcfg.barColorFrom === modelData[0] && root.hcfg.barColorTo === modelData[1]) ? 2 : 0
+                border.width: (!root.fireOn && root.customOn && root.hcfg.barColorFrom === modelData[0] && root.hcfg.barColorTo === modelData[1]) ? 2 : 0
                 border.color: Color.accent
                 MouseArea {
                   anchors.fill: parent
@@ -530,7 +532,7 @@ Panel {
               MouseArea {
                 anchors.fill: parent
                 cursorShape: Qt.PointingHandCursor
-                onClicked: if (root.hostWidget) root.hostWidget.writeVizOptions("fire", true, "bar_color_custom", true)
+                onClicked: if (root.hostWidget) root.hostWidget.writeVizOption("fire", true)
               }
             }
           }
@@ -873,7 +875,6 @@ Panel {
           validator: RegularExpressionValidator {
             regularExpression: /^#[0-9a-fA-F]{0,6}$/
           }
-          onAccepted: hexField.submit(text)
           onEditingFinished: hexField.submit(text)
         }
       }

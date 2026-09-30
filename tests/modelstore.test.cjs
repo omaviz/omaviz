@@ -130,7 +130,7 @@ test("artwork_mode retires to spectrum + backdrop on", () => {
   assert.equal(d.artwork, true)
 
   const d2 = Store.readConfigFromText("[desktop]\nimmersive = true\nartwork = false\n")
-  assert.equal(d2.artwork, true)
+  assert.equal(d2.artwork, false)
 })
 
 test("plain spectrum config is untouched by the migration", () => {
@@ -388,3 +388,39 @@ test("writeConfigKey keeps ordinary values unchanged in shape", () => {
   const text3 = Store.writeConfigKey("", "desktop", "bar_color_from", "#e68e0d")
   assert.ok(text3.includes('bar_color_from = "#e68e0d"'), text3)
 })
+
+test("explicit settings override legacy aliases", () => {
+  const text = '[desktop]\nsplits = true\nartwork_mode = true\nimmersive = true\n';
+  let edited = Store.writeConfigKey(text, 'desktop', 'stacks', false);
+  edited = Store.writeConfigKey(edited, 'desktop', 'artwork', false);
+  const config = Store.readConfigFromText(edited);
+  assert.equal(config.stacks, false);
+  assert.equal(config.artwork, false);
+  assert.equal(Store.readConfigFromText(text).stacks, true);
+  assert.equal(Store.readConfigFromText(text).artwork, true);
+});
+
+test("flame tones persist independently from custom presets", () => {
+  let text = Store.toTOML(Store.defaultConfig());
+  text = Store.writeConfigKey(text, 'desktop', 'fire_color_to', '#aabbcc');
+  text = Store.writeConfigKey(text, 'desktop', 'bar_color_to', '#112233');
+  const config = Store.readConfigFromText(text);
+  assert.equal(config.fireColorTo, '#aabbcc');
+  assert.equal(config.barColorTo, '#112233');
+  assert.equal(Store.readConfigFromText(Store.toTOML(config)).fireColorTo, '#aabbcc');
+  assert.equal(Store.readConfigFromText('[desktop]\nfire_color_to = "bad"').fireColorTo, '#fde047');
+});
+
+test("TOML comments and escaped strings preserve settings without injecting keys", () => {
+  const text = '[desktop] # settings\nfire = false # disabled\nbar_color_to = "#112233" # tip\n';
+  assert.equal(Store.readConfigFromText(text).fire, false);
+  assert.equal(Store.readConfigFromText(text).barColorTo, '#112233');
+  for (const value of ['a\\b', 'a"b', 'line\nbreak', '[desktop]\nfire = true', '"quoted"']) {
+    const written = Store.writeConfigKey(text, 'desktop', 'label', value);
+    assert.equal(Store.readTomlValue(written, 'desktop', 'label'), value);
+    assert.equal(Store.readConfigFromText(written).fire, false);
+  }
+  const written = Store.writeConfigKey(text, 'desktop', 'fire', true);
+  assert.equal((written.match(/\[desktop\]/g) || []).length, 1);
+  assert.equal(Store.readConfigFromText(written).fire, true);
+});
