@@ -23,7 +23,7 @@ BarWidget {
   property bool _ready: false
   Component.onCompleted: { root._ready = true; root.snapThemeColors() }
   onAccentSnapChanged: root.snapThemeColors()
-  onConfigChanged: root.snapThemeColors()
+  onConfigChanged: Qt.callLater(root.snapThemeColors)
   function colorHex(c) {
     function h2(v) {
       var s = Math.round(Math.min(1, Math.max(0, v)) * 255).toString(16)
@@ -52,11 +52,10 @@ BarWidget {
   // Liveness lease: true only if the flag is set AND the heartbeat is fresh.
   // A stranded active=true (crash, kill -9, old code) self-heals within ~6s.
   property bool desktopLive: false
-  // Last-write-wins guard: setText flushes async, so a file re-read in
-  // the next ~1.5s would resurrect stale text and clobber the fresh
-  // root.config (dropdowns snapping back = select-twice bug).
-  property double _lastWriteAt: 0
+  // Keep optimistic settings until the writer finishes and the reader catches up.
   property string _lastWriteText: ""
+  property string _writingText: ""
+  property bool _writeBusy: false
   // The one place config text becomes live state. Everything (panel bindings,
   // the engine, the desktop lease) derives from this, so a value can never be
   // shown that the config does not actually contain.
@@ -93,19 +92,22 @@ BarWidget {
     Qt.callLater(function() { root._restarting = false })
   }
   function noteWrite(txt) {
-    root._lastWriteAt = Date.now()
     root._lastWriteText = txt
     root.syncFromConfig(txt)
   }
   function readGuarded() {
-    if (root._lastWriteText !== "" && Date.now() - root._lastWriteAt < 1500)
-      return root._lastWriteText
+    if (root._lastWriteText !== "") {
+      if (!root._writeBusy && configFile.text() === root._lastWriteText)
+        root._lastWriteText = ""
+      else return root._lastWriteText
+    }
     return configFile.text()
   }
   function refreshDesktopLive() {
     if (!root.vizEnabled) { root.desktopLive = false; return }
-    var hb = (root.config && root.config.desktopHeartbeat) || 0
-    root.desktopLive = (root.config && root.config.desktopActive === true) && (Date.now() - hb < 6000)
+    var state = desktopState.text()
+    var hb = Number(Store.readTomlValue(state, "desktop", "heartbeat") || 0)
+    root.desktopLive = Store.isDesktopActiveFromText(state) && hb <= Date.now() && Date.now() - hb < 6000
   }
   readonly property int barCount: Math.max(8, (root.config && root.config.bands !== undefined) ? root.config.bands : 32)
 
@@ -142,7 +144,7 @@ BarWidget {
   onBarChanged: injectPanel()
   onSettingsChanged: injectPanel()
 
-  readonly property string engineBin: Quickshell.env("HOME") + "/.config/omarchy/plugins/" + root.moduleName + "/bin/omaviz-engine"
+  readonly property string engineBin: Store.engineBin
   readonly property string pluginDir: String(Qt.resolvedUrl(".")).replace(/^file:\/\//, "")
 
   Process {
@@ -193,23 +195,13 @@ BarWidget {
     id: detachProc
     running: false
     stdout: StdioCollector { onDataChanged: function() {} }
-    onExited: function(code, status) {
-      // Bar-spawned desktop closed: release the shared flag (Desktop's own
-      // onClosing also writes it; last write wins, same value).
-      if (root.config.desktopActive === true) {
-        root.writeDesktopActive(false)
-      }
-    }
   }
 
-  // Shared truth: config desktop.active decides the mini paused-state,
-  // so EVERY launch path (bar double-click, app launcher, keybind)
-  // converges. detachProc state is only a fallback for close detection.
-  // NOTE: do NOT clear desktop.active here based on detachProc —
-  // that would fight launcher-opened windows this process didn't spawn.
+  // Runtime liveness is separate from persistent settings. Never infer it
+  // from detachProc: launcher-opened windows are not owned by this process.
 
   function detach() {
-    if (root.config.desktopActive === true) {
+    if (root.desktopLive) {
       detachProc.running = false
       root.writeDesktopActive(false)
     } else {
@@ -217,7 +209,6 @@ BarWidget {
       if (panelLoader.item) panelLoader.item.close()
       detachProc.command = ["quickshell", "-p", root.pluginDir + "/Desktop.qml"]
       root.writeDesktopActive(true)
-      root.writeDesktopBeat()
       detachProc.running = false
       detachProc.running = true
     }
@@ -230,36 +221,57 @@ BarWidget {
     printErrors: false
     onLoaded: root.syncFromConfig(root.readGuarded())
     onFileChanged: root.syncFromConfig(root.readGuarded())
-    onLoadFailed: root.syncFromConfig("")
+    onLoadFailed: { if (root._lastWriteText === "") root.syncFromConfig("") }
   }
   // Poll config (watchChanges is unreliable) so shared flags like
   // desktop.active propagate — this is what hides the mini.
   Timer {
     interval: 500; repeat: true; running: true
-    onTriggered: { configFile.reload(); root.refreshDesktopLive() }
+    onTriggered: { configFile.reload(); desktopState.reload(); root.refreshDesktopLive() }
   }
 
+  FileView {
+    id: desktopState
+    path: Store.desktopStatePath
+    watchChanges: true
+    printErrors: false
+    onLoaded: root.refreshDesktopLive()
+    onFileChanged: reload()
+  }
   FileView {
     id: detachConfigWrite
     path: Store.configPath
     watchChanges: false
     printErrors: false
-    Component.onCompleted: reload()
+    onSaved: {
+      root._writeBusy = false
+      if (root._lastWriteText !== root._writingText) root.flushSettings()
+      else configFile.reload()
+    }
+    onSaveFailed: {
+      root._writeBusy = false
+      root._lastWriteText = ""
+      console.warn("omaviz: could not save settings")
+      configFile.reload()
+    }
+  }
+  function flushSettings() {
+    if (root._writeBusy || root._lastWriteText === "") return
+    root._writingText = root._lastWriteText
+    root._writeBusy = true
+    detachConfigWrite.setText(root._writingText)
   }
   function writeDesktopActive(value) {
-    // Base the write on configFile (reloaded every 500ms), not the
-    // write-only view — bounds staleness so concurrent writers can't
-    // resurrect each other's flags from ancient caches (#16).
-    var txt = Store.writeConfigKey(root.readGuarded(), "desktop", "active", value ? "true" : "false")
-    root.noteWrite(txt)
-    detachConfigWrite.setText(txt)
+    // This file contains only a lease; it can never clobber user settings.
+    desktopState.setText("[desktop]\nactive = " + value + "\nheartbeat = " + Date.now() + "\n")
+    root.desktopLive = value && root.vizEnabled
   }
 
   function writeEnabled(value) {
     var txt = Store.writeEnabled(value, root.readGuarded())
     root.noteWrite(txt)            // syncFromConfig flips vizEnabled + engine
-    detachConfigWrite.setText(txt)
-    if (!value && root.config.desktopActive === true) {
+    root.flushSettings()
+    if (!value) {
       detachProc.running = false
       root.writeDesktopActive(false)
     }
@@ -276,40 +288,31 @@ BarWidget {
   // writeVizOptions but targeting [audio]. Applied QML-side, so every
   // surface picks it up live through the config poll — no restart needed.
   function writeAudioOption(key, value) {
-    var txt = Store.writeConfigKey(root.readGuarded(), "audio", key, vizVal(value))
+    var txt = Store.writeConfigKey(root.readGuarded(), "audio", key, value)
     root.noteWrite(txt)
-    detachConfigWrite.setText(txt)
+    root.flushSettings()
   }
   function writeVizOptions(key1, value1, key2, value2) {
     // Multi-key single write: two sequential setText calls race on the same
     // stale base text and the second clobbers the first (e.g. Spikes+Fire).
     // Apply both keys to ONE base text, then a single setText.
     var txt = root.readGuarded()
-    txt = Store.writeConfigKey(txt, "desktop", key1, vizVal(value1))
-    if (key2) txt = Store.writeConfigKey(txt, "desktop", key2, vizVal(value2))
+    txt = Store.writeConfigKey(txt, "desktop", key1, value1)
+    if (key2) txt = Store.writeConfigKey(txt, "desktop", key2, value2)
     root.noteWrite(txt)
-    detachConfigWrite.setText(txt)
+    root.flushSettings()
   }
   // Three/four-key single write (preset swatches, theme snapshot, mode +
   // tones): same one-base-text rule as writeVizOptions — two sequential
   // setText calls on the same stale base would clobber each other.
   function writeVizOptions3(key1, value1, key2, value2, key3, value3, key4, value4) {
     var txt = root.readGuarded()
-    txt = Store.writeConfigKey(txt, "desktop", key1, vizVal(value1))
-    if (key2) txt = Store.writeConfigKey(txt, "desktop", key2, vizVal(value2))
-    if (key3) txt = Store.writeConfigKey(txt, "desktop", key3, vizVal(value3))
-    if (key4) txt = Store.writeConfigKey(txt, "desktop", key4, vizVal(value4))
+    txt = Store.writeConfigKey(txt, "desktop", key1, value1)
+    if (key2) txt = Store.writeConfigKey(txt, "desktop", key2, value2)
+    if (key3) txt = Store.writeConfigKey(txt, "desktop", key3, value3)
+    if (key4) txt = Store.writeConfigKey(txt, "desktop", key4, value4)
     root.noteWrite(txt)
-    detachConfigWrite.setText(txt)
-  }
-  function vizVal(value) {
-    if (typeof value === "boolean") return value ? "true" : "false"
-    return value
-  }
-  function writeDesktopBeat() {
-    var txt = Store.writeConfigKey(root.readGuarded(), "desktop", "heartbeat", String(Date.now()))
-    detachConfigWrite.setText(txt)
-    root.noteWrite(txt)
+    root.flushSettings()
   }
 
   WidgetButton {
@@ -373,6 +376,8 @@ BarWidget {
         noiseFloor: 0.02
         spikes: root.config.spikes === true
         fire: root.config.fire === true
+        fireColorFrom: root.config.fireColorFrom || "#be1400"
+        fireColorTo: root.config.fireColorTo || "#fde047"
         // Stacks stay off in the mini (segments need taller bars to read).
         stacks: false
         // Mini holds 32 bars even in spikes (downsampled from the 128 feed).

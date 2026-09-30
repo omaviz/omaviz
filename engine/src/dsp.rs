@@ -62,7 +62,9 @@ impl Analyzer {
             if hi <= prev {
                 hi = prev + 1;
             }
-            band_edges.push((prev, hi.min(fft_size / 2)));
+            // More output bands than FFT bins must safely share the final bin.
+            let lo = prev.min(fft_size / 2);
+            band_edges.push((lo, hi.min(fft_size / 2 + 1).max(lo + 1)));
             prev = hi;
         }
 
@@ -164,6 +166,19 @@ impl Analyzer {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn supported_fft_and_band_extremes_do_not_panic() {
+        for size in [256, 512, 1024, 2048, 8192] {
+            for count in [4, 32, 128, 256, 512] {
+                let mut analyzer = Analyzer::new(48000.0, count, size);
+                analyzer.push(&vec![0.0; size]);
+                analyzer.analyze();
+                assert_eq!(analyzer.bands.len(), count);
+                assert!(analyzer.bands.iter().all(|v| v.is_finite()));
+            }
+        }
+    }
 
     #[test]
     fn new_allocates_requested_band_count() {
