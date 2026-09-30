@@ -44,13 +44,19 @@ jobs:
       - name: Resolve the tag
         id: v
         run: |
+          set -euo pipefail
           if [ -n "${{ inputs.tag }}" ]; then
             TAG="${{ inputs.tag }}"
           else
             TAG="${GITHUB_REF_NAME}"
           fi
+          # The marketplace badge is commit-bound, so the promotion block below
+          # needs the full 40-char SHA, not the tag name.
+          COMMIT="$(git rev-parse "${TAG}^{commit}")"
           echo "tag=$TAG" >> "$GITHUB_OUTPUT"
           echo "version=${TAG#v}" >> "$GITHUB_OUTPUT"
+          echo "commit=$COMMIT" >> "$GITHUB_OUTPUT"
+          echo "releasing $TAG -> $COMMIT"
 
       - name: Guard — the tag must be on master
         run: |
@@ -122,6 +128,10 @@ jobs:
           ' CHANGELOG.md > /tmp/notes-body.md
           [ -s /tmp/notes-body.md ] || echo "_No changelog section for this version._" > /tmp/notes-body.md
 
+          # Derived, never hardcoded, so a rename cannot leave a stale instruction.
+          PLUGIN_ID="$(jq -r .id manifest.json)"
+          REPO_URL="https://github.com/${{ github.repository }}"
+
           {
             echo "Engine build verified reproducible from source at this tag."
             echo
@@ -139,14 +149,51 @@ jobs:
             echo "---"
             echo
             cat /tmp/notes-body.md
+            echo
+            echo "---"
+            echo
+            echo "## Marketplace promotion (maintainer action)"
+            echo
+            echo "This tag does **not** update the marketplace listing. \`omarchy plugin add\`"
+            echo "clones the default branch's current HEAD, and the listing's verified badge is"
+            echo "bound to a **commit**, not a tag — so after the next daily catalog refresh"
+            echo "(04:17 UTC) the listing reads \`Update unverified\` until this commit is"
+            echo "promoted. Do it now; it is the second of the two manual release steps and"
+            echo "the only one CI cannot fail loudly for:"
+            echo
+            echo "1. Open the plugin verification form:"
+            echo "   https://github.com/omacom/omarchy-plugin-marketplace/issues/new?template=verify-plugin.yml"
+            echo "2. Select **Verify and publish a newer upstream commit**."
+            echo "3. Issue title: \`[Verify]: Omaviz\`"
+            echo "4. Plugin ID: \`${PLUGIN_ID}\`"
+            echo "5. Repository root URL: \`${REPO_URL}\`"
+            echo "6. Commit SHA: \`${{ steps.v.outputs.commit }}\`"
+            echo
+            echo "The currently verified snapshot stays live while the update is pending, so"
+            echo "users are unaffected until the new commit passes compatibility validation and"
+            echo "the Automated Security Baseline. Until then they install this commit while the"
+            echo "listing still advertises the previous one as verified."
           } > /tmp/notes.md
 
-      - name: Create the release
+      - name: Create or update the release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          gh release create "${{ steps.v.outputs.tag }}" \
-            --title "omaviz ${{ steps.v.outputs.version }}" \
-            --notes-file /tmp/notes.md \
-            /tmp/rel/omaviz-engine /tmp/rel/SHA256SUMS
+          TAG="${{ steps.v.outputs.tag }}"
+          TITLE="omaviz ${{ steps.v.outputs.version }}"
+          # Idempotent on purpose. A tag-triggered workflow cannot otherwise be
+          # exercised without publishing a throwaway tag, and a release that
+          # failed part-way should be recoverable by re-running rather than by
+          # inventing a new version. Everything above re-verified before this
+          # step, so updating in place is safe.
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "$TAG already exists — refreshing notes and assets"
+            gh release edit "$TAG" --title "$TITLE" --notes-file /tmp/notes.md
+            gh release upload "$TAG" /tmp/rel/omaviz-engine /tmp/rel/SHA256SUMS --clobber
+          else
+            gh release create "$TAG" \
+              --title "$TITLE" \
+              --notes-file /tmp/notes.md \
+              /tmp/rel/omaviz-engine /tmp/rel/SHA256SUMS
+          fi
