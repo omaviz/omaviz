@@ -29,6 +29,7 @@ test("defaultConfig carries the redesign keys with theme defaults", () => {
   assert.equal(d.barColorCustom, false)
   assert.equal(d.barColorFrom, "#e68e0d")
   assert.equal(d.barColorTo, "#f59e0b")
+  assert.equal(d.barGradientDir, "vertical")
   assert.equal(d.artMode, undefined, "artMode is no longer exported")
   assert.equal(d.artwork, false) // backdrop off for fresh installs
   assert.equal(d.mono, false)
@@ -114,6 +115,15 @@ test("bar color keys parse and invalid tones fall back to theme pair", () => {
   assert.equal(d2.barColorTo, "#f59e0b")
 })
 
+test("bar gradient direction parses, defaults to vertical, rejects junk", () => {
+  const d = Store.readConfigFromText('[desktop]\nbar_gradient_dir = "horizontal"\n')
+  assert.equal(d.barGradientDir, "horizontal")
+  const def = Store.readConfigFromText("[desktop]\n")
+  assert.equal(def.barGradientDir, "vertical")
+  const bad = Store.readConfigFromText('[desktop]\nbar_gradient_dir = "diagonal"\n')
+  assert.equal(bad.barGradientDir, "vertical")
+})
+
 test("artwork_mode retires to spectrum + backdrop on", () => {
   const d = Store.readConfigFromText("[desktop]\nartwork_mode = true\n")
   assert.equal(d.scope, false)
@@ -186,6 +196,7 @@ test("each panel option round-trips through write + parse", () => {
     ["desktop", "bar_color_custom", true, "barColorCustom", true],
     ["desktop", "bar_color_from", "#112233", "barColorFrom", "#112233"],
     ["desktop", "bar_color_to", "#aabbcc", "barColorTo", "#aabbcc"],
+    ["desktop", "bar_gradient_dir", "horizontal", "barGradientDir", "horizontal"],
     ["desktop", "spikes", true, "spikes", true],
     ["desktop", "stacks", true, "stacks", true],
     ["desktop", "fire", true, "fire", true],

@@ -70,7 +70,7 @@ VisualCanvas (Canvas-2D) — used by mini, preview, AND desktop
 | File | Purpose |
 |------|---------|
 | `BarWidget.qml` | Waybar mini widget. Spawns engine, renders spectrum, handles detach/attach. |
-| `Panel.qml` | Settings panel. VISUALIZATIONS cards, live PREVIEW, OPTIONS (main + Advanced sub-view), BAR COLOR, SOURCE readout. |
+| `Panel.qml` | Settings panel. VISUALIZATIONS cards, live PREVIEW, LOOK / COLOR / MOTION groups, collapsed ADVANCED, SOURCE readout. |
 | `Desktop.qml` | Detached visualization window. Same VisualCanvas renderer, larger. |
 | `VisualCanvas.qml` | Canvas-2D renderer. Used by mini, preview, and desktop. |
 | `ModelStore.js` | Config store: TOML I/O, defaults/validation, reactive get/set, spectrum parsing. |
@@ -139,47 +139,47 @@ The bar floor is unconditional (1px) — there is no `minBarHeight` setting.
 
 ---
 
-## 5. Settings Panel (v8.4.4)
+## 5. Settings Panel (redesign)
 
-**VISUALIZATIONS**: Two caps-text cards first (SPECTRUM / OSCILLOSCOPE) —
-workflow starts by picking the viz. Artwork is not a viz anymore: it
-merged into Spectrum as an **Artwork backdrop** toggle (album-cover behind
-bars, reactive-glow fallback). No auto-white rule — the Color setting
-governs bars everywhere.
+The panel is grouped **by intent**, one concept per control, on a single
+scrollable screen (no slide-out OPTIONS stage):
+
+**VISUALIZATIONS**: Two caps-text cards (SPECTRUM / OSCILLOSCOPE) — pick the
+viz first. Artwork is not a viz; it lives in ADVANCED as **Artwork backdrop**.
+No auto-white rule — the Color setting governs bars everywhere.
 
 **PREVIEW**: Live visualization (same renderer, larger) + helper text below
 (left-aligned, muted): single-click opens the desktop window.
 
-**OPTIONS main**: Peaks + Peak fall speed · Reflection + Artwork backdrop ·
-BAR COLOR · **Advanced »** link (slides to sub-view, « Back returns; viz
-cards + preview stay put).
+**LOOK** (Spectrum only): **Geometry** chips — Bars / Spikes / Stacks, one
+exclusive choice (Spikes and Stacks are mutually exclusive) · **Peaks** toggle
++ **Peak fall speed** slider (the only "drop" control) · **Reflection**.
 
-**BAR COLOR** (all viz; mini + preview + desktop in sync): Custom colors
-switch (off = theme colors) + preset swatch row (tap applies both tones)
-+ From (base) / To (tip) hex fields with swatches. Base rendered darker,
-tip lighter for contrast. Fire ignites from red into the custom tip.
-Reflection mirror is tinted with the base color. Theme mode always
-follows the LIVE Omarchy accent (bar snapshots accent triple to config
-for the standalone desktop window). Mini Mono overrides this on mini only.
+**COLOR** (all viz): **Color mode** chips — Theme / Custom / Flame, one
+exclusive choice. Flame is a colour *mode*, not a geometry toggle: it lights
+the bar gradient from deep red into the custom tip without touching Geometry.
+**Custom tones** From (base) / To (tip) hex fields (active under Custom and
+Flame) · **Gradient direction** chips — Vertical (bottom→top, default) or
+Horizontal (left→right across the field) · preset swatch row (8 gradients + a
+Fire swatch that selects Flame mode). Base rendered darker, tip lighter.
+Reflection mirror is tinted with the base colour. Theme mode follows the LIVE
+Omarchy accent. Mini Mono overrides this on mini only.
 
-**ADVANCED**: Spikes + Stacks (spectrum) · Fire · Line thickness (scope) ·
-Linear fall (renderer-side, no engine restart) · Sensitivity slider (writes
-`[audio]`, applied QML-side; also scales the oscilloscope amplitude) ·
-Mono (mini only).
+**MOTION**: **Response** slider (writes `[audio] sensitivity`; scales bar
+reactivity AND oscilloscope amplitude with input gain) · **Mono (mini only)**.
 
-**Retired from UI, still honored in code**: Dots (static underlay),
-`artwork_mode`/`immersive` (migrate to spectrum + backdrop on). Full keys
-`min_bar_height` and `splits` are gone — the bar floor is unconditional and
-Stacks is the canonical key.
+**OSCILLOSCOPE** (shown only for the scope viz): **Line thickness** slider.
 
-**OPTIONS** (live-wired via `writeVizOption(s)` / `writeAudioOption` —
-disk + instant local update):
-- **Peaks**: Toggle — peak-hold markers on all surfaces (default on)
-- **Peak fall speed**: Slider 0..1, shown only when Peaks on (0=holds, 1=fast)
-- **Spikes**: Toggle — dense gapless flame spikes; auto-enables Fire on
-  select, auto-disables on deselect (single multi-key write)
-- **Fire**: Toggle — vertical flame gradient, all surfaces
-- **Stacks**: Toggle — segmented bars (preview/desktop only)
+**ADVANCED** (collapsed by default, "Show"/"Hide"): Linear fall
+(renderer-side, no engine restart) · Dots (static underlay) · Artwork
+backdrop · GPU.
+
+All controls are live-wired via `writeVizOption` / `writeVizOptions`
+(atomic multi-key) / `writeAudioOption` — disk write + instant local update.
+
+**Retired from UI, still honored in code**: `artwork_mode`/`immersive`
+migrate to spectrum + backdrop on; `min_bar_height`/`splits` are gone (bar
+floor is unconditional; Stacks is the canonical key).
 
 **SOURCE**: Read-only audio source indicator (e.g., "PipeWire · default sink")
 
@@ -221,6 +221,7 @@ fire = false
 bar_color_custom = false
 bar_color_from = "#e68e0d"
 bar_color_to = "#f59e0b"
+bar_gradient_dir = "vertical"
 gpu = true
 # retired keys still READ (never written): artwork_mode, immersive, splits,
 # min_bar_height

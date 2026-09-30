@@ -20,10 +20,17 @@ Hardening pass across security, reliability, consistency and maintainability.
 - **No double physics step** after a resize: a paint resizes its buffers only and
   never advances the simulation.
 
-### Changed
-- Removed dead code: `artMode` (renderer path), `minBarHeight`, `_peaksSettled`.
-- `APP_SPEC.md` refreshed to v8.4.4 — single-click detach, real config keys and
-  current renderer parameters.
+### Settings panel redesign
+- **Linear fall** stays in Advanced — still `writeEngineOption("linear_fall", …)`.
+- Grouped **by intent** on one scrollable screen: **LOOK** (geometry + peaks +
+  reflection), **COLOR** (mode + tones + direction + presets), **MOTION**
+  (response + mono), **OSCILLOSCOPE** (thickness), **ADVANCED** (collapsed).
+- **Flame is a colour mode**, not a geometry-coupled toggle — decoupled from
+  Spikes; available as a chip and as a preset swatch.
+- **New `bar_gradient_dir`** (`vertical` default / `horizontal`) adds a
+  left→right gradient across the bar field (one shared gradient per frame).
+- ADVANCED is collapsed, not a slide-out stage; the "Response" slider owns
+  reactivity and its helper notes it scales the waveform with input gain.
 
 ## 8.4.4
 

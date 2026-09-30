@@ -229,6 +229,7 @@ Window {
         barColorCustom: win.vizConfig.barColorCustom === true
         barColorFrom: win.vizConfig.barColorFrom || "#e68e0d"
         barColorTo: win.vizConfig.barColorTo || "#f59e0b"
+        gradientDir: win.vizConfig.barGradientDir || "vertical"
         themeBottom: win.vizConfig.themeBottom || "#e68e0d"
         themeTop: win.vizConfig.themeTop || "#f59e0b"
         }

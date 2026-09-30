@@ -43,6 +43,9 @@ Canvas {
   property bool barColorCustom: false
   property color barColorFrom: "#e68e0d"
   property color barColorTo: "#f59e0b"
+  // Bar gradient direction: "vertical" (bottom -> top, default) or
+  // "horizontal" (left -> right across the whole bar field).
+  property string gradientDir: "vertical"
   // Color sync: ON by default so theme gradient (themeBottom→themeTop) works.
   // When OFF, gradient goes themeBottom→white (legacy behavior).
   property bool colorSync: true
@@ -209,7 +212,7 @@ Canvas {
   }
 
   function _modeSig() {
-    return visual + "|" + (reflect ? 1 : 0) + "|" + (spikes ? 1 : 0) + "|" + (fire ? 1 : 0) + "|" + (stacks ? 1 : 0) + "|" + (peaks ? 1 : 0) + "|" + (mono ? 1 : 0) + "|" + (monoLight ? 1 : 0) + "|" + (wash ? 1 : 0) + "|" + (dots ? 1 : 0) + "|" + gapPx + "|" + peakFalloff + "|" + peakSustainMs + "|" + (linearFall ? 1 : 0) + "|" + noiseFloor + "|" + stackScale + "|" + barCount + "|" + spikeBars + "|" + scopeLineWidth + "|" + sensitivity + "|" + (silent ? 1 : 0) + "|" + _palSig
+    return visual + "|" + (reflect ? 1 : 0) + "|" + (spikes ? 1 : 0) + "|" + (fire ? 1 : 0) + "|" + (stacks ? 1 : 0) + "|" + (peaks ? 1 : 0) + "|" + (mono ? 1 : 0) + "|" + (monoLight ? 1 : 0) + "|" + (wash ? 1 : 0) + "|" + (dots ? 1 : 0) + "|" + gapPx + "|" + peakFalloff + "|" + peakSustainMs + "|" + (linearFall ? 1 : 0) + "|" + noiseFloor + "|" + stackScale + "|" + barCount + "|" + spikeBars + "|" + scopeLineWidth + "|" + sensitivity + "|" + (silent ? 1 : 0) + "|" + gradientDir + "|" + _palSig
   }
 
   function _computeSig(b, n) {
@@ -295,6 +298,7 @@ Canvas {
   onBarColorCustomChanged: requestPaint()
   onBarColorFromChanged: requestPaint()
   onBarColorToChanged: requestPaint()
+  onGradientDirChanged: requestPaint()
 
   function fillFor(h, a) {
     if (mono) return monoLight ? "#000000" : "#ffffff"
@@ -412,7 +416,11 @@ Canvas {
       // when Fire is on. It used to be built from fireColorAt() unconditionally,
       // whose base is hardcoded deep red — that is why the base bar colour was
       // always red no matter the theme or custom colour.
-      sharedGrad = ctx.createLinearGradient(0, baseY, 0, baseY - areaH)
+      // One shared gradient per frame (never per bar). Direction is vertical
+      // (bottom -> top, default) or horizontal (left -> right across field).
+      var gx0 = 0; var gy0 = baseY; var gx1 = 0; var gy1 = baseY - areaH
+      if (gradientDir === "horizontal") { gx0 = 0; gy0 = 0; gx1 = width; gy1 = 0 }
+      sharedGrad = ctx.createLinearGradient(gx0, gy0, gx1, gy1)
       if (fire) {
         sharedGrad.addColorStop(0, fireColorAt(0))
         sharedGrad.addColorStop(0.25, fireColorAt(0.25))

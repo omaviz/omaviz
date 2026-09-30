@@ -290,13 +290,15 @@ BarWidget {
     root.noteWrite(txt)
     detachConfigWrite.setText(txt)
   }
-  // Three-key single write (preset swatches, theme snapshot): same
-  // one-base-text rule as writeVizOptions.
-  function writeVizOptions3(key1, value1, key2, value2, key3, value3) {
+  // Three/four-key single write (preset swatches, theme snapshot, mode +
+  // tones): same one-base-text rule as writeVizOptions — two sequential
+  // setText calls on the same stale base would clobber each other.
+  function writeVizOptions3(key1, value1, key2, value2, key3, value3, key4, value4) {
     var txt = root.readGuarded()
     txt = Store.writeConfigKey(txt, "desktop", key1, vizVal(value1))
     if (key2) txt = Store.writeConfigKey(txt, "desktop", key2, vizVal(value2))
     if (key3) txt = Store.writeConfigKey(txt, "desktop", key3, vizVal(value3))
+    if (key4) txt = Store.writeConfigKey(txt, "desktop", key4, vizVal(value4))
     root.noteWrite(txt)
     detachConfigWrite.setText(txt)
   }
@@ -381,6 +383,7 @@ BarWidget {
         barColorCustom: root.config.barColorCustom === true
         barColorFrom: root.config.barColorFrom || "#e68e0d"
         barColorTo: root.config.barColorTo || "#f59e0b"
+        gradientDir: root.config.barGradientDir || "vertical"
         themeBottom: Qt.darker(Color.accent, 1.3)
         themeTop: Color.accent
         wave: root.desktopLive ? [] : root.spectrumWave

@@ -210,6 +210,9 @@ function readConfigFromText(tomlText) {
   d.barColorTo = readTomlValue(tomlText, "desktop", "bar_color_to") || "#f59e0b"
   if (!isHexColor(d.barColorFrom)) d.barColorFrom = "#e68e0d"
   if (!isHexColor(d.barColorTo)) d.barColorTo = "#f59e0b"
+  // Bar gradient direction: "vertical" (default, bottom -> top) or
+  // "horizontal" (left -> right across the bar field).
+  d.barGradientDir = readTomlValue(tomlText, "desktop", "bar_gradient_dir") === "horizontal" ? "horizontal" : "vertical"
   d.gpu = readTomlValue(tomlText, "desktop", "gpu") !== "false"
   // Artwork backdrop: OFF by default (fresh installs), so an ABSENT key must
   // mean false — matching defaultConfig(). Using `!== "false"` here silently
@@ -240,6 +243,7 @@ function defaultConfig() {
     peaks: true, peakFalloff: 0.1, peakSustainMs: 100, spikes: false, stacks: false, mono: false,
     linearFall: true, scope: false, artwork: false, scopeThickness: 2, dots: true, reflect: true,
     barColorCustom: false, barColorFrom: "#e68e0d", barColorTo: "#f59e0b",
+    barGradientDir: "vertical",
     themeAccent: "#f59e0b",
     gpu: true,
   }
@@ -328,6 +332,7 @@ var KEY_SPEC = [
   ["barColorCustom", "desktop", "bar_color_custom", "bool"],
   ["barColorFrom", "desktop", "bar_color_from", "str"],
   ["barColorTo", "desktop", "bar_color_to", "str"],
+  ["barGradientDir", "desktop", "bar_gradient_dir", "str"],
   ["gpu", "desktop", "gpu", "bool"],
 ]
 var SECTION_ORDER = ["audio", "mini", "desktop"]
@@ -418,6 +423,8 @@ function validate(prop, value) {
     case "themeTop":
     case "themeAccent":
       return isHexColor(value) ? value : null   // null => caller keeps old value
+    case "barGradientDir":
+      return value === "horizontal" ? "horizontal" : "vertical"
     default:
       if (typeof value === "boolean") return value
       if (value === "true") return true
