@@ -9,7 +9,12 @@ BarWidget {
   id: root
   moduleName: "org.omaviz.visualizer"
 
-  property var config: Store.defaultConfig()
+  readonly property var config: settingsDocument.config
+  SettingsDocument {
+    id: settingsDocument
+    writable: true
+    onReadyChanged: if (ready) root.snapThemeColors()
+  }
   // Live theme snapshot: persists the current Omarchy accent triple to
   // config whenever the theme changes, so the standalone desktop window
   // (no qs.* context) follows theme switches within its 100ms poll.
@@ -36,7 +41,8 @@ BarWidget {
     if (!root.config) return
     var top = root.colorHex(Color.accent)
     if (top === root._snappedAccent) return
-    var curTop = Store.readConfigFromText(root.readGuarded()).themeAccent || ""
+    if (!settingsDocument.ready) return
+    var curTop = root.config.themeAccent || ""
     // File already fresh: adopt without writing (avoids a mount-time
     // setText, which FileView can drop with a "no path" warning).
     if (curTop === top) { root._snappedAccent = top; return }
@@ -44,65 +50,11 @@ BarWidget {
     root._snappedAccent = top
     root.writeVizOptions3("theme_bottom", bottom, "theme_top", top, "theme_accent", top)
   }
-  property var spectrumBands: []
-  property var spectrumWave: []
-  property bool spectrumSilent: true
-  property bool vizEnabled: true
-
-  // Liveness lease: true only if the flag is set AND the heartbeat is fresh.
-  // A stranded active=true (crash, kill -9, old code) self-heals within ~6s.
+  readonly property var spectrumBands: spectrumFeed.bands
+  readonly property var spectrumWave: spectrumFeed.wave
+  readonly property bool spectrumSilent: spectrumFeed.silent
+  readonly property bool vizEnabled: root.config.enabled !== false
   property bool desktopLive: false
-  // Keep optimistic settings until the writer finishes and the reader catches up.
-  property string _lastWriteText: ""
-  property string _writingText: ""
-  property bool _writeBusy: false
-  // The one place config text becomes live state. Everything (panel bindings,
-  // the engine, the desktop lease) derives from this, so a value can never be
-  // shown that the config does not actually contain.
-  function syncFromConfig(txt) {
-    root.config = Store.loadFromTOML(txt)
-    var on = root.config.enabled !== false
-    if (root.vizEnabled !== on) {
-      root.vizEnabled = on
-      spectrumProc.running = on
-      if (!on) {
-        root.spectrumBands = []
-        root.spectrumWave = []
-        Store.spectrumData.bands = []
-        Store.spectrumData.wave = []
-        Store.spectrumData.silent = true
-      }
-    }
-    // Scope is a SPAWN-TIME flag (it toggles the engine's `--wave` feed): the
-    // process must be bounced when it flips, or Bars mode would keep paying
-    // ~0.7KB/line of JSON parse for a snippet it never reads.
-    var sc = root.config.scope === true
-    if (root._lastScope !== sc) {
-      root._lastScope = sc
-      if (on) root.restartSpectrum()
-    }
-    root.refreshDesktopLive()
-  }
-  // Bounce the engine without tripping the failure backoff (see onExited).
-  function restartSpectrum() {
-    if (!spectrumProc.running) { spectrumProc.running = true; return }
-    root._restarting = true
-    spectrumProc.running = false
-    spectrumProc.running = true
-    Qt.callLater(function() { root._restarting = false })
-  }
-  function noteWrite(txt) {
-    root._lastWriteText = txt
-    root.syncFromConfig(txt)
-  }
-  function readGuarded() {
-    if (root._lastWriteText !== "") {
-      if (!root._writeBusy && configFile.text() === root._lastWriteText)
-        root._lastWriteText = ""
-      else return root._lastWriteText
-    }
-    return configFile.text()
-  }
   function refreshDesktopLive() {
     if (!root.vizEnabled) { root.desktopLive = false; return }
     var state = desktopState.text()
@@ -111,7 +63,6 @@ BarWidget {
   }
   readonly property int barCount: Math.max(8, (root.config && root.config.bands !== undefined) ? root.config.bands : 32)
 
-  function applyConfig(text) { root.syncFromConfig(text) }
 
   readonly property bool opened: panelLoader.item ? panelLoader.item.opened === true : false
   readonly property bool popoutSwitchClosing: panelLoader.item ? panelLoader.item.popoutSwitchClosing === true : false
@@ -147,49 +98,12 @@ BarWidget {
   readonly property string engineBin: Store.engineBin
   readonly property string pluginDir: String(Qt.resolvedUrl(".")).replace(/^file:\/\//, "")
 
-  Process {
-    id: spectrumProc
-    running: true
-    // High-res feed (128 bands): mini downsamples to 32, preview to 64 —
-    // both map from rich source detail instead of a coarse 32-band feed.
-    // `--wave` is scope-only (Bars mode never reads the snippet), so it is
-    // added only while the oscilloscope is selected; syncFromConfig bounces
-    // the process when scope flips. Physics (fall/peaks) is renderer-side, so
-    // those are not spawn-time flags.
-    command: root.config.scope === true
-      ? [root.engineBin, "--bands", "128", "--wave"]
-      : [root.engineBin, "--bands", "128"]
-    stdout: SplitParser {
-      onRead: function(data) {
-        if (!root.vizEnabled) return
-        var lines = String(data).split("\n")
-        for (var i = 0; i < lines.length; i++) {
-          var line = lines[i].trim()
-          if (line) Store.parseSpectrumLine(line)
-        }
-        root.spectrumBands = Store.spectrumData.bands
-        root.spectrumWave = Store.spectrumData.wave
-        root.spectrumSilent = Store.spectrumData.silent
-        root.noteSpectrumFrame()
-      }
-    }
-    onExited: function(code, status) {
-      if (root._restarting) { root._restarting = false; return }
-      if (!root.vizEnabled) return
-      // Indefinite backoff retry: engine death must never permanently kill
-      // the mini. Interval grows 1.5s → 30s cap; silence shows meanwhile.
-      root._bridgeRetries++
-      bridgeRetryTimer.interval = Math.min(30000, 1500 * root._bridgeRetries)
-      bridgeRetryTimer.restart()
-    }
+  EngineFeed {
+    id: spectrumFeed
+    active: root.vizEnabled && settingsDocument.ready
+    waveEnabled: root.config.scope === true
   }
-
-  property int _bridgeRetries: 0
-  property bool _restarting: false
-  property bool _lastScope: false
-  // Successful frames reset the backoff so the next failure starts fast.
-  function noteSpectrumFrame() { root._bridgeRetries = 0 }
-  Timer { id: bridgeRetryTimer; interval: 1500; repeat: false; onTriggered: { spectrumProc.running = true } }
+  readonly property string sourceLabel: Store.sourceLabel(spectrumFeed.source)
 
   Process {
     id: detachProc
@@ -214,20 +128,9 @@ BarWidget {
     }
   }
 
-  FileView {
-    id: configFile
-    path: Store.configPath
-    watchChanges: true
-    printErrors: false
-    onLoaded: root.syncFromConfig(root.readGuarded())
-    onFileChanged: root.syncFromConfig(root.readGuarded())
-    onLoadFailed: { if (root._lastWriteText === "") root.syncFromConfig("") }
-  }
-  // Poll config (watchChanges is unreliable) so shared flags like
-  // desktop.active propagate — this is what hides the mini.
   Timer {
     interval: 500; repeat: true; running: true
-    onTriggered: { configFile.reload(); desktopState.reload(); root.refreshDesktopLive() }
+    onTriggered: { desktopState.reload(); root.refreshDesktopLive() }
   }
 
   FileView {
@@ -238,29 +141,6 @@ BarWidget {
     onLoaded: root.refreshDesktopLive()
     onFileChanged: reload()
   }
-  FileView {
-    id: detachConfigWrite
-    path: Store.configPath
-    watchChanges: false
-    printErrors: false
-    onSaved: {
-      root._writeBusy = false
-      if (root._lastWriteText !== root._writingText) root.flushSettings()
-      else configFile.reload()
-    }
-    onSaveFailed: {
-      root._writeBusy = false
-      root._lastWriteText = ""
-      console.warn("omaviz: could not save settings")
-      configFile.reload()
-    }
-  }
-  function flushSettings() {
-    if (root._writeBusy || root._lastWriteText === "") return
-    root._writingText = root._lastWriteText
-    root._writeBusy = true
-    detachConfigWrite.setText(root._writingText)
-  }
   function writeDesktopActive(value) {
     // This file contains only a lease; it can never clobber user settings.
     desktopState.setText("[desktop]\nactive = " + value + "\nheartbeat = " + Date.now() + "\n")
@@ -268,51 +148,27 @@ BarWidget {
   }
 
   function writeEnabled(value) {
-    var txt = Store.writeEnabled(value, root.readGuarded())
-    root.noteWrite(txt)            // syncFromConfig flips vizEnabled + engine
-    root.flushSettings()
-    if (!value) {
-      detachProc.running = false
-      root.writeDesktopActive(false)
-    }
+    settingsDocument.patch("desktop", { enabled: value })
+    if (!value) { detachProc.running = false; root.writeDesktopActive(false) }
   }
   function writeVizOption(key, value) {
-    writeVizOptions(key, value, null, null)
+    var values = {}; values[key] = value
+    settingsDocument.patch("desktop", values)
   }
-  // Renderer-side options (e.g. linear_fall) apply live through the config
-  // poll — no engine restart, since the CLI no longer takes physics flags.
-  function writeEngineOption(key, value) {
-    writeVizOption(key, value)
-  }
-  // Audio-section options (e.g. sensitivity): same single-write pattern as
-  // writeVizOptions but targeting [audio]. Applied QML-side, so every
-  // surface picks it up live through the config poll — no restart needed.
+  function writeEngineOption(key, value) { writeVizOption(key, value) }
   function writeAudioOption(key, value) {
-    var txt = Store.writeConfigKey(root.readGuarded(), "audio", key, value)
-    root.noteWrite(txt)
-    root.flushSettings()
+    var values = {}; values[key] = value
+    settingsDocument.patch("audio", values)
   }
   function writeVizOptions(key1, value1, key2, value2) {
-    // Multi-key single write: two sequential setText calls race on the same
-    // stale base text and the second clobbers the first (e.g. Spikes+Fire).
-    // Apply both keys to ONE base text, then a single setText.
-    var txt = root.readGuarded()
-    txt = Store.writeConfigKey(txt, "desktop", key1, value1)
-    if (key2) txt = Store.writeConfigKey(txt, "desktop", key2, value2)
-    root.noteWrite(txt)
-    root.flushSettings()
+    writeVizOptions3(key1, value1, key2, value2)
   }
-  // Three/four-key single write (preset swatches, theme snapshot, mode +
-  // tones): same one-base-text rule as writeVizOptions — two sequential
-  // setText calls on the same stale base would clobber each other.
   function writeVizOptions3(key1, value1, key2, value2, key3, value3, key4, value4) {
-    var txt = root.readGuarded()
-    txt = Store.writeConfigKey(txt, "desktop", key1, value1)
-    if (key2) txt = Store.writeConfigKey(txt, "desktop", key2, value2)
-    if (key3) txt = Store.writeConfigKey(txt, "desktop", key3, value3)
-    if (key4) txt = Store.writeConfigKey(txt, "desktop", key4, value4)
-    root.noteWrite(txt)
-    root.flushSettings()
+    var values = {}; values[key1] = value1
+    if (key2) values[key2] = value2
+    if (key3) values[key3] = value3
+    if (key4) values[key4] = value4
+    settingsDocument.patch("desktop", values)
   }
 
   WidgetButton {

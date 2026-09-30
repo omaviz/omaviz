@@ -25,20 +25,20 @@ rule below cost a debugging session.
    launch (`module "qs.Commons" is not installed`). This broke double-click
    once already.
 2. **`FileView.watchChanges` is unreliable** — BarWidget polls config every
-   500ms, Desktop every 100ms. Keep the polls.
+   500ms, Desktop every 250ms. Keep the polls.
 3. **`FileView.setText` is async** — never write-then-quit instantly
    (Desktop delays `Qt.quit()` 300ms); never two `setText`s off one base
    text (use `writeVizOptions` multi-key single write).
-4. **Mini visibility = `desktopLive`** (shared `desktop.active` flag +
-   2s heartbeat lease). Do NOT gate on process state, do NOT clear the
+4. **Mini visibility = `desktopLive`** (shared `desktop.active` flag in desktop-state.toml +
+   2s heartbeat lease (6s expiry)). Do NOT gate on process state, do NOT clear the
    flag from the bar based on `detachProc` (fights launcher-opened windows).
 5. **One renderer**: all visual work goes in `VisualCanvas.qml`. Never add
    a second bar renderer (a duplicated Repeater was deleted for this reason).
 6. **Config writes** go through `writeVizOption(s)` / `writeEngineOption`
-   (engine flags need process restart). Base writes on the polled views,
-   never on write-only caches.
+   (engine flags need process restart). SettingsDocument bases writes on its polled reader and SettingsQueue;
+   never on the write-only FileView cache.
 7. **Peak physics**: Winamp hang + ×1.05 accelerating fall. Don't revert to
-   linear decay. Bar motion default is exp easing; `linear_fall` is opt-in.
+   linear decay. Preserve the shipped `linear_fall` default; do not change physics during refactors.
 8. **Frame protocol**: `bands, energy, beat, silent, source, t` + separate
    `{wave:[...]}` lines. QML parsers must tolerate missing keys (old frames).
 

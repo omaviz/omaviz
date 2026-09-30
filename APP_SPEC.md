@@ -1,7 +1,7 @@
-# omaviz — Application Specification (v8.4.5)
+# omaviz — Application Specification (v8.5.0)
 
 > **Plugin id:** `org.omaviz.visualizer`
-> **Version:** 8.4.5 (spec + manifest, git tag)
+> **Version:** 8.5.0 (spec + manifest, git tag)
 > **Status:** Single-package Omarchy QML plugin. Audio analysis is bundled as
 > one native binary (`bin/omaviz-engine`) shipped **inside** the plugin
 > directory. No systemd service, no Unix socket, no `~/.local/bin` binaries.
@@ -37,13 +37,13 @@ repo root = the plugin (deployed to ~/.config/omarchy/plugins/org.omaviz.visuali
 ├── BarWidget.qml   (spawns bin/omaviz-engine, parses its stdout)
 ├── Panel.qml       (settings: Peaks toggle, Peak fall speed)
 ├── Desktop.qml     (detached window)
-├── ModelStore.js   (.pragma library: config store — IO, defaults, get/set)
+├── ModelStore.js   (.pragma library: pure config / protocol helpers)
 ├── Physics.js      (.pragma library: shared bar/peak motion model)
 ├── VisualCanvas.qml  (Canvas-2D renderer)
 ├── bin/
 │   └── omaviz-engine   (Rust: capture → FFT/DSP → JSON lines on stdout;
 │                         COMMITTED artifact — see Architecture A, §2)
-└── tests/{model,glspectrum}.test.cjs
+└── tests/*.test.cjs
 ```
 
 **Data flow:**
@@ -73,7 +73,7 @@ VisualCanvas (Canvas-2D) — used by mini, preview, AND desktop
 | `Panel.qml` | Settings panel. VISUALIZATIONS cards, live PREVIEW, LOOK / COLOR / MOTION groups, collapsed ADVANCED, SOURCE readout. |
 | `Desktop.qml` | Detached visualization window. Same VisualCanvas renderer, larger. |
 | `VisualCanvas.qml` | Canvas-2D renderer. Used by mini, preview, and desktop. |
-| `ModelStore.js` | Config store: TOML I/O, defaults/validation, reactive get/set, spectrum parsing. |
+| `ModelStore.js` | Pure TOML/defaults and protocol parsing; QML components own observable state. |
 | `Physics.js` | Bar/peak motion model (instant attack, rate-limited release, peak sustain). Unit-tested. |
 
 ---
@@ -265,10 +265,11 @@ gpu = true
 ```
 omaviz/  (repo root IS the plugin — manifest.json lives here)
 ├── manifest.json, BarWidget.qml, Panel.qml, Desktop.qml
-├── ModelStore.js, Physics.js, VisualCanvas.qml
+├── ModelStore.js, Physics.js, Palette.js, VisualCanvas.qml
+├── SettingsDocument.qml, SettingsQueue.js, EngineFeed.qml
 ├── assets/omaviz.desktop  (app-launcher entry)
 ├── bin/omaviz-engine   (COMMITTED engine binary)
-├── tests/*.test.cjs     (node: modelstore, physics, qml, engine, perf, panel)
+├── tests/*.test.cjs     (node: config, physics, protocol, palette, queue, engine)
 ├── engine/              (Rust omaviz-engine source)
 ├── build.sh             (cargo build → bin/)
 ├── install.sh           (copy plugin files + omarchy plugin enable)
@@ -296,3 +297,10 @@ omaviz/  (repo root IS the plugin — manifest.json lives here)
 | 11 | TDD: engine (Rust) + plugin (node) suites green | Shipped | 100% |
 | 12 | GPU/ShaderEffect visuals | Removed (Canvas-only) | — |
 | 13 | Additional backends (PulseAudio/JACK/ALSA) | Planned | 0% |
+
+### Runtime ownership (8.5)
+
+SettingsDocument owns config reads and serialized writes via SettingsQueue.
+EngineFeed owns engine start/stop/retry and protocol validation for both surfaces.
+ModelStore contains pure functions; there is no parallel mutable JS store.
+Native component tests use an isolated config and software/offscreen rendering.

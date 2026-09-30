@@ -1,3 +1,11 @@
+## 8.5.0 — Runtime ownership and functional verification
+
+- Share engine lifecycle and protocol handling through EngineFeed; wait for process exit before restarting and bound failed starts.
+- Move settings persistence into SettingsDocument and a pure serialized-write queue; remove the unused mutable JS store.
+- Extract pure palette computation without changing drawing commands or physics.
+- Replace source-string tests and wall-clock FPS thresholds with functional tests and bounded real QML I/O/process checks.
+- Install only runtime files, excluding tests and development artifacts.
+
 ## 8.4.5 — Settings reliability and review fixes
 
 - Isolate desktop leases from settings; serialize async saves and keep pending selections until acknowledged.

@@ -244,25 +244,13 @@ validate_marker "$PLUGIN_DIR/$MARKER" || {
 remove_managed_paths "$PLUGIN_DIR/$MARKER"
 prune_empty_dirs
 
-if command -v rsync >/dev/null; then
-  rsync -a \
-    --exclude '/engine/' --exclude '/docs/' --exclude '/.git' \
-    --exclude '/tools/' --exclude '/.github/' \
-    --exclude '/*.sh' --exclude '/*.md' --exclude '/LICENSE' --exclude '/preview.png' \
-    --exclude '/package.json' --exclude '/.gitignore' \
-    --exclude "/$MARKER" \
-    "$SRC/" "$PLUGIN_DIR/"
-else
-  # Non-rsync path: plain copies of the same file set.
-  cp "$SRC"/manifest.json "$PLUGIN_DIR/"
-  cp "$SRC"/*.qml "$SRC"/ModelStore.js "$SRC"/Physics.js "$PLUGIN_DIR/"
-  # Optional file classes — copy only those that exist (glob would otherwise
-  # fail under `set -e` when a class is absent, e.g. no .frag/.qsb in v8+).
-  for f in "$SRC"/*.frag "$SRC"/*.qsb; do
-    [ -e "$f" ] && cp "$f" "$PLUGIN_DIR/"
-  done
-  cp -r "$SRC/assets" "$SRC/bin" "$SRC/tests" "$PLUGIN_DIR/"
-fi
+# Explicit runtime payload: never ship tests, worktree metadata or mockups.
+cp "$SRC"/manifest.json "$PLUGIN_DIR/"
+cp "$SRC"/*.qml "$SRC"/*.js "$PLUGIN_DIR/"
+for f in "$SRC"/*.frag "$SRC"/*.qsb; do
+  if [ -e "$f" ]; then cp "$f" "$PLUGIN_DIR/"; fi
+done
+cp -r "$SRC/assets" "$SRC/bin" "$PLUGIN_DIR/"
 chmod +x "$PLUGIN_DIR/bin/omaviz-engine"
 # (Re)write the management marker AFTER the copy: records the paths this
 # installer owns — proven, not assumed. A path is claimed only when the file we
