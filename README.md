@@ -28,10 +28,12 @@ theme-aware, and configured with two clicks.
 
 ## The tour
 
+Fresh native captures from v8.5.2.
+
 | | |
 |---|---|
-| ![desktop window with artwork backdrop](docs/screenshots/Desktop-window-with-artwork.png) | ![fire flame gradient](docs/screenshots/fire.png) |
-| *Desktop window + artwork backdrop + floor reflection* | *Fire: its own saved red-to-yellow palette* |
+| ![desktop visualizer with floor reflection](docs/screenshots/Desktop-window.png) | ![fire flame gradient](docs/screenshots/fire.png) |
+| *Desktop visualizer + floor reflection* | *Fire: its own saved red-to-yellow palette* |
 | ![stacked bars](docs/screenshots/Stacked-bars.png) | ![oscilloscope waveform](docs/screenshots/oscilloscope.png) |
 | *Stacks: segmented Winamp-style bars* | *Oscilloscope: true time-domain waveform* |
 | ![custom color tones](docs/screenshots/Custom-colors.png) | ![theme following](docs/screenshots/Theme-enabled.png) |
@@ -136,7 +138,7 @@ with a dotted-skin backdrop and a B&W Mono mode for tiny sizes.
 Single-click the mini for the settings panel below; single-click the live
 preview inside it to detach the desktop window:
 
-![settings panel with mini in the bar](docs/screenshots/Mini.png)
+![Settings panel with aligned controls, compositing backend and version footer](docs/screenshots/Settings.png)
 
 ## Engine
 
