@@ -720,12 +720,38 @@ Panel {
             onClicked: if (root.hostWidget) root.hostWidget.writeVizOption("artwork", !checked)
           }
 
-          Toggle {
+          BorderSurface {
             width: (parent.width - Style.space(14)) / 2
-            label: "GPU"
-            description: "Hardware painting"
-            checked: root.hcfg.gpu !== false
-            onClicked: if (root.hostWidget) root.hostWidget.writeVizOption("gpu", !checked)
+            height: Math.max(54, backendLabel.implicitHeight + Style.spacing.huge)
+            radius: Style.cornerRadius
+            color: Style.controlFill(false, false, Color.foreground, Color.accent)
+            borderSpec: Border.controlSpec("normal", Color.foreground, Color.accent)
+            Column {
+              id: backendLabel
+              anchors.centerIn: parent
+              Text {
+                text: "Compositing"
+                color: root.fg
+                font.family: Style.font.family
+                font.pixelSize: Style.font.subtitle
+                font.bold: true
+              }
+              Text {
+                text: {
+                  switch (previewViz.GraphicsInfo.api) {
+                    case GraphicsInfo.OpenGL: return "OpenGL · automatic"
+                    case GraphicsInfo.Vulkan: return "Vulkan · automatic"
+                    case GraphicsInfo.Metal: return "Metal · automatic"
+                    case GraphicsInfo.Direct3D11: return "Direct3D · automatic"
+                    case GraphicsInfo.Software: return "Software"
+                    default: return "Detecting backend"
+                  }
+                }
+                color: root.fgMuted
+                font.family: Style.font.family
+                font.pixelSize: Style.font.caption
+              }
+            }
           }
         }
       }

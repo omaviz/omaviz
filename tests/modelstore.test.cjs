@@ -71,7 +71,6 @@ test("true-by-default booleans survive a config that omits their key", () => {
   assert.equal(d.artwork, false, "artwork defaults OFF by design")
   assert.equal(d.peaks, true, "peaks must default ON")
   assert.equal(d.enabled, true, "enabled must default ON")
-  assert.equal(d.gpu, true, "gpu must default ON")
   // And the explicit false must still win.
   const off = Store.readConfigFromText(
     "[desktop]\nlinear_fall = false\nreflect = false\n[mini]\ncolor_sync = false\n"
