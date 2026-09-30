@@ -6,7 +6,7 @@ desktop visualizer window, and an oscilloscope that dances to whatever
 is playing. Same soul, zero nostalgia tax: buttery Canvas rendering,
 theme-aware, and configured with two clicks.
 
-![version](https://img.shields.io/badge/version-8.5.1-amber) ![license](https://img.shields.io/badge/license-MIT-blue)
+![version](https://img.shields.io/badge/version-8.5.2-amber) ![license](https://img.shields.io/badge/license-MIT-blue)
 
 ## Why omaviz
 
@@ -206,3 +206,25 @@ See [architecture](docs/ARCHITECTURE.md) for ownership, failure handling, and va
 GPU compositing is selected by Qt automatically; Advanced shows the actual backend.
 The old `gpu` setting never controlled painting and is now ignored.
 See [GPU exploration and parity checks](docs/GPU_EXPLORATION.md).
+
+### Releases and marketplace verification
+
+The settings footer shows the installed `manifest.json` version. Paired controls
+share the height of the taller control, including Motion and Advanced rows.
+
+Push a `vX.Y.Z` tag on `master` (matching manifest/package versions), or dispatch
+Release with an existing tag. The workflow checks out that exact commit, runs
+Rust tests, verifies the bundled engine rebuild, and publishes attested assets.
+Every release includes a prefilled [marketplace verification form](https://github.com/omacom/omarchy-plugin-marketplace/issues/new?template=verify-plugin.yml).
+Merging a PR alone does not create a release or submit a marketplace request.
+
+Optional automatic submission requires the repository Actions secret
+`MARKETPLACE_TOKEN`, using a dedicated credential allowed to create issues in
+`omacom/omarchy-plugin-marketplace`. The ordinary repository `GITHUB_TOKEN`
+cannot write to another repository. Do not grant the credential code-write
+access. Submission runs only after a successful release and only while its
+commit remains `master` HEAD. Reruns reuse the existing request, including closed
+requests; a rejected request needs maintainer attention. Missing credentials
+produce a warning and leave the form link available. Submission failures fail
+the workflow after publication, so rerunning can retry without a new release.
+The marketplace retains its own validation and maintainer approval gates.

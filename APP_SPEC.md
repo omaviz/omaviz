@@ -1,7 +1,7 @@
-# omaviz — Application Specification (v8.5.1)
+# omaviz — Application Specification (v8.5.2)
 
 > **Plugin id:** `org.omaviz.visualizer`
-> **Version:** 8.5.1 (spec + manifest, git tag)
+> **Version:** 8.5.2 (spec + manifest, git tag)
 > **Status:** Single-package Omarchy QML plugin. Audio analysis is bundled as
 > one native binary (`bin/omaviz-engine`) shipped **inside** the plugin
 > directory. No systemd service, no Unix socket, no `~/.local/bin` binaries.
@@ -303,3 +303,8 @@ SettingsDocument owns config reads and serialized writes via SettingsQueue.
 EngineFeed owns engine start/stop/retry and protocol validation for both surfaces.
 ModelStore contains pure functions; there is no parallel mutable JS store.
 Native component tests use an isolated config and software/offscreen rendering.
+
+Settings control pairs use a shared row height, and the bottom-right footer reads
+the installed version from `manifest.json`. Releases provide an exact-commit
+marketplace verification link; automatic submission is optional and credential-gated
+(see README).

@@ -110,6 +110,7 @@ jobs:
           if-no-files-found: error
 
       - name: Attest build provenance (Sigstore keyless)
+        if: github.event_name != 'pull_request'
         uses: actions/attest-build-provenance@v2
         with:
           subject-name: omaviz-engine
