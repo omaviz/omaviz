@@ -23,9 +23,11 @@ function submit({id, repository, commit}, gh) {
   const data = request({id, repository, commit});
   const currentHead = () => gh(['api', `repos/${repository}/commits/master`, '--jq', '.sha']);
   if (currentHead() !== commit) return {status: 'stale'};
-  const pages = JSON.parse(gh(['api', '--paginate', '--slurp', `repos/${target}/issues?state=all&per_page=100`]));
-  const existing = pages.flat().find(issue => !issue.pull_request && issue.body?.includes(data.marker));
-  if (existing) return {status: 'existing', url: existing.html_url};
+  // Filter each page inside gh: marketplace issue bodies exceed execFileSync's
+  // output buffer. Only matching URLs cross the child-process boundary.
+  const filter = `.[] | select(.pull_request == null and ((.body // "") | contains(${JSON.stringify(data.marker)}))) | .html_url`;
+  const existing = gh(['api', '--paginate', `repos/${target}/issues?state=all&per_page=100`, '--jq', filter]);
+  if (existing) return {status: 'existing', url: existing.split('\n')[0]};
   // Pagination may take time; check again immediately before sending.
   if (currentHead() !== commit) return {status: 'stale'};
   return {status: 'created', url: gh(['issue', 'create', '--repo', target, '--title', data.title, '--body', data.body])};

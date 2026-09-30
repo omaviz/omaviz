@@ -31,7 +31,7 @@ function apiSequence(responses) {
   return {gh, calls};
 }
 test('stale releases never create marketplace issues, including a HEAD change during lookup', () => {
-  for (const responses of [['c'.repeat(40)], [identity.commit, '[[]]', 'c'.repeat(40)]]) {
+  for (const responses of [['c'.repeat(40)], [identity.commit, '', 'c'.repeat(40)]]) {
     const api = apiSequence(responses);
     assert.deepEqual(submit(identity, api.gh), {status: 'stale'});
     assert.ok(api.calls.every(args => args[0] === 'api'));
@@ -39,13 +39,13 @@ test('stale releases never create marketplace issues, including a HEAD change du
 });
 test('reruns reuse closed requests instead of creating duplicate issues', () => {
   const url = 'https://github.com/omacom/omarchy-plugin-marketplace/issues/123';
-  const api = apiSequence([identity.commit, JSON.stringify([[{state: 'closed', body: request(identity).body, html_url: url}]])]);
+  const api = apiSequence([identity.commit, url]);
   assert.deepEqual(submit(identity, api.gh), {status: 'existing', url});
   assert.equal(api.calls.length, 2);
 });
 test('fresh release creates one request for the exact verified commit', () => {
   const url = 'https://github.com/omacom/omarchy-plugin-marketplace/issues/124';
-  const api = apiSequence([identity.commit, '[[]]', identity.commit, url]);
+  const api = apiSequence([identity.commit, '', identity.commit, url]);
   assert.deepEqual(submit(identity, api.gh), {status: 'created', url});
   assert.deepEqual(api.calls.at(-1), ['issue', 'create', '--repo', 'omacom/omarchy-plugin-marketplace', '--title', request(identity).title, '--body', request(identity).body]);
 });
