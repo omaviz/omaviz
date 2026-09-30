@@ -217,7 +217,6 @@ function readConfigFromText(tomlText) {
   // Bar gradient direction: "vertical" (default, bottom -> top) or
   // "horizontal" (left -> right across the bar field).
   d.barGradientDir = readTomlValue(tomlText, "desktop", "bar_gradient_dir") === "horizontal" ? "horizontal" : "vertical"
-  d.gpu = readTomlValue(tomlText, "desktop", "gpu") !== "false"
   // Artwork backdrop: OFF by default (fresh installs), so an ABSENT key must
   // mean false — matching defaultConfig(). Using `!== "false"` here silently
   // turned the backdrop ON for every config that predates the key.
@@ -249,7 +248,6 @@ function defaultConfig() {
     barColorCustom: false, barColorFrom: "#e68e0d", barColorTo: "#f59e0b",
     barGradientDir: "vertical",
     themeAccent: "#f59e0b",
-    gpu: true,
   }
 }
 
@@ -328,7 +326,6 @@ var KEY_SPEC = [
   ["barColorFrom", "desktop", "bar_color_from", "str"],
   ["barColorTo", "desktop", "bar_color_to", "str"],
   ["barGradientDir", "desktop", "bar_gradient_dir", "str"],
-  ["gpu", "desktop", "gpu", "bool"],
 ]
 var SECTION_ORDER = ["audio", "mini", "desktop"]
 

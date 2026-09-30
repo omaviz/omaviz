@@ -1,6 +1,6 @@
 {
   "name": "omaviz",
-  "version": "8.5.0",
+  "version": "8.5.1",
   "private": true,
   "description": "Omarchy audio visualizer plugin (QML + bundled Rust engine)",
   "engines": {
@@ -16,6 +16,7 @@
     "build": "./build.sh",
     "test:rust": "cd engine && cargo test",
     "verify": "npm run test && npm run test:installer && npm run test:rust",
-    "test:installer": "./tests/installer.test.sh"
+    "test:installer": "./tests/installer.test.sh",
+    "test:render": "node tools/render/compare.cjs"
   }
 }

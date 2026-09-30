@@ -1,3 +1,9 @@
+## 8.5.1 — GPU exploration without renderer changes
+
+- Report the actual compositing backend instead of the ineffective GPU switch.
+- Add bounded software/native export comparisons for eight visualization modes.
+- Document GPU options, hardware evidence, and parity/profiling requirements; keep production drawing and timing unchanged.
+
 ## 8.5.0 — Runtime ownership and functional verification
 
 - Share engine lifecycle and protocol handling through EngineFeed; wait for process exit before restarting and bound failed starts.

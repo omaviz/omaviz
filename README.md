@@ -6,7 +6,7 @@ desktop visualizer window, and an oscilloscope that dances to whatever
 is playing. Same soul, zero nostalgia tax: buttery Canvas rendering,
 theme-aware, and configured with two clicks.
 
-![version](https://img.shields.io/badge/version-8.5.0-amber) ![license](https://img.shields.io/badge/license-MIT-blue)
+![version](https://img.shields.io/badge/version-8.5.1-amber) ![license](https://img.shields.io/badge/license-MIT-blue)
 
 ## Why omaviz
 
@@ -202,3 +202,7 @@ Settings saves are serialized so rapid selections remain applied. Flame has inde
 Desktop liveness lives in `desktop-state.toml` alongside `config.toml`.
 
 See [architecture](docs/ARCHITECTURE.md) for ownership, failure handling, and validation boundaries.
+
+GPU compositing is selected by Qt automatically; Advanced shows the actual backend.
+The old `gpu` setting never controlled painting and is now ignored.
+See [GPU exploration and parity checks](docs/GPU_EXPLORATION.md).

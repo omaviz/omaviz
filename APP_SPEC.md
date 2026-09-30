@@ -1,7 +1,7 @@
-# omaviz — Application Specification (v8.5.0)
+# omaviz — Application Specification (v8.5.1)
 
 > **Plugin id:** `org.omaviz.visualizer`
-> **Version:** 8.5.0 (spec + manifest, git tag)
+> **Version:** 8.5.1 (spec + manifest, git tag)
 > **Status:** Single-package Omarchy QML plugin. Audio analysis is bundled as
 > one native binary (`bin/omaviz-engine`) shipped **inside** the plugin
 > directory. No systemd service, no Unix socket, no `~/.local/bin` binaries.
@@ -25,7 +25,7 @@ This document is the **source of truth** for what ships and how it is verified.
 **Non-Goals (v7.6.1)**
 - No microphone monitoring.
 - No backend switching UI (source is auto + displayed, not chosen).
-- No GPU/ShaderEffect (removed in favor of Canvas-2D).
+- Canvas-2D paints images; Qt Quick selects GPU or software compositing automatically.
 
 ---
 
@@ -173,7 +173,7 @@ reactivity AND oscilloscope amplitude with input gain) · **Mono (mini only)**.
 
 **ADVANCED** (collapsed by default, "Show"/"Hide"): Linear fall
 (renderer-side, no engine restart) · Dots (static underlay) · Artwork
-backdrop · GPU.
+backdrop · read-only compositing backend status.
 
 All controls are live-wired via `writeVizOption` / `writeVizOptions`
 (atomic multi-key) / `writeAudioOption` — disk write + instant local update.
@@ -223,7 +223,6 @@ bar_color_custom = false
 bar_color_from = "#e68e0d"
 bar_color_to = "#f59e0b"
 bar_gradient_dir = "vertical"
-gpu = true
 # retired keys still READ (never written): artwork_mode, immersive, splits,
 # min_bar_height
 ```
@@ -295,7 +294,7 @@ omaviz/  (repo root IS the plugin — manifest.json lives here)
 | 9 | Peak-hold markers with configurable falloff | Shipped | 100% |
 | 10 | Theme-dominant gradient colors | Shipped | 100% |
 | 11 | TDD: engine (Rust) + plugin (node) suites green | Shipped | 100% |
-| 12 | GPU/ShaderEffect visuals | Removed (Canvas-only) | — |
+| 12 | GPU exploration | Canvas unchanged; backend diagnostics and parity harness | docs/GPU_EXPLORATION.md |
 | 13 | Additional backends (PulseAudio/JACK/ALSA) | Planned | 0% |
 
 ### Runtime ownership (8.5)
