@@ -65,7 +65,7 @@ test("plain bars batch by color, flat/fire paths preserved", () => {
   assert.ok(src.includes("barBkt") && src.includes("barOrd.push(bkey)"))
   // single shared gradient for all bars (better perf than per-color LUT)
   assert.ok(src.includes("ctx.fillStyle = sharedGrad"))
-  // mono/artMode single-fill path still intact for plain bars
+  // mono single-fill path still intact for plain bars
   assert.ok(src.includes("} else if (useFlat) {"))
   assert.ok(src.includes("if (useFlat) ctx.fill()"))
   // fire gradient path still per-bar

@@ -65,16 +65,30 @@ Window {
           if (obj && Array.isArray(obj.bands)) {
             win.spectrumBands = obj.bands
             win.spectrumSilent = obj.silent === true
+            win._bridgeRetries = 0     // a healthy frame resets the backoff
           } else if (obj && Array.isArray(obj.wave)) {
             win.spectrumWave = obj.wave
+            win._bridgeRetries = 0
           }
         } catch (e) {}
       }
     }
+    // Engine death must never permanently kill the desktop window, and must
+    // never become a hot restart loop either: exponential backoff 1.5s -> 30s,
+    // identical to the bar widget's. A deliberate restart (scope flip) is
+    // flagged so it is not counted as a failure.
     onExited: function(code, status) {
-      if (win.visible) Qt.callLater(function() { bridge.running = true })
+      if (win._restarting) { win._restarting = false; return }
+      if (!win.visible) return
+      win._bridgeRetries++
+      bridgeRetryTimer.interval = Math.min(30000, 1500 * win._bridgeRetries)
+      bridgeRetryTimer.restart()
     }
   }
+
+  property int _bridgeRetries: 0
+  property bool _restarting: false
+  Timer { id: bridgeRetryTimer; interval: 1500; repeat: false; onTriggered: bridge.running = true }
 
   Component.onCompleted: { bridge.running = true }
 
@@ -191,13 +205,12 @@ Window {
         dataFps: 60
 
         visual: win.vizConfig.scope === true ? "Oscilloscope" : "Bars"
-        artMode: false
         wash: win.vizConfig.artwork !== false
         dots: false   // static underlay above
         reflect: win.vizConfig.reflect === true
         scopeLineWidth: win.vizConfig.scopeThickness ?? 2
 
-        colorSync: true
+        colorSync: win.vizConfig.colorSync !== false
         barCount: Math.max(16, Math.floor((parent.width - 8) / 10))
         gapPx: Math.min(6, Math.max(0, win.vizConfig.gap ?? 1))
         barWidthExtra: 4
@@ -216,6 +229,7 @@ Window {
         barColorCustom: win.vizConfig.barColorCustom === true
         barColorFrom: win.vizConfig.barColorFrom || "#e68e0d"
         barColorTo: win.vizConfig.barColorTo || "#f59e0b"
+        gradientDir: win.vizConfig.barGradientDir || "vertical"
         themeBottom: win.vizConfig.themeBottom || "#e68e0d"
         themeTop: win.vizConfig.themeTop || "#f59e0b"
         }
@@ -418,7 +432,15 @@ Window {
       var sc = win.vizConfig.scope === true
       if (win._lastScope !== sc) {
         win._lastScope = sc
-        if (bridge.running) { bridge.running = false; bridge.running = true }
+        win._bridgeRetries = 0
+        if (bridge.running) {
+          win._restarting = true
+          bridge.running = false
+          bridge.running = true
+          Qt.callLater(function() { win._restarting = false })
+        } else {
+          bridge.running = true
+        }
       }
       if (!win._claimed && txt.length > 0) {
         win._claimed = true

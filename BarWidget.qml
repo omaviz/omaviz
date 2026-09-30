@@ -74,7 +74,23 @@ BarWidget {
         Store.spectrumData.silent = true
       }
     }
+    // Scope is a SPAWN-TIME flag (it toggles the engine's `--wave` feed): the
+    // process must be bounced when it flips, or Bars mode would keep paying
+    // ~0.7KB/line of JSON parse for a snippet it never reads.
+    var sc = root.config.scope === true
+    if (root._lastScope !== sc) {
+      root._lastScope = sc
+      if (on) root.restartSpectrum()
+    }
     root.refreshDesktopLive()
+  }
+  // Bounce the engine without tripping the failure backoff (see onExited).
+  function restartSpectrum() {
+    if (!spectrumProc.running) { spectrumProc.running = true; return }
+    root._restarting = true
+    spectrumProc.running = false
+    spectrumProc.running = true
+    Qt.callLater(function() { root._restarting = false })
   }
   function noteWrite(txt) {
     root._lastWriteAt = Date.now()
@@ -134,9 +150,13 @@ BarWidget {
     running: true
     // High-res feed (128 bands): mini downsamples to 32, preview to 64 —
     // both map from rich source detail instead of a coarse 32-band feed.
-    // --wave always on (cheap scope feed). Physics (fall/peaks) is renderer
-    // side now, so no spawn-time flags and no restart-on-toggle.
-    command: [root.engineBin, "--bands", "128", "--wave"]
+    // `--wave` is scope-only (Bars mode never reads the snippet), so it is
+    // added only while the oscilloscope is selected; syncFromConfig bounces
+    // the process when scope flips. Physics (fall/peaks) is renderer-side, so
+    // those are not spawn-time flags.
+    command: root.config.scope === true
+      ? [root.engineBin, "--bands", "128", "--wave"]
+      : [root.engineBin, "--bands", "128"]
     stdout: SplitParser {
       onRead: function(data) {
         if (!root.vizEnabled) return
@@ -152,6 +172,7 @@ BarWidget {
       }
     }
     onExited: function(code, status) {
+      if (root._restarting) { root._restarting = false; return }
       if (!root.vizEnabled) return
       // Indefinite backoff retry: engine death must never permanently kill
       // the mini. Interval grows 1.5s → 30s cap; silence shows meanwhile.
@@ -162,6 +183,8 @@ BarWidget {
   }
 
   property int _bridgeRetries: 0
+  property bool _restarting: false
+  property bool _lastScope: false
   // Successful frames reset the backoff so the next failure starts fast.
   function noteSpectrumFrame() { root._bridgeRetries = 0 }
   Timer { id: bridgeRetryTimer; interval: 1500; repeat: false; onTriggered: { spectrumProc.running = true } }
@@ -267,13 +290,15 @@ BarWidget {
     root.noteWrite(txt)
     detachConfigWrite.setText(txt)
   }
-  // Three-key single write (preset swatches, theme snapshot): same
-  // one-base-text rule as writeVizOptions.
-  function writeVizOptions3(key1, value1, key2, value2, key3, value3) {
+  // Three/four-key single write (preset swatches, theme snapshot, mode +
+  // tones): same one-base-text rule as writeVizOptions — two sequential
+  // setText calls on the same stale base would clobber each other.
+  function writeVizOptions3(key1, value1, key2, value2, key3, value3, key4, value4) {
     var txt = root.readGuarded()
     txt = Store.writeConfigKey(txt, "desktop", key1, vizVal(value1))
     if (key2) txt = Store.writeConfigKey(txt, "desktop", key2, vizVal(value2))
     if (key3) txt = Store.writeConfigKey(txt, "desktop", key3, vizVal(value3))
+    if (key4) txt = Store.writeConfigKey(txt, "desktop", key4, vizVal(value4))
     root.noteWrite(txt)
     detachConfigWrite.setText(txt)
   }
@@ -337,7 +362,6 @@ BarWidget {
         bands: root.desktopLive ? [] : root.spectrumBands
         silent: root.desktopLive ? true : root.spectrumSilent
         visual: root.config.scope === true ? "Oscilloscope" : "Bars"
-        artMode: root.config.artMode === true
         colorSync: root.config.colorSync === true
         barCount: root.barCount
         // Rendered gap follows config (same value that sizes the container).
@@ -359,6 +383,7 @@ BarWidget {
         barColorCustom: root.config.barColorCustom === true
         barColorFrom: root.config.barColorFrom || "#e68e0d"
         barColorTo: root.config.barColorTo || "#f59e0b"
+        gradientDir: root.config.barGradientDir || "vertical"
         themeBottom: Qt.darker(Color.accent, 1.3)
         themeTop: Color.accent
         wave: root.desktopLive ? [] : root.spectrumWave

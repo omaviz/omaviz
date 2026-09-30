@@ -43,6 +43,9 @@ Canvas {
   property bool barColorCustom: false
   property color barColorFrom: "#e68e0d"
   property color barColorTo: "#f59e0b"
+  // Bar gradient direction: "vertical" (bottom -> top, default) or
+  // "horizontal" (left -> right across the whole bar field).
+  property string gradientDir: "vertical"
   // Color sync: ON by default so theme gradient (themeBottom→themeTop) works.
   // When OFF, gradient goes themeBottom→white (legacy behavior).
   property bool colorSync: true
@@ -53,14 +56,8 @@ Canvas {
   // Takes precedence over Fire — an explicit monochrome choice.
   property bool mono: false
   property bool monoLight: false
-  property bool artMode: false
-  // Glow wash without the retired white-bar forcing: bound from the
-  // Artwork-backdrop toggle (preview/desktop). artMode above stays for
-  // old configs; new code sets wash instead.
+  // Glow wash bound from the Artwork-backdrop toggle (preview/desktop).
   property bool wash: false
-  // Artwork mode (Plexamp-style): reactive glow wash behind quiet
-  // white bars. Foreground is always white; art (desktop-only Image
-  // layer) sits behind the wash when available.
   // Winamp skin dressing: dotted backdrop (on) and floor reflection (off).
   property bool dots: false   // static DotsCanvas underlay owns the grid
   property bool reflect: false
@@ -124,9 +121,6 @@ Canvas {
   // throttle there), while mini/preview stay 60. Peak physics runs two
   // substeps per arrival at 30Hz so cap trajectories match 60Hz.
   property real dataFps: 60
-  // Peak-settled flag: when silent and every cap is parked, band updates
-  // repaint an identical image — onBandsChanged skips those paints.
-  property bool _peaksSettled: false
   // Scratch buffers so displayBands() doesn't allocate per frame.
   property var _bandBuf: []
   property var _bandUp: []
@@ -215,11 +209,10 @@ Canvas {
       peakSustainMs: peakSustainMs,
       noiseFloor: noiseFloor
     })
-    _peaksSettled = Physics.settled(_barArr, _peakArr, _targets)
   }
 
   function _modeSig() {
-    return visual + "|" + (reflect ? 1 : 0) + "|" + (spikes ? 1 : 0) + "|" + (fire ? 1 : 0) + "|" + (stacks ? 1 : 0) + "|" + (peaks ? 1 : 0) + "|" + (mono ? 1 : 0) + "|" + (monoLight ? 1 : 0) + "|" + (artMode ? 1 : 0) + "|" + (wash ? 1 : 0) + "|" + (dots ? 1 : 0) + "|" + gapPx + "|" + peakFalloff + "|" + peakSustainMs + "|" + (linearFall ? 1 : 0) + "|" + noiseFloor + "|" + stackScale + "|" + barCount + "|" + spikeBars + "|" + scopeLineWidth + "|" + sensitivity + "|" + (silent ? 1 : 0) + "|" + _palSig
+    return visual + "|" + (reflect ? 1 : 0) + "|" + (spikes ? 1 : 0) + "|" + (fire ? 1 : 0) + "|" + (stacks ? 1 : 0) + "|" + (peaks ? 1 : 0) + "|" + (mono ? 1 : 0) + "|" + (monoLight ? 1 : 0) + "|" + (wash ? 1 : 0) + "|" + (dots ? 1 : 0) + "|" + gapPx + "|" + peakFalloff + "|" + peakSustainMs + "|" + (linearFall ? 1 : 0) + "|" + noiseFloor + "|" + stackScale + "|" + barCount + "|" + spikeBars + "|" + scopeLineWidth + "|" + sensitivity + "|" + (silent ? 1 : 0) + "|" + gradientDir + "|" + _palSig
   }
 
   function _computeSig(b, n) {
@@ -301,14 +294,13 @@ Canvas {
   onScopeLineWidthChanged: requestPaint()
   onMonoChanged: requestPaint()
   onMonoLightChanged: requestPaint()
-  onArtModeChanged: requestPaint()
   onWashChanged: requestPaint()
   onBarColorCustomChanged: requestPaint()
   onBarColorFromChanged: requestPaint()
   onBarColorToChanged: requestPaint()
+  onGradientDirChanged: requestPaint()
 
   function fillFor(h, a) {
-    if (artMode) return "#ffffff"
     if (mono) return monoLight ? "#000000" : "#ffffff"
     // Fire ramp (custom-aware tip) — Winamp flame, kept luminous at low
     // levels so quiet bars stay visible on dark containers.
@@ -341,7 +333,7 @@ Canvas {
     // mirror fades below. Otherwise the full height is the bar area.
     var areaH = reflect ? height * 0.62 : height
     var baseY = reflect ? height * 0.68 : height
-    if (artMode || wash) {
+    if (wash) {
       // Overlap-free wash (perf): each wash rect is 2x bar width, so every
       // interior column is blended TWICE. Adjacent rects share one alpha,
       // so each column's stacked result is computed analytically and
@@ -401,16 +393,19 @@ Canvas {
     // bars — draw each spike half a pixel wider to seal them.
     var spikeOverlap = spikes ? 0.5 : 0
 
-    // Peak buffers track the band count (sized on data; this guard covers
-    // paints that precede data, e.g. first paint or resize without frames).
-    // Physics itself advances in _advancePhysics on data arrival — paints
-    // never move the simulation (see paint-dedup note at the handlers).
-    if (_peakArr.length !== n || _barArr.length !== n)
-      _advancePhysics(b, n)
-    // Flat-fill fast path (mono/artMode): every body shares one fillStyle,
-    // so all bodies join a single path + one fill instead of N fills.
-    var useFlat = mono || artMode
-    var flatFill = artMode ? "#ffffff" : (monoLight ? "#000000" : "#ffffff")
+    // Peak buffers track the band count. This guard covers paints that
+    // precede data (first paint / resize without frames): RESIZE ONLY, never
+    // step the simulation from a paint — physics advances on data arrival, so
+    // stepping here would double-advance a resize/frame race.
+    if (_peakArr.length !== n || _barArr.length !== n) {
+      _barArr = Physics.ensure(_barArr, n, 0)
+      _peakArr = Physics.ensure(_peakArr, n, 0)
+      _targets = Physics.ensure(_targets, n, 0)
+    }
+    // Flat-fill fast path (mono): every body shares one fillStyle, so all
+    // bodies join a single path + one fill instead of N fills.
+    var useFlat = mono
+    var flatFill = monoLight ? "#000000" : "#ffffff"
     // One shared vertical gradient per frame (identical coords for every bar).
     // Used by Fire mode and all other non-flat modes for consistent
     // bottom→top color across bars (matches Fire behavior).
@@ -421,7 +416,11 @@ Canvas {
       // when Fire is on. It used to be built from fireColorAt() unconditionally,
       // whose base is hardcoded deep red — that is why the base bar colour was
       // always red no matter the theme or custom colour.
-      sharedGrad = ctx.createLinearGradient(0, baseY, 0, baseY - areaH)
+      // One shared gradient per frame (never per bar). Direction is vertical
+      // (bottom -> top, default) or horizontal (left -> right across field).
+      var gx0 = 0; var gy0 = baseY; var gx1 = 0; var gy1 = baseY - areaH
+      if (gradientDir === "horizontal") { gx0 = 0; gy0 = 0; gx1 = width; gy1 = 0 }
+      sharedGrad = ctx.createLinearGradient(gx0, gy0, gx1, gy1)
       if (fire) {
         sharedGrad.addColorStop(0, fireColorAt(0))
         sharedGrad.addColorStop(0.25, fireColorAt(0.25))
@@ -554,8 +553,7 @@ Canvas {
       // Thin-spike caps: 1px hot ticks (a 2px block would swallow a 2px bar).
       // Mono: caps match the bars (ticks sit on the background above them).
       // Single shared path + one fill — same pixels as N fillRects.
-      if (artMode) ctx.fillStyle = "#ffffff";
-      else if (mono) ctx.fillStyle = monoLight ? "#000000" : "#ffffff";
+      if (mono) ctx.fillStyle = monoLight ? "#000000" : "#ffffff";
       else ctx.fillStyle = spikes ? "#ffe9a8" : "#ffffff";
       var capH = spikes ? 1 : 2
       ctx.beginPath()
@@ -572,12 +570,11 @@ Canvas {
     if (reflect) {
       // Floor mirror: faded copy of each bar below the baseline, tinted
       // with the bar base color (custom From, else theme) so it tracks
-      // the bars. Mono/artMode mirrors match their white/black bars.
+      // the bars. Mono mirrors match their white/black bars.
       // Batched into one path + one fill (same fillStyle throughout).
       ctx.save()
       ctx.globalAlpha = 0.22
-      if (artMode) ctx.fillStyle = "#ffffff";
-      else if (mono) ctx.fillStyle = monoLight ? "#000000" : "#ffffff";
+      if (mono) ctx.fillStyle = monoLight ? "#000000" : "#ffffff";
       else ctx.fillStyle = fire ? fireColorAt(0.12) : Qt.darker(barColorCustom ? barColorFrom : themeBottom, 1.25);
       ctx.beginPath()
       for (var m = 0; m < n; m++) {
@@ -617,15 +614,20 @@ Canvas {
   function drawWave(ctx) {
     // True oscilloscope: plots the engine's time-domain snippet when
     // present; falls back to the envelope synth on legacy frames.
+    // Input gain (sensitivity) drives the on-screen amplitude, so a quiet
+    // snippet is not just a flat line — raising Input gain visibly enlarges
+    // the waveform. The scaled sample is clamped to ±1 (no overflow).
     var w = wave
+    var gain = Math.min(4, Math.max(0.1, sensitivity))
     ctx.lineWidth = Math.min(5, Math.max(1, scopeLineWidth))
     ctx.strokeStyle = fire ? fireColorAt(0.7) : fillFor(0.8, 0.9)
     ctx.beginPath()
     if (w && w.length > 1) {
-      var mid = height * 0.5, amp = height * 0.42
+      var mid = height * 0.5, amp = height * 0.46
       for (var i = 0; i < w.length; i++) {
         var x = i / (w.length - 1) * width
-        var y = mid - Math.min(1, Math.max(-1, w[i])) * amp
+        var s = Math.min(1, Math.max(-1, w[i] * gain))
+        var y = mid - s * amp
         if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y)
       }
     } else {
@@ -636,8 +638,8 @@ Canvas {
       for (var x2 = 0; x2 <= width; x2 += step) {
         var t = x2 / width
         var bi = Math.min(n - 1, Math.floor(t * n))
-        var env = Math.min(1, b[bi]) * (0.35 + 0.65 * Math.sin(t * Math.PI))
-        var y2 = mid2 - (height * 0.42) * env * Math.sin((x2 / width) * Math.PI * 6)
+        var env = Math.min(1, b[bi] * gain) * (0.35 + 0.65 * Math.sin(t * Math.PI))
+        var y2 = mid2 - (height * 0.46) * env * Math.sin((x2 / width) * Math.PI * 6)
         if (x2 === 0) ctx.moveTo(x2, y2); else ctx.lineTo(x2, y2)
       }
     }
