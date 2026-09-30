@@ -1,5 +1,6 @@
 import QtQuick
 import "Physics.js" as Physics
+import "Palette.js" as Palette
 
 Canvas {
   id: cv
@@ -134,26 +135,10 @@ Canvas {
     _palTop = [tq.r, tq.g, tq.b]
     var baseC = fireColorFrom
     var tipC = fireColorTo
-    var tipR = Math.round(tipC.r * 255), tipG = Math.round(tipC.g * 255), tipB = Math.round(tipC.b * 255)
-    var f = [], p = [], w = []
-    for (var k = 0; k <= 100; k++) {
-      var t = k / 100, r, g, bl
-      if (t < 0.3) {
-        var kc = t / 0.3
-        r = Math.round(baseC.r * 255 + kc * (255 - baseC.r * 255))
-        g = Math.round(baseC.g * 255 + kc * (130 - baseC.g * 255))
-        bl = Math.round(baseC.b * 255 + kc * (10 - baseC.b * 255))
-      } else {
-        var k3 = (t - 0.3) / 0.7
-        r = Math.round(255 + (tipR - 255) * k3)
-        g = Math.round(130 + (tipG - 130) * k3)
-        bl = Math.round(10 + (tipB - 10) * k3)
-      }
-      f.push("rgba(" + r + "," + g + "," + bl + ",1)")
-      p.push("rgba(" + Math.round((_palBot[0] + (_palTop[0] - _palBot[0]) * t) * 255) + "," + Math.round((_palBot[1] + (_palTop[1] - _palBot[1]) * t) * 255) + "," + Math.round((_palBot[2] + (_palTop[2] - _palBot[2]) * t) * 255) + ",1)")
-      w.push("rgba(" + Math.round((_palBot[0] + (_palTop[0] - _palBot[0]) * t) * 255) + "," + Math.round((_palBot[1] + (_palTop[1] - _palBot[1]) * t) * 255) + "," + Math.round((_palBot[2] + (_palTop[2] - _palBot[2]) * t) * 255) + ",0.10)")
-    }
-    _fireLUT = f; _plainLUT = p; _washLUT = w
+    var palette = Palette.build(_palBot, _palTop, baseC, tipC)
+    _fireLUT = palette.fire
+    _plainLUT = palette.plain
+    _washLUT = palette.wash
   }
 
   function _lutIdx(t) {

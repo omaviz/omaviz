@@ -6,7 +6,7 @@ desktop visualizer window, and an oscilloscope that dances to whatever
 is playing. Same soul, zero nostalgia tax: buttery Canvas rendering,
 theme-aware, and configured with two clicks.
 
-![version](https://img.shields.io/badge/version-8.4.5-amber) ![license](https://img.shields.io/badge/license-MIT-blue)
+![version](https://img.shields.io/badge/version-8.5.0-amber) ![license](https://img.shields.io/badge/license-MIT-blue)
 
 ## Why omaviz
 
@@ -105,15 +105,19 @@ Requires: Omarchy (quickshell), PipeWire. `cargo` is needed only for `--build`.
 ```bash
 npm test              # all JS/QML suites (node >= 24)
 npm run test:rust     # engine unit tests (cargo)
+npm run test:qml      # bounded native integration (requires Quickshell)
+npm run lint:qml      # installed Qt/QML syntax validation
 npm run verify        # both
 ```
 
 | Suite | What it proves |
 | --- | --- |
-| `tests/modelstore.test.cjs` | config defaults/schema, TOML round-trips, the store funnel (get/set/onChanged) |
+| `tests/modelstore.test.cjs` | config defaults/schema, TOML round-trips, legacy migrations and malformed input |
 | `tests/physics.test.cjs` | the shared motion model: instant attack, rate-limited release, peak sustain + accelerating fall |
-| `tests/qml.test.cjs` | real `qmllint` syntax check, duplicate-property guard, cross-surface invariants |
-| `tests/engine.test.cjs` | drives the committed binary and asserts its frame contract (60 Hz, raw bands, faint-signal handling) |
+| `tests/components.cjs` | real Quickshell settings writes, engine restarts, failure recovery and shutdown (software/offscreen) |
+| `tests/settings-queue.test.cjs` | async write ordering, stale reads, rollback and retry |
+| `tests/protocol.test.cjs`, `tests/palette.test.cjs` | frame validation and independent colour ramps |
+| `tests/engine.test.cjs` | drives the committed binary and asserts its frame contract (finite bands, waveform, faint-signal handling, invalid dimensions) |
 | `engine/` (cargo) | DSP + frame + source unit tests |
 
 **Safety:** the installer never deletes files it doesn't own. A plugin
@@ -162,7 +166,10 @@ BarWidget.qml    # bar mini + engine spawn + all config writes
 Panel.qml        # settings panel (preview + options)
 Desktop.qml      # detached window (standalone quickshell -p, NO qs.* imports)
 VisualCanvas.qml # THE shared renderer (all modes, all options)
-ModelStore.js    # config store: parse/write, defaults, reactive get/set, spectrum parse
+ModelStore.js    # pure config and protocol helpers
+SettingsDocument.qml / SettingsQueue.js  # observable config + serialized persistence
+EngineFeed.qml  # shared process lifecycle and validated audio state
+Palette.js      # pure colour tables used by VisualCanvas
 Physics.js       # shared bar/peak motion model (unit-tested)
 assets/ bin/ tests/  # launcher entry, COMMITTED engine binary, node tests
 engine/          # Rust source: PipeWire capture → FFT → bands + wave frames
@@ -193,3 +200,5 @@ all taken from the live plugin, so what you see is what runs.
 Settings saves are serialized so rapid selections remain applied. Flame has independent
 `fire_color_from` / `fire_color_to` colors; changing custom swatches preserves them.
 Desktop liveness lives in `desktop-state.toml` alongside `config.toml`.
+
+See [architecture](docs/ARCHITECTURE.md) for ownership, failure handling, and validation boundaries.

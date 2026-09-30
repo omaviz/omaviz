@@ -24,7 +24,7 @@ Panel {
   readonly property color fgFaint: Qt.darker(fg, 1.6)
 
   readonly property string sourceLabelText:
-    Store.sourceLabel(Store.spectrumData.source || "")
+    root.hostWidget ? root.hostWidget.sourceLabel : "Unknown"
 
   readonly property bool isScope: root.hcfg.scope === true
   readonly property bool isSpectrum: !root.isScope

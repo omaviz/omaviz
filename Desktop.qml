@@ -17,13 +17,11 @@ Window {
   color: "#0c0c12"
   flags: Qt.Window | Qt.WindowStaysOnTopHint
 
-  property var spectrumBands: Store.spectrumData.bands
-  property var spectrumWave: []
-  property bool spectrumSilent: Store.spectrumData.silent
-  // Live viz options (peaks/falloff/spikes/fire) — re-parsed on each poll
-  // so settings-panel changes reflect in the open window within ~250ms.
-  property var vizConfig: Store.defaultConfig()
-  function refreshVizConfig() { win.vizConfig = Store.loadFromTOML(cfgWrite.text()) }
+  readonly property var spectrumBands: bridge.bands
+  readonly property var spectrumWave: bridge.wave
+  readonly property bool spectrumSilent: bridge.silent
+  readonly property var vizConfig: settingsDocument.config
+  SettingsDocument { id: settingsDocument; pollInterval: 250 }
   // ---- Now-playing (MPRIS, zero deps — Quickshell built-in) ----
   // Player pick mirrors the shell media service: prefer a playing source
   // with track metadata, else the first source that has any.
@@ -49,48 +47,12 @@ Window {
   readonly property bool hasArt: win.trackArt !== "" && win.vizConfig.artwork !== false
   readonly property string playerSource: win.activePlayer ? (win.activePlayer.identity || win.activePlayer.desktopEntry || "") : ""
 
-  Process {
+  EngineFeed {
     id: bridge
-    running: false
-    // Wave snippet is scope-only: Bars mode never reads it, so omit the
-    // flag (and its ~0.7KB/line of JSON.parse) unless scope is on.
-    // Scope is spawn-time, so the bridge restarts when it flips.
-    command: [Store.engineBin, "--bands", "256"].concat(
-      win.vizConfig.scope === true ? ["--wave"] : [])
-    stdout: SplitParser {
-      splitMarker: "\n"
-      onRead: function(data) {
-        try {
-          var obj = JSON.parse(String(data).trim())
-          if (obj && Array.isArray(obj.bands)) {
-            win.spectrumBands = obj.bands
-            win.spectrumSilent = obj.silent === true
-            win._bridgeRetries = 0     // a healthy frame resets the backoff
-          } else if (obj && Array.isArray(obj.wave)) {
-            win.spectrumWave = obj.wave
-            win._bridgeRetries = 0
-          }
-        } catch (e) {}
-      }
-    }
-    // Engine death must never permanently kill the desktop window, and must
-    // never become a hot restart loop either: exponential backoff 1.5s -> 30s,
-    // identical to the bar widget's. A deliberate restart (scope flip) is
-    // flagged so it is not counted as a failure.
-    onExited: function(code, status) {
-      if (win._restarting) { win._restarting = false; return }
-      if (!win.visible) return
-      win._bridgeRetries++
-      bridgeRetryTimer.interval = Math.min(30000, 1500 * win._bridgeRetries)
-      bridgeRetryTimer.restart()
-    }
+    active: settingsDocument.ready && win.vizConfig.enabled !== false && !win._closing
+    waveEnabled: win.vizConfig.scope === true
+    bandCount: 256
   }
-
-  property int _bridgeRetries: 0
-  property bool _restarting: false
-  Timer { id: bridgeRetryTimer; interval: 1500; repeat: false; onTriggered: bridge.running = true }
-
-  Component.onCompleted: { bridge.running = true }
 
   // Window hover tracking: shows the tray on enter, fades it after
   // a short delay on exit (moving within the window keeps it alive).
@@ -368,7 +330,6 @@ Window {
   }
 
   // Heartbeats have their own file: this window only READS settings.
-  FileView { id: cfgWrite; path: Store.configPath; watchChanges: true; onFileChanged: reload() }
   FileView { id: desktopState; path: Store.desktopStatePath; printErrors: false }
   property bool _closing: false
   Timer {
@@ -383,10 +344,8 @@ Window {
   // app-launcher + keybind paths that bypass BarWidget's detach()).
   property bool _claimed: false
   property bool _allowClose: false
-  property bool _lastScope: false
   // Config-poll guard (perf): the TOML parse + full binding cascade runs
   // only when the file text actually changed — not 4x/sec unconditionally.
-  property string _lastCfgText: ""
   Timer { id: closeTimer; interval: 200; repeat: false; onTriggered: win.close() }
   Timer {
     // Delayed quit: FileView.setText is async — quitting instantly in
@@ -400,43 +359,17 @@ Window {
     // while quartering the JS TOML-parse + binding cascade vs 100ms.
     interval: 250; repeat: true; running: true
     onTriggered: {
-      cfgWrite.reload()
       desktopState.reload()
       if (win._claimed && !Store.isDesktopActiveFromText(desktopState.text())) {
         if (!win._closing) { win.setDesktopActive(false); closeTimer.start() }
         return
       }
-      var txt = cfgWrite.text()
-      if (txt !== win._lastCfgText) {
-        win._lastCfgText = txt
-        win.refreshVizConfig()
-      }
-      // Check enabled state: close window when visualization is disabled
-      var enabled = true
-      try {
-        var val = Store.readTomlValue(txt, "desktop", "enabled")
-        enabled = val !== "false"
-      } catch(e) {}
-      if (!enabled) {
-        // Visualization disabled — close the desktop window
+      if (!settingsDocument.ready) return
+      if (win.vizConfig.enabled === false) {
         if (!win._closing) { win.setDesktopActive(false); closeTimer.start() }
         return
       }
-      // Scope is the only spawn-time flag now (it toggles --wave).
-      var sc = win.vizConfig.scope === true
-      if (win._lastScope !== sc) {
-        win._lastScope = sc
-        win._bridgeRetries = 0
-        if (bridge.running) {
-          win._restarting = true
-          bridge.running = false
-          bridge.running = true
-          Qt.callLater(function() { win._restarting = false })
-        } else {
-          bridge.running = true
-        }
-      }
-      if (!win._claimed && txt.length > 0) {
+      if (!win._claimed) {
         win._claimed = true
         win.setDesktopActive(true)
       }
