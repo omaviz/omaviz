@@ -1,6 +1,6 @@
 {
   "name": "omaviz",
-  "version": "8.5.3",
+  "version": "8.5.4",
   "private": true,
   "description": "Omarchy audio visualizer plugin (QML + bundled Rust engine)",
   "engines": {

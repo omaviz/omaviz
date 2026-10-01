@@ -14,6 +14,32 @@ BarWidget {
     id: settingsDocument
     writable: true
     onReadyChanged: if (ready) root.snapThemeColors()
+    onSettled: {
+      if (root._exitRequested && root.config.enabled === false) {
+        root._exitRequested = false
+        exitProc.running = true
+      }
+    }
+    onErrorChanged: if (error) root._exitRequested = false
+  }
+  property bool _exitRequested: false
+  Process {
+    id: exitProc
+    command: ["omarchy", "plugin", "disable", root.moduleName]
+    onExited: function(code) {
+      if (code !== 0) console.warn("omaviz: could not disable plugin (exit " + code + ")")
+    }
+  }
+  function requestExit() {
+    if (root._exitRequested || exitProc.running) return
+    root._exitRequested = true
+    if (!settingsDocument.ready) { root._exitRequested = false; return }
+    root.writeEnabled(false)
+    if (root.config.enabled === false && settingsDocument.queue.desired === null &&
+        settingsDocument.queue.inFlight === null && !settingsDocument.queue.awaitingRead) {
+      root._exitRequested = false
+      exitProc.running = true
+    }
   }
   // Live theme snapshot: persists the current Omarchy accent triple to
   // config whenever the theme changes, so the standalone desktop window
@@ -100,7 +126,7 @@ BarWidget {
 
   EngineFeed {
     id: spectrumFeed
-    active: root.vizEnabled && settingsDocument.ready
+    active: root.vizEnabled && settingsDocument.ready && (!root.desktopLive || root.opened)
     waveEnabled: root.config.scope === true
   }
   readonly property string sourceLabel: Store.sourceLabel(spectrumFeed.source)

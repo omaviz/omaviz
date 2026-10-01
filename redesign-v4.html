@@ -1,0 +1,455 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>omaviz — settings redesign v4 (mockup)</title>
+<style>
+  :root {
+    --accent: #f59e0b;
+    --accent-dim: #e68e0d;
+    --bg: #0c0c12;
+    --panel: #16161f;
+    --panel-2: #1d1d28;
+    --fg: #e8e8f0;
+    --fg-muted: #9a9aad;
+    --fg-faint: #6b6b7d;
+    --border: rgba(255,255,255,0.09);
+    --fill: rgba(255,255,255,0.045);
+    --radius: 8px;
+  }
+  body.light {
+    --bg: #f4f2ee; --panel: #ffffff; --panel-2: #f7f5f1;
+    --fg: #2a2a33; --fg-muted: #6b6b78; --fg-faint: #9a9aa5;
+    --border: rgba(0,0,0,0.10); --fill: rgba(0,0,0,0.035);
+    --accent-dim: #b06f06;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; }
+  body {
+    background: var(--bg); color: var(--fg);
+    font-family: -apple-system, "Inter", "Segoe UI", system-ui, sans-serif;
+    display: flex; justify-content: center; padding: 28px 16px;
+    transition: background .25s, color .25s;
+  }
+  .wrap { width: 560px; max-width: 100%; }
+  .toolbar { display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px; }
+  .toolbar h1 { font-size: 13px; letter-spacing: 2px; font-weight: 700; color: var(--fg-muted); margin: 0; }
+  .themebtn {
+    background: var(--fill); border: 1px solid var(--border); color: var(--fg-muted);
+    border-radius: 6px; padding: 5px 10px; font-size: 12px; cursor: pointer;
+  }
+  .panel {
+    background: var(--panel); border: 1px solid var(--border);
+    border-radius: 12px; padding: 16px 18px 14px; box-shadow: 0 12px 40px rgba(0,0,0,.35);
+  }
+  .section-label {
+    font-size: 10.5px; letter-spacing: 1.4px; font-weight: 700;
+    color: var(--fg-faint); margin: 16px 0 8px;
+  }
+  .hdr { display: flex; align-items: center; justify-content: space-between; }
+  .hdr .state { font-size: 12px; font-weight: 700; letter-spacing: .5px; }
+  .hdr .state.on { color: var(--accent); }
+  .hdr .state.off { color: var(--fg-faint); }
+
+  /* switch */
+  .switch {
+    position: relative; width: 42px; height: 22px; border-radius: 11px;
+    background: var(--fill); border: 1px solid var(--border); cursor: pointer;
+    transition: background .18s, border-color .18s; flex: none;
+  }
+  .switch::after {
+    content: ""; position: absolute; top: 2px; left: 2px; width: 16px; height: 16px;
+    border-radius: 50%; background: var(--fg-muted); transition: transform .18s, background .18s;
+  }
+  .switch.on { background: color-mix(in srgb, var(--accent) 30%, transparent); border-color: var(--accent); }
+  .switch.on::after { transform: translateX(20px); background: var(--accent); }
+
+  .cards { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .card {
+    height: 46px; display: flex; align-items: center; justify-content: center;
+    border: 1px solid var(--border); border-radius: var(--radius); cursor: pointer;
+    font-size: 12px; font-weight: 700; letter-spacing: 1.4px; color: var(--fg);
+    background: var(--panel-2); transition: border-color .15s, background .15s, color .15s;
+  }
+  .card.sel { border-color: var(--accent); color: var(--accent); background: color-mix(in srgb, var(--accent) 14%, transparent); }
+
+  .preview {
+    height: 74px; border: 1px solid var(--border); border-radius: var(--radius);
+    background: var(--panel-2); overflow: hidden; position: relative; cursor: pointer;
+  }
+  .preview canvas { width: 100%; height: 100%; display: block; }
+  .hint { font-size: 11px; color: var(--fg-faint); margin-top: 6px; }
+
+  .group { border: 1px solid var(--border); border-radius: var(--radius); background: var(--fill); padding: 12px; }
+
+  .chips { display: flex; gap: 8px; flex-wrap: wrap; }
+  .chip {
+    flex: 1 1 0; min-width: 62px; text-align: center; padding: 8px 6px;
+    border: 1px solid var(--border); border-radius: 7px; cursor: pointer;
+    font-size: 12px; color: var(--fg); background: var(--panel-2);
+    transition: border-color .15s, background .15s, color .15s;
+  }
+  .chip.sel { border-color: var(--accent); color: var(--accent); background: color-mix(in srgb, var(--accent) 14%, transparent); }
+
+  .row { display: flex; align-items: center; gap: 12px; }
+  .row + .row { margin-top: 12px; }
+  .row .grow { flex: 1; min-width: 0; }
+  .lbl { font-size: 12.5px; }
+  .lbl small { display: block; font-size: 10.5px; color: var(--fg-faint); margin-top: 1px; }
+
+  input[type=range] { -webkit-appearance: none; width: 100%; height: 4px; border-radius: 2px; background: var(--border); outline: none; }
+  input[type=range]::-webkit-slider-thumb {
+    -webkit-appearance: none; width: 14px; height: 14px; border-radius: 50%;
+    background: var(--accent); cursor: pointer; border: none;
+  }
+  .slider-wrap { width: 150px; flex: none; }
+  .dim { opacity: .42; pointer-events: none; }
+
+  .hexrow { display: flex; gap: 8px; margin-top: 8px; }
+  .hex {
+    flex: 1; display: flex; align-items: center; gap: 7px; height: 30px;
+    border: 1px solid var(--border); border-radius: 6px; background: var(--panel-2); padding: 0 8px;
+  }
+  .sw { width: 15px; height: 15px; border-radius: 3px; border: 1px solid var(--border); flex: none; }
+  .hex input {
+    background: transparent; border: none; outline: none; color: var(--fg);
+    font-family: ui-monospace, monospace; font-size: 11.5px; width: 100%;
+  }
+  .dirrow { display: flex; gap: 8px; margin-top: 8px; align-items: center; }
+  .dir { flex: 1; }
+  .presets { display: grid; grid-template-columns: repeat(9, 1fr); gap: 6px; margin-top: 10px; }
+  .preset {
+    height: 24px; border-radius: 5px; cursor: pointer; border: 1px solid var(--border);
+    position: relative; display: flex; align-items: center; justify-content: center;
+  }
+  .preset.sel { outline: 2px solid var(--accent); outline-offset: 1px; }
+  .preset.flame { background: linear-gradient(90deg, #be1400, #ffb400, #fff3c4); }
+  .preset.flame::after { content: "🔥"; font-size: 11px; }
+
+  .adv-toggle {
+    margin-top: 16px; font-size: 12px; color: var(--accent); cursor: pointer;
+    user-select: none; font-weight: 600;
+  }
+  .adv { margin-top: 10px; display: none; }
+  .adv.open { display: block; }
+
+  .footer { display: flex; align-items: center; gap: 8px; margin-top: 16px; }
+  .footer .k { font-size: 10.5px; letter-spacing: 1.4px; color: var(--fg-faint); font-weight: 700; }
+  .footer .v { font-size: 12px; color: var(--accent); }
+
+  .hidden { display: none !important; }
+  .divider { height: 1px; background: var(--border); margin: 16px 0 0; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="toolbar">
+    <h1>OMAVIZ · SETTINGS (redesign v4)</h1>
+    <button class="themebtn" id="themeBtn">◐ Light / Dark</button>
+  </div>
+
+  <div class="panel">
+    <!-- ON/OFF -->
+    <div class="hdr">
+      <span class="state on" id="stateLbl">ON</span>
+      <div class="switch on" id="powerSwitch"></div>
+    </div>
+
+    <!-- everything below collapses when OFF -->
+    <div id="body">
+      <!-- VISUALIZATIONS -->
+      <div class="section-label">VISUALIZATIONS</div>
+      <div class="cards">
+        <div class="card sel" data-viz="spectrum">SPECTRUM</div>
+        <div class="card" data-viz="scope">OSCILLOSCOPE</div>
+      </div>
+
+      <!-- PREVIEW -->
+      <div class="section-label">PREVIEW</div>
+      <div class="preview"><canvas id="cv"></canvas></div>
+      <div class="hint">Click the preview to open the full-screen visualization.</div>
+
+      <!-- LOOK -->
+      <div id="lookSection">
+        <div class="section-label">LOOK</div>
+        <div class="group">
+          <div class="row">
+            <span class="lbl grow">Geometry</span>
+          </div>
+          <div class="chips" style="margin-top:8px">
+            <div class="chip sel" data-geom="bars">Bars</div>
+            <div class="chip" data-geom="spikes">Spikes</div>
+            <div class="chip" data-geom="stacks">Stacks</div>
+          </div>
+
+          <div class="row" style="margin-top:14px"><span class="lbl grow">Color mode</span></div>
+          <div class="chips" style="margin-top:8px">
+            <div class="chip sel" data-mode="theme">Theme</div>
+            <div class="chip" data-mode="custom">Custom</div>
+            <div class="chip" data-mode="flame">Flame</div>
+          </div>
+
+          <div class="row" style="margin-top:14px">
+            <div class="grow">
+              <div class="lbl">Peaks <small>Peak-hold markers</small></div>
+            </div>
+            <div class="switch on" data-sw="peaks"></div>
+          </div>
+          <div class="row" id="fallRow">
+            <div class="lbl grow" style="color:var(--fg-muted)">Peak fall speed</div>
+            <div class="slider-wrap"><input type="range" id="fall" min="0" max="1" step="0.05" value="0.1"></div>
+          </div>
+
+          <div class="row" style="margin-top:14px">
+            <div class="grow"><div class="lbl">Reflection <small>Floor mirror</small></div></div>
+            <div class="switch" data-sw="reflect"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- COLOR -->
+      <div id="colorSection">
+        <div class="section-label">COLOR</div>
+        <div class="group">
+          <div class="lbl">Custom tones <small>From (base) · To (tip)</small></div>
+          <div class="hexrow">
+            <label class="hex"><span class="sw" id="swFrom" style="background:#e68e0d"></span><input id="from" value="#e68e0d" maxlength="7"></label>
+            <label class="hex"><span class="sw" id="swTo" style="background:#f59e0b"></span><input id="to" value="#f59e0b" maxlength="7"></label>
+          </div>
+          <div class="dirrow">
+            <span class="lbl" style="color:var(--fg-muted)">Gradient</span>
+            <div class="chip dir sel" data-dir="vertical">↑ Vertical</div>
+            <div class="chip dir" data-dir="horizontal">→ Horizontal</div>
+          </div>
+          <div class="presets" id="presets"></div>
+          <div class="hint" id="colorHint">Theme mode follows your Omarchy accent. Pick a preset or type hex; Flame is a swatch too.</div>
+        </div>
+      </div>
+
+      <!-- MOTION -->
+      <div class="section-label">MOTION</div>
+      <div class="group">
+        <div class="row">
+          <div class="lbl grow">Response <small>Input gain (bars + waveform)</small></div>
+          <div class="slider-wrap"><input type="range" id="gain" min="0.1" max="4" step="0.1" value="1"></div>
+        </div>
+        <div class="row" style="margin-top:14px">
+          <div class="grow"><div class="lbl">Mono <small>Mini only · B&amp;W bars</small></div></div>
+          <div class="switch" data-sw="mono"></div>
+        </div>
+      </div>
+
+      <!-- SCOPE (only when Oscilloscope) -->
+      <div id="scopeSection" class="hidden">
+        <div class="section-label">OSCILLOSCOPE</div>
+        <div class="group">
+          <div class="row">
+            <div class="lbl grow">Line thickness</div>
+            <div class="slider-wrap"><input type="range" id="thick" min="1" max="5" step="0.5" value="2"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ADVANCED -->
+      <div class="adv-toggle" id="advToggle">Advanced ▸</div>
+      <div class="adv" id="adv">
+        <div class="group">
+          <div class="row">
+            <div class="grow"><div class="lbl">Linear fall <small>Fixed-rate drop (Winamp)</small></div></div>
+            <div class="switch on" data-sw="linear"></div>
+          </div>
+          <div class="row" style="margin-top:14px">
+            <div class="grow"><div class="lbl">Dots <small>Winamp skin backdrop</small></div></div>
+            <div class="switch on" data-sw="dots"></div>
+          </div>
+          <div class="row" style="margin-top:14px">
+            <div class="grow"><div class="lbl">GPU renderer <small>Fallback to Canvas if unsupported</small></div></div>
+            <div class="switch on" data-sw="gpu"></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="divider"></div>
+      <div class="footer"><span class="k">SOURCE</span><span class="v">PipeWire · default sink</span></div>
+    </div>
+  </div>
+</div>
+
+<script>
+  const $ = (q) => document.querySelector(q);
+  const state = {
+    on: true, viz: "spectrum", geom: "bars", mode: "theme",
+    peaks: true, reflect: false, mono: false, linear: true, dots: true, gpu: true,
+    dir: "vertical", from: "#e68e0d", to: "#f59e0b", gain: 1.0, fall: 0.1, thick: 2
+  };
+
+  // --- theme ---
+  $("#themeBtn").onclick = () => document.body.classList.toggle("light");
+
+  // --- power ---
+  $("#powerSwitch").onclick = () => {
+    state.on = !state.on;
+    $("#powerSwitch").classList.toggle("on", state.on);
+    $("#stateLbl").classList.toggle("on", state.on);
+    $("#stateLbl").classList.toggle("off", !state.on);
+    $("#stateLbl").textContent = state.on ? "ON" : "OFF";
+    $("#body").classList.toggle("hidden", !state.on);
+  };
+
+  // --- visualizations ---
+  document.querySelectorAll("[data-viz]").forEach(el => el.onclick = () => {
+    state.viz = el.dataset.viz;
+    document.querySelectorAll("[data-viz]").forEach(c => c.classList.toggle("sel", c === el));
+    $("#scopeSection").classList.toggle("hidden", state.viz !== "scope");
+    $("#lookSection").classList.toggle("hidden", state.viz === "scope");
+    $("#colorSection").classList.toggle("hidden", state.viz === "scope");
+  });
+
+  // --- chips (geometry / mode) ---
+  document.querySelectorAll("[data-geom]").forEach(el => el.onclick = () => {
+    state.geom = el.dataset.geom;
+    document.querySelectorAll("[data-geom]").forEach(c => c.classList.toggle("sel", c === el));
+  });
+  document.querySelectorAll("[data-mode]").forEach(el => el.onclick = () => {
+    state.mode = el.dataset.mode;
+    document.querySelectorAll("[data-mode]").forEach(c => c.classList.toggle("sel", c === el));
+    if (state.mode === "custom") { state.from = "#0369a1"; state.to = "#38bdf8"; syncHex(); }
+    if (state.mode === "flame") { state.from = "#be1400"; state.to = "#fff3c4"; syncHex(); }
+    if (state.mode === "theme") { state.from = "#e68e0d"; state.to = "#f59e0b"; syncHex(); }
+  });
+
+  // --- direction ---
+  document.querySelectorAll("[data-dir]").forEach(el => el.onclick = () => {
+    state.dir = el.dataset.dir;
+    document.querySelectorAll("[data-dir]").forEach(c => c.classList.toggle("sel", c === el));
+  });
+
+  // --- switches ---
+  document.querySelectorAll("[data-sw]").forEach(el => el.onclick = () => {
+    const k = el.dataset.sw; state[k] = !state[k];
+    el.classList.toggle("on", state[k]);
+    if (k === "peaks") $("#fallRow").classList.toggle("dim", !state.peaks);
+  });
+
+  // --- sliders ---
+  $("#fall").oninput = e => state.fall = +e.target.value;
+  $("#gain").oninput = e => state.gain = +e.target.value;
+  $("#thick").oninput = e => state.thick = +e.target.value;
+
+  // --- hex fields ---
+  function syncHex() {
+    $("#from").value = state.from; $("#to").value = state.to;
+    $("#swFrom").style.background = state.from; $("#swTo").style.background = state.to;
+  }
+  $("#from").oninput = e => { state.from = e.target.value; $("#swFrom").style.background = e.target.value; };
+  $("#to").oninput = e => { state.to = e.target.value; $("#swTo").style.background = e.target.value; };
+
+  // --- presets (8 gradients + FLAME swatch) ---
+  const presets = [
+    ["#e68e0d","#f59e0b"], ["#ef4444","#f59e0b"], ["#0369a1","#38bdf8"],
+    ["#7c3aed","#c4b5fd"], ["#65a30d","#d9f99d"], ["#e11d48","#fda4af"],
+    ["#06b6d4","#a5f3fc"], ["#6b7280","#f8fafc"]
+  ];
+  const pRow = $("#presets");
+  presets.forEach(([a,b]) => {
+    const d = document.createElement("div");
+    d.className = "preset"; d.style.background = `linear-gradient(90deg, ${a}, ${b})`;
+    d.onclick = () => { state.mode = "custom"; state.from = a; state.to = b; syncHex();
+      document.querySelectorAll("[data-mode]").forEach(c => c.classList.toggle("sel", c.dataset.mode === "custom"));
+      document.querySelectorAll(".preset").forEach(p => p.classList.remove("sel")); d.classList.add("sel");
+    };
+    pRow.appendChild(d);
+  });
+  const flame = document.createElement("div");
+  flame.className = "preset flame"; flame.title = "Flame";
+  flame.onclick = () => { state.mode = "flame"; state.from = "#be1400"; state.to = "#fff3c4"; syncHex();
+    document.querySelectorAll("[data-mode]").forEach(c => c.classList.toggle("sel", c.dataset.mode === "flame"));
+    document.querySelectorAll(".preset").forEach(p => p.classList.remove("sel")); flame.classList.add("sel");
+  };
+  pRow.appendChild(flame);
+
+  // --- advanced ---
+  $("#advToggle").onclick = () => {
+    const open = $("#adv").classList.toggle("open");
+    $("#advToggle").textContent = open ? "Advanced ▾" : "Advanced ▸";
+  };
+
+  // --- animated preview (fake spectrum) ---
+  const cv = $("#cv"), ctx = cv.getContext("2d");
+  function resize() {
+    const r = cv.getBoundingClientRect();
+    const dpr = window.devicePixelRatio || 1;
+    cv.width = r.width * dpr; cv.height = r.height * dpr;
+    ctx.setTransform(dpr,0,0,dpr,0,0);
+  }
+  new ResizeObserver(resize).observe(cv); resize();
+
+  const N = 64, bars = new Array(N).fill(0), peaks = new Array(N).fill(0);
+  let t = 0;
+  function lum(hex){ const c=hex.replace("#",""); const r=parseInt(c.substr(0,2),16),g=parseInt(c.substr(2,2),16),b=parseInt(c.substr(4,2),16); return .299*r+.587*g+.114*b; }
+  function mix(a,b,t){ const A=a.replace("#",""),B=b.replace("#",""); const ar=parseInt(A.substr(0,2),16),ag=parseInt(A.substr(2,2),16),ab=parseInt(A.substr(4,2),16); const br=parseInt(B.substr(0,2),16),bg=parseInt(B.substr(2,2),16),bb=parseInt(B.substr(4,2),16); return `rgb(${Math.round(ar+(br-ar)*t)},${Math.round(ag+(bg-ag)*t)},${Math.round(ab+(bb-ab)*t)})`; }
+
+  function frame() {
+    t += 0.045;
+    const W = cv.clientWidth, H = cv.clientHeight;
+    ctx.clearRect(0,0,W,H);
+    if (!state.on) { requestAnimationFrame(frame); return; }
+
+    if (state.viz === "scope") {
+      ctx.lineWidth = state.thick; ctx.strokeStyle = state.mode === "flame" ? "#ff8a3d" : mix(state.from, state.to, 0.6);
+      ctx.beginPath();
+      for (let x=0; x<=W; x+=2) {
+        const s = Math.sin(x*0.05 + t*3) * 0.5 + Math.sin(x*0.013 + t*1.3) * 0.5;
+        const y = H/2 - Math.max(-1,Math.min(1, s*0.5*state.gain)) * (H*0.46);
+        x===0?ctx.moveTo(x,y):ctx.lineTo(x,y);
+      }
+      ctx.stroke();
+      requestAnimationFrame(frame); return;
+    }
+
+    const flat = state.mode === "theme";
+    // gradient direction → one shared gradient across the whole canvas
+    let grad;
+    if (state.dir === "horizontal") grad = ctx.createLinearGradient(0,0,W,0);
+    else grad = ctx.createLinearGradient(0,H,0,0);
+    grad.addColorStop(0, state.from); grad.addColorStop(1, state.to);
+    const flatColor = lum(state.from) > 140 ? "#000" : "#fff";
+
+    const gap = state.geom === "spikes" ? 0 : 2;
+    const bw = Math.max(2, (W - gap*(N-1)) / N);
+
+    for (let i=0; i<N; i++) {
+      const target = (0.5 + 0.5*Math.sin(i*0.35 + t*2.2)) * (0.55 + 0.45*Math.sin(i*0.07 + t));
+      const v = Math.max(0, Math.min(1, target * state.gain));
+      bars[i] += (v - bars[i]) * (v > bars[i] ? 1 : 0.12);
+      peaks[i] = Math.max(peaks[i] - state.fall*0.01, bars[i]);
+      const h = Math.max(1, bars[i] * H * 0.92), ph = Math.max(1, peaks[i] * H * 0.92);
+      const x = i * (bw + gap);
+
+      ctx.fillStyle = flat ? flatColor : grad;
+      if (state.geom === "stacks") {
+        const seg = 3, sg = 1; let sy = H;
+        while (sy > H - h) { const sh = Math.min(seg, sy-(H-h)); ctx.fillRect(x, sy-sh, bw, sh); sy -= seg+sg; }
+      } else if (state.geom === "spikes") {
+        const tip = 7;
+        if (h > tip) { ctx.fillRect(x, H-h+tip, bw, h-tip);
+          ctx.beginPath(); ctx.moveTo(x,H-h+tip); ctx.lineTo(x+bw,H-h+tip); ctx.lineTo(x+bw/2,H-h); ctx.closePath(); ctx.fill(); }
+        else { ctx.beginPath(); ctx.moveTo(x,H); ctx.lineTo(x+bw,H); ctx.lineTo(x+bw/2,H-h); ctx.closePath(); ctx.fill(); }
+      } else {
+        ctx.fillRect(x, H-h, bw, h);
+      }
+      if (state.peaks && peaks[i] > 0.02) {
+        ctx.fillStyle = state.geom === "spikes" ? "#ffe9a8" : (flat ? flatColor : "#fff");
+        ctx.fillRect(x, H-ph, bw, 2);
+      }
+      if (state.reflect) {
+        ctx.globalAlpha = 0.22; ctx.fillStyle = flat ? flatColor : mix(state.from, state.to, 0.15);
+        ctx.fillRect(x, H, bw, Math.min(h*0.4, H*0.4)); ctx.globalAlpha = 1;
+      }
+    }
+    requestAnimationFrame(frame);
+  }
+  frame();
+</script>
+</body>
+</html>

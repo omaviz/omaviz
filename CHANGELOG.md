@@ -1,3 +1,9 @@
+## 8.5.4 — Immersive preview and plugin controls
+
+- Add the plugin name and installed version to the settings header, with Source and Exit in a footer that stays visible while Off.
+- Collapse the settings panel when Off and stop duplicate bar capture while a detached desktop window is active.
+- Showcase four visualizations, a real settings capture, and the supplied horizontal spectrum hero in the marketplace preview.
+
 ## 8.5.3 — Marketplace submission recovery
 
 - Filter marketplace issue pages before returning data to the release helper, preventing buffer exhaustion in large catalogs while preserving duplicate detection.
