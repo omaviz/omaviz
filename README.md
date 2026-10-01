@@ -6,7 +6,7 @@ desktop visualizer window, and an oscilloscope that dances to whatever
 is playing. Same soul, zero nostalgia tax: buttery Canvas rendering,
 theme-aware, and configured with two clicks.
 
-![version](https://img.shields.io/badge/version-8.4.4-amber) ![license](https://img.shields.io/badge/license-MIT-blue)
+![version](https://img.shields.io/badge/version-8.4.5-amber) ![license](https://img.shields.io/badge/license-MIT-blue)
 
 ## Why omaviz
 
@@ -28,10 +28,15 @@ theme-aware, and configured with two clicks.
 
 ## The tour
 
+![Omaviz marketplace preview showing spectrum, Flame, custom gradient, and oscilloscope](preview.png)
+
+The marketplace preview brings four modes and a captured settings panel together. The screenshots below
+show the individual modes at their actual rendered size.
+
 | | |
 |---|---|
 | ![desktop window with artwork backdrop](docs/screenshots/Desktop-window-with-artwork.png) | ![fire flame gradient](docs/screenshots/fire.png) |
-| *Desktop window + artwork backdrop + floor reflection* | *Fire: red base igniting into your custom tip* |
+| *Desktop window + artwork backdrop + floor reflection* | *Fire: its own saved red-to-yellow palette* |
 | ![stacked bars](docs/screenshots/Stacked-bars.png) | ![oscilloscope waveform](docs/screenshots/oscilloscope.png) |
 | *Stacks: segmented Winamp-style bars* | *Oscilloscope: true time-domain waveform* |
 | ![custom color tones](docs/screenshots/Custom-colors.png) | ![theme following](docs/screenshots/Theme-enabled.png) |
@@ -49,7 +54,7 @@ theme-aware, and configured with two clicks.
   switches live), or custom From → To tones via presets or hex
 - **Motion** — exponential easing by default, Winamp-style linear fall
   on demand, adjustable sensitivity
-- **Robust** — shared-flag + heartbeat desktop lifecycle (no zombies),
+- **Robust** — desktop lease stored separately from settings (no heartbeat overwrites),
   engine auto-retry, one shared Canvas renderer everywhere.
 
 ## Install
@@ -65,6 +70,16 @@ Install from the Omarchy plugin marketplace, or equivalently:
 ```bash
 omarchy plugin add https://github.com/omaviz/omaviz --enable
 ```
+
+The original marketplace issue uses **Widgets** with `bar`, `media`, and
+`quickshell` tags; the manifest's **Audio** category is Omarchy's separate
+bar-widget field. The current listing is already published. For later merges,
+the Marketplace preflight workflow validates local submission inputs and
+attaches an exact-commit update form for review. Run
+`MARKETPLACE_COMMIT="$(git rev-parse origin/master)" node tools/marketplace-update.cjs`
+for its body and add `--title` for its title. Each new upstream commit still
+needs the marketplace's own validation,
+security baseline, and maintainer decision; local CI cannot grant approval.
 
 That is the entire install. `omarchy plugin add` clones this repository,
 validates it, and moves the folder into
@@ -189,3 +204,7 @@ renderer and the Rust PipeWire engine all live in this repo, with
 (`tests`, `cargo test`). Found a rough edge or a missing
 Winamp-ism? Issues and PRs welcome — the tour screenshots above are
 all taken from the live plugin, so what you see is what runs.
+
+Settings saves are serialized so rapid selections remain applied. Flame has independent
+`fire_color_from` / `fire_color_to` colors; changing custom swatches preserves them.
+Desktop liveness lives in `desktop-state.toml` alongside `config.toml`.

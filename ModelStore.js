@@ -85,6 +85,8 @@ function _deriveConfigDir() {
 
 var _home = _deriveHome()
 var configPath = _deriveConfigDir() + "/omaviz/config.toml"
+// Runtime lease is separate: desktop heartbeats must never overwrite settings.
+var desktopStatePath = _deriveConfigDir() + "/omaviz/desktop-state.toml"
 // Bundled engine: lives INSIDE the plugin package (no systemd, no socket,
 // no ~/.local/bin). The bar widget and the detached desktop window both spawn
 // this.
@@ -93,13 +95,27 @@ var engineBin = pluginDir + "/bin/omaviz-engine"
 
 // ---- TOML helpers ----
 
+// Ignore inline comments without treating a quoted hex colour as a comment.
+function stripTomlComment(line) {
+  var quote = "", escaped = false
+  for (var i = 0; i < line.length; i++) {
+    var c = line[i]
+    if (escaped) { escaped = false; continue }
+    if (quote === '"' && c === String.fromCharCode(92)) { escaped = true; continue }
+    if (quote) { if (c === quote) quote = "" }
+    else if (c === '"' || c === "'") quote = c
+    else if (c === "#") return line.slice(0, i)
+  }
+  return line
+}
+
 // Read a value from a TOML section:key line
 function readTomlValue(tomlText, section, key) {
   if (!tomlText) return null
   var lines = String(tomlText).split("\n")
   var inSection = (section === "")
   for (var i = 0; i < lines.length; i++) {
-    var line = lines[i].trim()
+    var line = stripTomlComment(lines[i]).trim()
     if (line.startsWith("#") || line === "") continue
     if (line.startsWith("[") && line.endsWith("]")) {
       inSection = (line.slice(1, -1).trim() === section)
@@ -110,10 +126,11 @@ function readTomlValue(tomlText, section, key) {
       var k = parts[0].trim()
       var v = parts.slice(1).join("=").trim()
       if (k === key) {
-        v = v.replace(/^["']|["']$/g, "")
-        // Undo writeConfigKey's escaping so a value round-trips exactly.
-        var _bs2 = String.fromCharCode(92) + String.fromCharCode(34)
-        v = v.split(_bs2).join(String.fromCharCode(34))
+        v = stripTomlComment(v).trim()
+        if (v[0] === '"') {
+          try { return JSON.parse(v) } catch (e) { return null }
+        }
+        if (v[0] === "'" && v[v.length - 1] === "'") return v.slice(1, -1)
         return v
       }
     }
@@ -180,6 +197,10 @@ function readConfigFromText(tomlText) {
   // standalone desktop window can follow themes without qs.*).
   d.themeAccent = readTomlValue(tomlText, "desktop", "theme_accent") || "#f59e0b"
   if (!isHexColor(d.themeAccent)) d.themeAccent = "#f59e0b"
+  d.fireColorFrom = readTomlValue(tomlText, "desktop", "fire_color_from") || "#be1400"
+  d.fireColorTo = readTomlValue(tomlText, "desktop", "fire_color_to") || "#fde047"
+  if (!isHexColor(d.fireColorFrom)) d.fireColorFrom = "#be1400"
+  if (!isHexColor(d.fireColorTo)) d.fireColorTo = "#fde047"
   d.fire = readTomlValue(tomlText, "desktop", "fire") === "true"
   d.peaks = readTomlValue(tomlText, "desktop", "peaks") !== "false"
   d.peakFalloff = readTomlFloat(tomlText, "desktop", "peak_falloff") ?? 0.1
@@ -192,8 +213,8 @@ function readConfigFromText(tomlText) {
   if (d.peakSustainMs > 1000) d.peakSustainMs = 1000
   d.spikes = readTomlValue(tomlText, "desktop", "spikes") === "true"
   // "Stacks" UI label, canonical key "stacks"; legacy "splits" migrates.
-  d.stacks = readTomlValue(tomlText, "desktop", "stacks") === "true"
-    || readTomlValue(tomlText, "desktop", "splits") === "true"
+  var stacks = readTomlValue(tomlText, "desktop", "stacks")
+  d.stacks = (stacks !== null ? stacks : readTomlValue(tomlText, "desktop", "splits")) === "true"
   d.mono = readTomlValue(tomlText, "desktop", "mono") === "true"
   d.linearFall = readTomlValue(tomlText, "desktop", "linear_fall") !== "false"
   d.scope = readTomlValue(tomlText, "desktop", "scope") === "true"
@@ -218,7 +239,7 @@ function readConfigFromText(tomlText) {
   // mean false — matching defaultConfig(). Using `!== "false"` here silently
   // turned the backdrop ON for every config that predates the key.
   d.artwork = readTomlValue(tomlText, "desktop", "artwork") === "true"
-  if (_artModeRetired) d.artwork = true
+  if (_artModeRetired && readTomlValue(tomlText, "desktop", "artwork") === null) d.artwork = true
   d.scopeThickness = readTomlFloat(tomlText, "desktop", "scope_thickness") ?? 2
   if (d.scopeThickness !== d.scopeThickness || d.scopeThickness < 1) d.scopeThickness = 1
   if (d.scopeThickness > 5) d.scopeThickness = 5
@@ -239,7 +260,7 @@ function defaultConfig() {
     colorSync: true,
     themeBottom: "#e68e0d",
     themeTop: "#f59e0b",
-    fire: false,
+    fire: false, fireColorFrom: "#be1400", fireColorTo: "#fde047",
     peaks: true, peakFalloff: 0.1, peakSustainMs: 100, spikes: false, stacks: false, mono: false,
     linearFall: true, scope: false, artwork: false, scopeThickness: 2, dots: true, reflect: true,
     barColorCustom: false, barColorFrom: "#e68e0d", barColorTo: "#f59e0b",
@@ -262,22 +283,11 @@ function writeConfigKey(tomlText, section, key, value) {
   var header = "[" + section + "]"
   var targetIdx = -1
   for (var i = 0; i < lines.length; i++) {
-    if (lines[i].trim() === header) { targetIdx = i; break }
+    if (stripTomlComment(lines[i]).trim() === header) { targetIdx = i; break }
   }
 
-  var v = String(value)
-  // Quote strings defensively: an interior double-quote MUST be escaped or the
-  // emitted line is invalid TOML (and the whole file then mis-parses). Already-
-  // quoted inputs pass through; arrays / inline tables stay raw.
-  if (typeof value === "string" && !/^[\[{]/.test(v.trim())) {
-    if (/^".*"$/.test(v.trim())) {
-      v = v.trim()
-    } else {
-      var _q = String.fromCharCode(34)   // "
-      var _bs = String.fromCharCode(92)  // backslash
-      v = _q + v.split(_q).join(_bs + _q) + _q
-    }
-  }
+  // Values are typed: strings are always escaped, never interpreted as TOML.
+  var v = typeof value === "string" ? JSON.stringify(value) : String(value)
   var entry = key + " = " + v
 
   if (targetIdx === -1) {
@@ -289,7 +299,7 @@ function writeConfigKey(tomlText, section, key, value) {
 
   var keyIdx = -1
   for (var j = targetIdx + 1; j < lines.length; j++) {
-    var t = lines[j].trim()
+    var t = stripTomlComment(lines[j]).trim()
     if (t.startsWith("[") && t.endsWith("]")) break
     if (t.indexOf("=") >= 0 && t.split("=")[0].trim() === key) { keyIdx = j; break }
   }
@@ -329,6 +339,8 @@ var KEY_SPEC = [
   ["reflect", "desktop", "reflect", "bool"],
   ["artwork", "desktop", "artwork", "bool"],
   ["fire", "desktop", "fire", "bool"],
+  ["fireColorFrom", "desktop", "fire_color_from", "str"],
+  ["fireColorTo", "desktop", "fire_color_to", "str"],
   ["barColorCustom", "desktop", "bar_color_custom", "bool"],
   ["barColorFrom", "desktop", "bar_color_from", "str"],
   ["barColorTo", "desktop", "bar_color_to", "str"],
@@ -365,7 +377,7 @@ function tomlKeyFor(prop) {
 
 function _tomlValue(v, kind) {
   if (kind === "bool") return (v === true || v === "true") ? "true" : "false"
-  if (kind === "str") return '"' + String(v) + '"'
+  if (kind === "str") return JSON.stringify(String(v))
   if (kind === "int") { var n = Math.round(Number(v)); return String(n !== n ? 0 : n) }
   var f = Number(v); if (f !== f) f = 0
   return String(f)
@@ -417,6 +429,8 @@ function validate(prop, value) {
     case "scopeThickness": {
       var t = Number(value); if (t !== t || t < 1) t = 1; if (t > 5) t = 5; return t
     }
+    case "fireColorFrom":
+    case "fireColorTo":
     case "barColorFrom":
     case "barColorTo":
     case "themeBottom":
@@ -565,7 +579,7 @@ function isDesktopActiveFromText(tomlText) {
 function writeEnabled(value, tomlText) {
   sharedConfig.enabled = value
   set("enabled", value)
-  return writeConfigKey(tomlText || "", "desktop", "enabled", value ? "true" : "false")
+  return writeConfigKey(tomlText || "", "desktop", "enabled", value)
 }
 
 function getSharedConfig() {

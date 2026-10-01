@@ -1,7 +1,7 @@
-# omaviz — Application Specification (v8.4.4)
+# omaviz — Application Specification (v8.4.5)
 
 > **Plugin id:** `org.omaviz.visualizer`
-> **Version:** 8.4.4 (spec + manifest, git tag)
+> **Version:** 8.4.5 (spec + manifest, git tag)
 > **Status:** Single-package Omarchy QML plugin. Audio analysis is bundled as
 > one native binary (`bin/omaviz-engine`) shipped **inside** the plugin
 > directory. No systemd service, no Unix socket, no `~/.local/bin` binaries.
@@ -99,6 +99,13 @@ passages visible.
 
 The same renderer is used for **all three contexts** (mini, preview, desktop).
 Only the container size and position change.
+Spike and Flame bars use the shared Canvas gradient;
+the data feed and peak physics continue at full cadence while paints are
+capped at roughly 30 Hz. CPU use depends on window size and hardware and
+must be measured on the target desktop.
+While the detached desktop is active, the bar suspends its duplicate capture
+engine when the settings preview is closed; opening the preview or closing the
+desktop resumes that feed.
 
 ### Rendering parameters (set by parent)
 
@@ -159,9 +166,10 @@ exclusive choice (Spikes and Stacks are mutually exclusive) · **Peaks** toggle
 exclusive choice. Flame is a colour *mode*, not a geometry toggle: it lights
 the bar gradient from deep red into the custom tip without touching Geometry.
 **Custom tones** From (base) / To (tip) hex fields (active under Custom and
-Flame) · **Gradient direction** chips — Vertical (bottom→top, default) or
+Flame, with separate persisted tone pairs) · **Gradient direction** chips — Vertical (bottom→top, default) or
 Horizontal (left→right across the field) · preset swatch row (8 gradients + a
-Fire swatch that selects Flame mode). Base rendered darker, tip lighter.
+Fire swatch that selects Flame mode). Custom base is darker and tip lighter;
+Flame uses its own exact base and tip, defaulting to red → yellow.
 Reflection mirror is tinted with the base colour. Theme mode follows the LIVE
 Omarchy accent. Mini Mono overrides this on mini only.
 
@@ -172,7 +180,8 @@ reactivity AND oscilloscope amplitude with input gain) · **Mono (mini only)**.
 
 **ADVANCED** (collapsed by default, "Show"/"Hide"): Linear fall
 (renderer-side, no engine restart) · Dots (static underlay) · Artwork
-backdrop · GPU.
+backdrop. The legacy `gpu` config key is retained for compatibility but
+does not select a renderer.
 
 All controls are live-wired via `writeVizOption` / `writeVizOptions`
 (atomic multi-key) / `writeAudioOption` — disk write + instant local update.
@@ -182,6 +191,10 @@ migrate to spectrum + backdrop on; `min_bar_height`/`splits` are gone (bar
 floor is unconditional; Stacks is the canonical key).
 
 **SOURCE**: Read-only audio source indicator (e.g., "PipeWire · default sink")
+in the persistent footer. The header shows Omaviz and its installed manifest
+version beside the On/Off switch. When Off, content unloads and the panel
+shrinks to the header, helper, and footer. **Exit** disables the plugin via
+`omarchy plugin disable` so its bar widget and engine leave the shell.
 
 ---
 
@@ -198,9 +211,7 @@ width_scale = 1.5
 color_sync = true
 
 [desktop]
-# lifecycle flags (written by the widget, not user settings)
-# active = false
-# heartbeat = 0
+# Runtime active/heartbeat live separately in desktop-state.toml
 enabled = true
 theme_bottom = "#e68e0d"
 theme_top = "#f59e0b"
@@ -218,6 +229,8 @@ dots = true
 reflect = true
 artwork = false
 fire = false
+fire_color_from = "#be1400"
+fire_color_to = "#fde047"
 bar_color_custom = false
 bar_color_from = "#e68e0d"
 bar_color_to = "#f59e0b"
@@ -233,9 +246,12 @@ gpu = true
 
 - **Single-click** the mini → settings panel; **single-click** the live
   preview inside the panel → detached desktop window (right-click removed)
-- Mini visibility follows shared `desktop.active` + 2s heartbeat lease —
+- Mini paused-state follows shared `desktop.active` + 2s heartbeat lease
+  in `desktop-state.toml` (6s expiry), separate from saved settings —
   any launch path (bar, app launcher, `SUPER+V`) converges; close from any
   path brings the mini back
+- Settings writes are serialized and remain optimistic until acknowledged.
+  Explicit `stacks`/`artwork` settings override legacy aliases.
 - Desktop self-claims the flag on open; `onClosing` clears it with a flush
   delay then `Qt.quit()` (no zombie windowless processes)
 - Desktop window is 600×200; the visualization container is bottom-anchored

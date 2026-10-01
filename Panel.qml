@@ -16,6 +16,14 @@ Panel {
   readonly property var hcfg: root.hostWidget ? root.hostWidget.config : Store.defaultConfig()
   property var anchorItem: null
   property var hostWidget: null
+  property string pluginVersion: ""
+  FileView {
+    path: Qt.resolvedUrl("manifest.json")
+    onLoaded: {
+      try { root.pluginVersion = JSON.parse(text()).version || "" }
+      catch (error) { console.warn("omaviz: cannot read plugin version", error) }
+    }
+  }
 
   // Panel foreground palette — the panel is hosted by the bar (bar.foreground)
   // or runs detached (shell Color.foreground). Defined ONCE, used ~18 times.
@@ -24,7 +32,7 @@ Panel {
   readonly property color fgFaint: Qt.darker(fg, 1.6)
 
   readonly property string sourceLabelText:
-    Store.sourceLabel(Store.spectrumData.source || "")
+    Store.sourceLabel(root.hostWidget ? root.hostWidget.spectrumSource : Store.spectrumData.source || "")
 
   readonly property bool isScope: root.hcfg.scope === true
   readonly property bool isSpectrum: !root.isScope
@@ -40,7 +48,7 @@ Panel {
   // Gradient direction for the bar field.
   readonly property string gradDir:
     root.hcfg.barGradientDir === "horizontal" ? "horizontal" : "vertical"
-  // Custom tones are active under Custom mode, and also shape the Flame tip.
+  // Each colour mode edits its own persisted tones.
   readonly property bool tonesActive: root.customOn || root.fireOn
 
   property bool showAdvanced: false
@@ -55,6 +63,10 @@ Panel {
     // binding above. Writing through the host is enough: the config reload
     // pushes the new value back into hcfg.
     if (root.hostWidget && root.hostWidget.writeEnabled) root.hostWidget.writeEnabled(v)
+  }
+  function exitPlugin() {
+    if (root.hostWidget && root.hostWidget.requestExit) root.hostWidget.requestExit()
+    root.close()
   }
 
   // ---- Size-freeze logic (at root level, NOT inside KeyboardPanel) ----
@@ -95,7 +107,7 @@ Panel {
     property bool _sizeLocked: false
     property int _frozenH: 0
     contentWidth: panel.fittedContentWidth(Style.space(560))
-    contentHeight: _sizeLocked ? _frozenH : panel.fittedContentHeight(column.implicitHeight)
+    contentHeight: root.vizEnabled && _sizeLocked ? _frozenH : panel.fittedContentHeight(column.implicitHeight)
 
     PanelKeyCatcher {
       id: keyCatcher
@@ -118,10 +130,28 @@ Panel {
         width: parent.width
         spacing: Style.space(8)
 
-        // ---- ON/OFF toggle (always visible) ----
+        // ---- Plugin identity and ON/OFF toggle (always visible) ----
         Item {
           width: parent.width
-          height: Style.space(24)
+          height: Style.space(30)
+          Column {
+            anchors.left: parent.left
+            anchors.verticalCenter: parent.verticalCenter
+            spacing: Style.space(2)
+            Text {
+              text: "OMAVIZ"
+              color: root.fg
+              font.family: Style.font.family
+              font.pixelSize: Style.font.title
+              font.bold: true
+            }
+            Text {
+              text: (root.pluginVersion ? "v" + root.pluginVersion + "  ·  " : "") + "Audio visualizer"
+              color: root.fgMuted
+              font.family: Style.font.family
+              font.pixelSize: Style.font.bodySmall
+            }
+          }
           ToggleSwitch {
             id: onOffSwitch
             checked: root.vizEnabled
@@ -160,6 +190,36 @@ Panel {
           width: parent.width
           active: root.vizEnabled
           sourceComponent: contentComponent
+        }
+        PanelSeparator { }
+        Item {
+          width: parent.width
+          height: Style.space(16)
+          Text {
+            anchors.left: parent.left
+            anchors.verticalCenter: parent.verticalCenter
+            width: parent.width - exitText.width - Style.space(8)
+            text: "SOURCE  " + root.sourceLabelText
+            elide: Text.ElideRight
+            color: root.fgMuted
+            font.family: Style.font.family
+            font.pixelSize: Style.font.bodySmall
+          }
+          Text {
+            id: exitText
+            anchors.right: parent.right
+            anchors.verticalCenter: parent.verticalCenter
+            text: "Exit"
+            color: root.fg
+            font.family: Style.font.family
+            font.pixelSize: Style.font.body
+            font.bold: true
+            MouseArea {
+              anchors.fill: parent
+              cursorShape: Qt.PointingHandCursor
+              onClicked: root.exitPlugin()
+            }
+          }
         }
       }
     }
@@ -235,6 +295,8 @@ Panel {
           noiseFloor: 0.02
           spikes: root.spikesOn
           fire: root.fireOn
+          fireColorFrom: root.hcfg.fireColorFrom || "#be1400"
+          fireColorTo: root.hcfg.fireColorTo || "#fde047"
           stacks: root.stacksOn
           sensitivity: (root.hcfg.sensitivity ?? 1.0)
           barColorCustom: root.customOn
@@ -313,6 +375,7 @@ Panel {
           spacing: Style.space(14)
 
           Toggle {
+            height: fallCard.height
             width: (parent.width - Style.space(14)) / 2
             label: "Peaks"
             description: "Peak-hold markers"
@@ -321,6 +384,7 @@ Panel {
           }
 
           BorderSurface {
+            id: fallCard
             width: (parent.width - Style.space(14)) / 2
             height: fallCol.implicitHeight + Style.spacing.huge
             radius: Style.cornerRadius
@@ -427,7 +491,7 @@ Panel {
             opacity: root.tonesActive ? 1.0 : 0.45
 
             Text {
-              text: "Custom tones"
+              text: root.fireOn ? "Flame tones" : "Custom tones"
               color: root.fg
               font.family: Style.font.family
               font.pixelSize: Style.font.body
@@ -448,13 +512,13 @@ Panel {
 
               HexField {
                 width: (parent.width - Style.space(8)) / 2
-                value: root.hcfg.barColorFrom || "#e68e0d"
-                onAccept: function(v) { if (root.hostWidget) root.hostWidget.writeVizOption("bar_color_from", v) }
+                value: root.fireOn ? root.hcfg.fireColorFrom : root.hcfg.barColorFrom
+                onAccept: function(v) { if (root.hostWidget) root.hostWidget.writeVizOption(root.fireOn ? "fire_color_from" : "bar_color_from", v) }
               }
               HexField {
                 width: (parent.width - Style.space(8)) / 2
-                value: root.hcfg.barColorTo || "#f59e0b"
-                onAccept: function(v) { if (root.hostWidget) root.hostWidget.writeVizOption("bar_color_to", v) }
+                value: root.fireOn ? root.hcfg.fireColorTo : root.hcfg.barColorTo
+                onAccept: function(v) { if (root.hostWidget) root.hostWidget.writeVizOption(root.fireOn ? "fire_color_to" : "bar_color_to", v) }
               }
             }
           }
@@ -505,7 +569,7 @@ Panel {
                   GradientStop { position: 0.0; color: modelData[0] }
                   GradientStop { position: 1.0; color: modelData[1] }
                 }
-                border.width: (!root.fireOn && root.hcfg.barColorFrom === modelData[0] && root.hcfg.barColorTo === modelData[1]) ? 2 : 0
+                border.width: (!root.fireOn && root.customOn && root.hcfg.barColorFrom === modelData[0] && root.hcfg.barColorTo === modelData[1]) ? 2 : 0
                 border.color: Color.accent
                 MouseArea {
                   anchors.fill: parent
@@ -530,7 +594,7 @@ Panel {
               MouseArea {
                 anchors.fill: parent
                 cursorShape: Qt.PointingHandCursor
-                onClicked: if (root.hostWidget) root.hostWidget.writeVizOptions("fire", true, "bar_color_custom", true)
+                onClicked: if (root.hostWidget) root.hostWidget.writeVizOption("fire", true)
               }
             }
           }
@@ -555,6 +619,7 @@ Panel {
         width: parent.width
         spacing: Style.space(14)
         BorderSurface {
+          id: responseCard
           width: (parent.width - Style.space(14)) / 2
           height: respCol.implicitHeight + Style.spacing.huge
           radius: Style.cornerRadius
@@ -586,6 +651,7 @@ Panel {
           }
         }
         Toggle {
+          height: responseCard.height
           width: (parent.width - Style.space(14)) / 2
           label: "Mono (mini only)"
           description: "B&W mini bars"
@@ -711,45 +777,15 @@ Panel {
           spacing: Style.space(14)
 
           Toggle {
-            width: (parent.width - Style.space(14)) / 2
+            width: parent.width
             label: "Artwork backdrop"
             description: "Immersive backdrop"
             checked: root.hcfg.artwork !== false
             onClicked: if (root.hostWidget) root.hostWidget.writeVizOption("artwork", !checked)
           }
-
-          Toggle {
-            width: (parent.width - Style.space(14)) / 2
-            label: "GPU"
-            description: "Hardware painting"
-            checked: root.hcfg.gpu !== false
-            onClicked: if (root.hostWidget) root.hostWidget.writeVizOption("gpu", !checked)
-          }
         }
       }
 
-      PanelSeparator { }
-
-      // ---- Footer ----
-      Row {
-        width: parent.width
-        spacing: Style.space(8)
-        Text {
-          text: "SOURCE"
-          color: root.fgMuted
-          font.family: Style.font.family
-          font.pixelSize: Style.font.bodySmall
-          font.letterSpacing: 1
-          anchors.verticalCenter: parent.verticalCenter
-        }
-        Text {
-          text: root.sourceLabelText + " · default sink"
-          color: Color.accent
-          font.family: Style.font.family
-          font.pixelSize: Style.font.body
-          anchors.verticalCenter: parent.verticalCenter
-        }
-      }
     }
   }
 
@@ -873,7 +909,6 @@ Panel {
           validator: RegularExpressionValidator {
             regularExpression: /^#[0-9a-fA-F]{0,6}$/
           }
-          onAccepted: hexField.submit(text)
           onEditingFinished: hexField.submit(text)
         }
       }

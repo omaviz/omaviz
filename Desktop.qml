@@ -223,6 +223,8 @@ Window {
         noiseFloor: 0.02
         spikes: win.vizConfig.spikes === true
         fire: win.vizConfig.fire === true
+        fireColorFrom: win.vizConfig.fireColorFrom || "#be1400"
+        fireColorTo: win.vizConfig.fireColorTo || "#fde047"
         stacks: win.vizConfig.stacks === true
         stackScale: 2
         sensitivity: win.vizConfig.sensitivity ?? 1.0
@@ -365,29 +367,17 @@ Window {
     }
   }
 
-  // Last-external-write guard: the bar also writes this file (option
-  // toggles). If the desktop heartbeat fired on a stale base text it
-  // would clobber a just-written option and the toggle would snap back
-  // (the "needs multiple tries" bug). Skip one beat when another writer
-  // was active in the last 1.5s — the 6s lease tolerates the delay.
-  property double _lastExternalChange: 0
-  FileView { id: cfgWrite; path: Store.configPath; onFileChanged: { win._lastExternalChange = Date.now() } }
-  // Heartbeat lease: refresh every 2s while open so the bar knows this
-  // window is LIVE. If the process dies without clearing active (crash,
-  // kill -9), the stale flag expires within ~6s and the mini returns.
+  // Heartbeats have their own file: this window only READS settings.
+  FileView { id: cfgWrite; path: Store.configPath; watchChanges: true; onFileChanged: reload() }
+  FileView { id: desktopState; path: Store.desktopStatePath; printErrors: false }
+  property bool _closing: false
   Timer {
-    interval: 2000; repeat: true; running: true
-    onTriggered: {
-      if (Date.now() - win._lastExternalChange < 1500) return
-      win._lastExternalChange = Date.now()
-      win.setDesktopActive(true)
-    }
+    interval: 2000; repeat: true; running: win._claimed && !win._closing
+    onTriggered: win.setDesktopActive(true)
   }
   function setDesktopActive(v) {
-    var txt = cfgWrite.text()
-    txt = Store.writeConfigKey(txt, "desktop", "active", v ? "true" : "false")
-    if (v) txt = Store.writeConfigKey(txt, "desktop", "heartbeat", String(Date.now()))
-    cfgWrite.setText(txt)
+    if (!v) win._closing = true
+    desktopState.setText("[desktop]\nactive = " + v + "\nheartbeat = " + Date.now() + "\n")
   }
   // Claim the shared flag once config text is available (covers
   // app-launcher + keybind paths that bypass BarWidget's detach()).
@@ -411,6 +401,11 @@ Window {
     interval: 250; repeat: true; running: true
     onTriggered: {
       cfgWrite.reload()
+      desktopState.reload()
+      if (win._claimed && !Store.isDesktopActiveFromText(desktopState.text())) {
+        if (!win._closing) { win.setDesktopActive(false); closeTimer.start() }
+        return
+      }
       var txt = cfgWrite.text()
       if (txt !== win._lastCfgText) {
         win._lastCfgText = txt
@@ -424,8 +419,7 @@ Window {
       } catch(e) {}
       if (!enabled) {
         // Visualization disabled — close the desktop window
-        win.setDesktopActive(false)
-        closeTimer.restart()
+        if (!win._closing) { win.setDesktopActive(false); closeTimer.start() }
         return
       }
       // Scope is the only spawn-time flag now (it toggles --wave).
@@ -453,7 +447,7 @@ Window {
     // Release the shared flag so the mini returns, then actually quit —
     // without Qt.quit() the wrapper process lingers windowless and the
     // mini stays hidden forever (Hyprland killactive only closes the window).
-    win.setDesktopActive(false)
+    if (!win._closing) win.setDesktopActive(false)
     if (!win._allowClose) {
       close.accepted = false
       quitTimer.restart()

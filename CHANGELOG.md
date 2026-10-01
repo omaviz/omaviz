@@ -1,3 +1,17 @@
+## 8.4.5 — Settings reliability and review fixes
+
+- Isolate desktop leases from settings; serialize async saves and keep pending selections until acknowledged.
+- Give Flame independent saved base/tip colors across mini, preview, and desktop.
+- Respect explicit settings over legacy Stacks/Artwork aliases; correct preset highlighting and duplicate hex submissions.
+- Escape TOML strings, preserve native value types, and accept inline comments.
+- Use the resolved engine path in the bar; clamp FFT band ranges to prevent valid CLI combinations from panicking.
+- Add behavioral persistence/palette regressions and FFT boundary coverage.
+- Add marketplace form metadata, local preflight checks, and an exact-commit update form artifact after merges.
+- Replace the marketplace preview with a titled four-mode showcase and a real settings capture.
+- Show version and plugin details in the settings header; keep Source and Exit visible when Off and collapse the panel.
+- Suspend the duplicate bar capture engine while the detached window is active and settings are closed.
+- Remove the inactive GPU switch; the legacy setting remains readable for older configs.
+
 # Changelog
 
 ## Unreleased
