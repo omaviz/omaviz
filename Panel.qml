@@ -66,6 +66,10 @@ Panel {
     // pushes the new value back into hcfg.
     if (root.hostWidget && root.hostWidget.writeEnabled) root.hostWidget.writeEnabled(v)
   }
+  function exitPlugin() {
+    if (root.hostWidget && root.hostWidget.requestExit) root.hostWidget.requestExit()
+    root.close()
+  }
 
   // ---- Size-freeze logic (at root level, NOT inside KeyboardPanel) ----
   Timer {
@@ -105,7 +109,7 @@ Panel {
     property bool _sizeLocked: false
     property int _frozenH: 0
     contentWidth: panel.fittedContentWidth(Style.space(560))
-    contentHeight: _sizeLocked ? _frozenH : panel.fittedContentHeight(column.implicitHeight)
+    contentHeight: root.vizEnabled && _sizeLocked ? _frozenH : panel.fittedContentHeight(column.implicitHeight)
 
     PanelKeyCatcher {
       id: keyCatcher
@@ -128,10 +132,28 @@ Panel {
         width: parent.width
         spacing: Style.space(8)
 
-        // ---- ON/OFF toggle (always visible) ----
+        // ---- Plugin identity and ON/OFF toggle (always visible) ----
         Item {
           width: parent.width
-          height: Style.space(24)
+          height: Style.space(30)
+          Column {
+            anchors.left: parent.left
+            anchors.verticalCenter: parent.verticalCenter
+            spacing: Style.space(2)
+            Text {
+              text: "OMAVIZ"
+              color: root.fg
+              font.family: Style.font.family
+              font.pixelSize: Style.font.title
+              font.bold: true
+            }
+            Text {
+              text: (root.pluginVersion ? "v" + root.pluginVersion + "  ·  " : "") + "Audio visualizer"
+              color: root.fgMuted
+              font.family: Style.font.family
+              font.pixelSize: Style.font.bodySmall
+            }
+          }
           ToggleSwitch {
             id: onOffSwitch
             checked: root.vizEnabled
@@ -170,6 +192,39 @@ Panel {
           width: parent.width
           active: root.vizEnabled
           sourceComponent: contentComponent
+        }
+        PanelSeparator { }
+        RowLayout {
+          width: parent.width
+          spacing: Style.space(8)
+          Text {
+            text: "SOURCE"
+            color: root.fgMuted
+            font.family: Style.font.family
+            font.pixelSize: Style.font.bodySmall
+            font.letterSpacing: 1
+          }
+          Text {
+            Layout.fillWidth: true
+            Layout.minimumWidth: 0
+            text: root.sourceLabelText + " · default sink"
+            elide: Text.ElideRight
+            color: Color.accent
+            font.family: Style.font.family
+            font.pixelSize: Style.font.body
+          }
+          Text {
+            text: "Exit"
+            color: root.fg
+            font.family: Style.font.family
+            font.pixelSize: Style.font.body
+            font.bold: true
+            MouseArea {
+              anchors.fill: parent
+              cursorShape: Qt.PointingHandCursor
+              onClicked: root.exitPlugin()
+            }
+          }
         }
       }
     }
@@ -782,35 +837,6 @@ Panel {
         }
       }
 
-      PanelSeparator { }
-
-      // ---- Footer ----
-      RowLayout {
-        width: parent.width
-        spacing: Style.space(8)
-        Text {
-          text: "SOURCE"
-          color: root.fgMuted
-          font.family: Style.font.family
-          font.pixelSize: Style.font.bodySmall
-          font.letterSpacing: 1
-        }
-        Text {
-          Layout.fillWidth: true
-          Layout.minimumWidth: 0
-          text: root.sourceLabelText + " · default sink"
-          elide: Text.ElideRight
-          color: Color.accent
-          font.family: Style.font.family
-          font.pixelSize: Style.font.body
-        }
-        Text {
-          text: root.pluginVersion ? "v" + root.pluginVersion : ""
-          color: root.fgMuted
-          font.family: Style.font.family
-          font.pixelSize: Style.font.bodySmall
-        }
-      }
     }
   }
 

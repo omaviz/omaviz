@@ -15,12 +15,15 @@ Item {
   property bool ready: false
   property string error: ""
   property var queue: Queue.create("")
+  signal settled()
 
   function accept(text) {
     Queue.loaded(queue, text)
     document.text = Queue.current(queue)
     document.ready = true
     flush()
+    if (queue.desired === null && queue.inFlight === null && !queue.awaitingRead)
+      settled()
   }
   function patch(section, values) {
     if (!writable || !ready) return false

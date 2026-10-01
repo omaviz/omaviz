@@ -6,7 +6,7 @@ desktop visualizer window, and an oscilloscope that dances to whatever
 is playing. Same soul, zero nostalgia tax: buttery Canvas rendering,
 theme-aware, and configured with two clicks.
 
-![version](https://img.shields.io/badge/version-8.5.3-amber) ![license](https://img.shields.io/badge/license-MIT-blue)
+![version](https://img.shields.io/badge/version-8.5.4-amber) ![license](https://img.shields.io/badge/license-MIT-blue)
 
 ## Why omaviz
 
@@ -28,7 +28,7 @@ theme-aware, and configured with two clicks.
 
 ## The tour
 
-Fresh native captures from v8.5.2.
+Fresh native captures from v8.5.4.
 
 | | |
 |---|---|
@@ -138,7 +138,7 @@ with a dotted-skin backdrop and a B&W Mono mode for tiny sizes.
 Single-click the mini for the settings panel below; single-click the live
 preview inside it to detach the desktop window:
 
-![Settings panel with aligned controls, compositing backend and version footer](docs/screenshots/Settings.png)
+![Settings panel with plugin title, aligned controls, source, and Exit](docs/screenshots/Settings.png)
 
 ## Engine
 
@@ -211,7 +211,7 @@ See [GPU exploration and parity checks](docs/GPU_EXPLORATION.md).
 
 ### Releases and marketplace verification
 
-The settings footer shows the installed `manifest.json` version. Paired controls
+The settings header shows the installed `manifest.json` version. Paired controls
 share the height of the taller control, including Motion and Advanced rows.
 
 Push a `vX.Y.Z` tag on `master` (matching manifest/package versions), or dispatch
