@@ -424,3 +424,48 @@ test("TOML comments and escaped strings preserve settings without injecting keys
   assert.equal((written.match(/\[desktop\]/g) || []).length, 1);
   assert.equal(Store.readConfigFromText(written).fire, true);
 });
+
+
+test("visual mode migrates legacy scope and persists all four choices", () => {
+  assert.equal(Store.readConfigFromText('[desktop]\nscope = true').visual, 'Waves')
+  assert.equal(Store.readConfigFromText('[desktop]\nscope = false').visual, 'Bars')
+  for (const visual of ['Bars', 'Waves', 'Strings', 'Siri']) {
+    const text = Store.writeConfigKey('[desktop]\nscope = true', 'desktop', 'visual', visual)
+    assert.equal(Store.readConfigFromText(text).visual, visual)
+    assert.equal(Store.readConfigFromText(Store.toTOML(Store.readConfigFromText(text))).visual, visual)
+  }
+  assert.equal(Store.readConfigFromText('[desktop]\nvisual = "unknown"\nscope = true').visual, 'Waves')
+  assert.equal(Store.validate('visual', 'unknown'), 'Bars')
+})
+
+
+test("optional middle color survives persistence and rejects invalid colors", () => {
+  const config = Store.defaultConfig()
+  assert.equal(config.barColorMiddleEnabled, false)
+  config.barColorMiddleEnabled = true
+  config.barColorMiddle = "#123abc"
+  const loaded = Store.loadFromTOML(Store.toTOML(config))
+  assert.equal(loaded.barColorMiddleEnabled, true)
+  assert.equal(loaded.barColorMiddle, "#123abc")
+  assert.equal(Store.set("barColorMiddle", "invalid"), false)
+  assert.equal(Store.get("barColorMiddle"), "#123abc")
+})
+
+
+test("artwork color mode persists independently from backdrop and custom tones", () => {
+  const config = Store.defaultConfig()
+  assert.equal(config.artworkColors, false)
+  config.artworkColors = true
+  config.artwork = false
+  config.barColorMiddle = "#663cc8"
+  const loaded = Store.loadFromTOML(Store.toTOML(config))
+  assert.equal(loaded.artworkColors, true)
+  assert.equal(loaded.artwork, false)
+  assert.equal(loaded.barColorMiddle, "#663cc8")
+})
+
+
+test("legacy Oscilloscope settings migrate to Waves", () => {
+  assert.equal(Store.readConfigFromText('[desktop]\nvisual = "Oscilloscope"').visual, 'Waves')
+  assert.equal(Store.validate('visual', 'Oscilloscope'), 'Waves')
+})

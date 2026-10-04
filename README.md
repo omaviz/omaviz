@@ -3,10 +3,10 @@
 The spectrum analyzer you stared at for hours in 1999 — reborn as a
 native citizen of your Omarchy desktop. Live bars in your waybar, a full
 desktop visualizer window, and an oscilloscope that dances to whatever
-is playing. Same soul, zero nostalgia tax: buttery Canvas rendering,
+is playing. Same soul, zero nostalgia tax: native GPU rendering,
 theme-aware, and configured with two clicks.
 
-![version](https://img.shields.io/badge/version-8.4.5-amber) ![license](https://img.shields.io/badge/license-MIT-blue)
+![version](https://img.shields.io/badge/version-8.6.0-amber) ![license](https://img.shields.io/badge/license-MIT-blue)
 
 ## Why omaviz
 
@@ -48,18 +48,20 @@ show the individual modes at their actual rendered size.
   with a dotted-skin backdrop and a B&W Mono mode for tiny sizes
 - **Spectrum** — peaks + fall speed, dense Spikes, Fire flame gradient,
   Winamp Stacks, floor-mirror Reflection, album-art backdrop
-- **Oscilloscope** — true 128-point time-domain waveform, adjustable
+- **Waves** — true 128-point time-domain waveform, adjustable
   thickness, follows your colors
 - **Bar color** — theme-dominant by default (tracks Omarchy theme
   switches live), or custom From → To tones via presets or hex
+- **Strings** — crossing gold, cream and softly blurred blue strands that vibrate around fixed positions like standing waves. Spectral bands pluck individual strands; waveform samples add local motion. Small surfaces use fewer strands to retain separation. The backdrop stays transparent.
+- **Siri** — broad translucent cyan, blue, and violet ribbons on black, with perceptual audio response so ordinary playback remains visible at mini size; custom palettes are supported.
 - **Motion** — exponential easing by default, Winamp-style linear fall
   on demand, adjustable sensitivity
 - **Robust** — desktop lease stored separately from settings (no heartbeat overwrites),
-  engine auto-retry, one shared Canvas renderer everywhere.
+  engine auto-retry, one shared GPU renderer everywhere.
 
 ## Install
 
-Requires Omarchy (Quickshell) + PipeWire. **Nothing has to be built or run by
+Requires Omarchy (Quickshell), Qt 6.11 or newer, an accelerated Qt Quick backend, and PipeWire. The bundled native renderer targets Linux x86_64. **Nothing has to be built or run by
 hand** — the engine binary ships committed, and Omarchy installs the plugin as
 a self-contained folder.
 
@@ -113,7 +115,7 @@ Both scripts are ownership-guarded: they never delete or replace files omaviz
 does not own, and uninstall removes only what this plugin installed
 (`tests/installer.test.sh` proves it).
 
-Requires: Omarchy (quickshell), PipeWire. `cargo` is needed only for `--build`.
+Requires: Omarchy (quickshell), Qt 6.11+, PipeWire. Maintainer builds use Cargo, CMake, a C++17 compiler and Qt Quick development files. `./build.sh` builds both the Rust engine and the native renderer; users receive both binaries.
 
 ## Testing
 
@@ -176,7 +178,9 @@ manifest.json    # plugin identity (id, version, entry points)
 BarWidget.qml    # bar mini + engine spawn + all config writes
 Panel.qml        # settings panel (preview + options)
 Desktop.qml      # detached window (standalone quickshell -p, NO qs.* imports)
-VisualCanvas.qml # THE shared renderer (all modes, all options)
+VisualCanvas.qml # shared display clock, physics and rendering API
+renderer/        # native batched Qt Quick geometry source
+native/          # bundled QML plugin (all modes, all surfaces)
 ModelStore.js    # config store: parse/write, defaults, reactive get/set, spectrum parse
 Physics.js       # shared bar/peak motion model (unit-tested)
 assets/ bin/ tests/  # launcher entry, COMMITTED engine binary, node tests
@@ -198,7 +202,7 @@ Installs to `~/.config/omarchy/plugins/org.omaviz.visualizer/`.
 > the engine reads your local audio, the panel reads local players, and
 > nothing ever leaves your machine.
 
-MIT-licensed and hackable end to end: QML surfaces, shared Canvas
+MIT-licensed and hackable end to end: QML surfaces, shared GPU
 renderer and the Rust PipeWire engine all live in this repo, with
 `APP_SPEC.md` as the design record and tests for both sides
 (`tests`, `cargo test`). Found a rough edge or a missing
@@ -208,3 +212,30 @@ all taken from the live plugin, so what you see is what runs.
 Settings saves are serialized so rapid selections remain applied. Flame has independent
 `fire_color_from` / `fire_color_to` colors; changing custom swatches preserves them.
 Desktop liveness lives in `desktop-state.toml` alongside `config.toml`.
+
+GPU migration acceptance and CPU/GPU budgets are tracked in [GPU_PLAN.md](GPU_PLAN.md). Resource targets require live measurements; passing unit tests alone does not establish them.
+
+### Minimal settings and playback controls
+
+Choose Spectrum or Waveforms from the top dropdown. Waveforms offers Waves (the oscilloscope),
+Strings, and Siri in a second dropdown. Only relevant controls appear.
+Fine tuning starts collapsed. The larger live preview sits at the bottom on
+a pure black background. Custom colors support editable start/end hex values
+and an optional middle color across mini, preview, and desktop; presets return
+to two colors. The Peacock preset adds teal, violet, and gold; Strings supports
+the same custom colors. Spectrum’s Artwork mode extracts cover colors for both
+the bars and the desktop’s blurred, tinted background, with theme colors as a
+fallback when artwork is unavailable. The desktop hover card shows artwork and track details, with
+play/pause when the active media player supports it.
+
+Off pauses visualization and capture while keeping the plugin and desktop controls
+available. On resumes in place. Exit closes the desktop, stops Omaviz capture,
+and unloads the plugin from the shared shell. Desktop settings apply on completed
+file loads, with a 100ms polling fallback. Hover controls remain stable while
+pointing at buttons, and the controlled media player stays selected after Pause.
+
+Native visual regression: after building with `OMAVIZ_RENDER_PROBE=ON`, run
+`tests/renderer-visual.sh /path/to/omaviz-render-probe` in a graphical session.
+Each mode or transition probe closes after three seconds and checks visible color
+coverage, including Spectrum receiving its first bands after startup. Screenshots
+are kept in the reported temporary directory for visual review.

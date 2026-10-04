@@ -56,7 +56,7 @@ test('desktop heartbeats cannot overwrite persistent settings', () => {
   const source = read('Desktop.qml');
   const writes = [];
   const win = {};
-  const ctx = vm.createContext({win, desktopState: {setText: text => writes.push(text)}});
+  const ctx = vm.createContext({win, bridge: {running: true}, bridgeRetryTimer: {stop() {}}, desktopState: {setText: text => writes.push(text)}});
   vm.runInContext(method(source, 'setDesktopActive'), ctx);
   ctx.setDesktopActive(true);
   assert.equal(Store.isDesktopActiveFromText(writes[0]), true);
@@ -90,20 +90,80 @@ test('bar capture pauses behind the detached window and resumes for preview or m
   assert.equal(spectrumProc.running, true, 'closing the desktop must restore the mini');
 });
 
-test('Flame palette is independent of the selected custom/theme palette', () => {
-  const color = hex => ({r: parseInt(hex.slice(1,3),16)/255, g: parseInt(hex.slice(3,5),16)/255, b: parseInt(hex.slice(5,7),16)/255});
-  const ctx = vm.createContext({Qt: {darker: v => v, lighter: v => v, color},
-    barColorCustom: true, colorSync: true,
-    barColorFrom: color('#112233'), barColorTo: color('#445566'),
-    themeBottom: color('#778899'), themeTop: color('#abcdef'),
-    fireColorFrom: color('#be1400'), fireColorTo: color('#fde047')});
-  vm.runInContext(method(read('VisualCanvas.qml'), '_rebuildPalette'), ctx);
-  ctx._rebuildPalette();
-  const first = [...ctx._fireLUT];
-  ctx.barColorTo = color('#00ffff');
-  ctx.themeTop = color('#ff00ff');
-  ctx._rebuildPalette();
-  assert.deepEqual([...ctx._fireLUT], first);
-  assert.equal(first[0], 'rgba(190,20,0,1)');
-  assert.equal(first[100], 'rgba(253,224,71,1)');
+test('Flame palette inputs stay independent of the custom/theme palette', () => {
+  const renderer = read('VisualCanvas.qml');
+  assert.match(renderer, /fireBottom: cv\.fireColorFrom, fireTop: cv\.fireColorTo/);
+  const native = read('renderer/geometry.cpp');
+  assert.ok(native.includes('mix(fireBottom,QColor(255,130,10)'));
+  assert.ok(native.includes('mix(quarter,fireTop,'));
+});
+
+
+test('theme snapshot cannot replace saved settings before initial config load', () => {
+  let writes = 0;
+  const root = {_ready: true, _configReady: false, config: {}, colorHex: () => '#112233',
+    readGuarded: () => { throw new Error('read before config is ready'); },
+    writeVizOptions3: () => { writes++; }};
+  const ctx = vm.createContext({root, Color: {accent: '#112233'}});
+  vm.runInContext(method(read('BarWidget.qml'), 'snapThemeColors'), ctx);
+  ctx.snapThemeColors();
+  assert.equal(writes, 0);
+});
+
+
+test('color modes are exclusive and preserve custom palette values', () => {
+  const calls = [];
+  const root = {writeVizMap: value => calls.push(value)};
+  const ctx = vm.createContext({root});
+  vm.runInContext(method(bar, 'setColorMode'), ctx);
+  for (const mode of ['Theme', 'Custom', 'Artwork', 'Flame']) {
+    assert.equal(ctx.setColorMode(mode), true);
+    const opts = calls.at(-1);
+    assert.equal(opts.fire, mode === 'Flame');
+    assert.equal(opts.bar_color_custom, mode === 'Custom');
+    assert.equal(opts.artwork_colors, mode === 'Artwork');
+    assert.equal('bar_color_from' in opts, false);
+  }
+  assert.equal(ctx.setColorMode('invalid'), false);
+  assert.equal(calls.length, 4);
+});
+
+
+test('desktop applies loaded settings, pauses without closing, and restarts for waveform feed', () => {
+  const bridge = {running: true};
+  const win = {_lastCfgText: '', _lastScope: false, _claimed: true, _closing: false, _restarting: false};
+  const ctx = vm.createContext({win, bridge, Store, bridgeRetryTimer: {stop() {}}});
+  vm.runInContext(method(read('Desktop.qml'), 'applySettings'), ctx);
+  ctx.applySettings('[desktop]\nvisual = "Siri"\nenabled = true');
+  assert.equal(win.vizConfig.visual, 'Siri');
+  assert.equal(bridge.running, false);
+  assert.equal(win._restarting, true);
+  win._restarting = false; bridge.running = true;
+  ctx.applySettings('[desktop]\nvisual = "Siri"\nenabled = false');
+  assert.equal(bridge.running, false);
+  assert.equal(win._closing, false);
+  ctx.applySettings('[desktop]\nvisual = "Siri"\nenabled = true');
+  assert.equal(bridge.running, true);
+});
+
+test('playback stays on the controlled player and supports pause then play', () => {
+  let pauses=0, plays=0;
+  const player={canControl:true, canPause:true, canPlay:true, isPlaying:true,
+    pause(){pauses++; this.isPlaying=false}, play(){plays++; this.isPlaying=true}};
+  const win={activePlayer:player};
+  const ctx=vm.createContext({win});
+  vm.runInContext(method(read('Desktop.qml'),'togglePlayback'),ctx);
+  ctx.togglePlayback(); ctx.togglePlayback();
+  assert.equal(pauses,1); assert.equal(plays,1); assert.equal(win.preferredPlayer,player);
+});
+
+test('Exit stops capture and requests desktop close independently of settings saves', () => {
+  let stopped=0, closed=0, delayed=0, lease=null;
+  const root={_exitRequested:false, close(){closed++}, writeDesktopActive(v){lease=v}};
+  const spectrumProc={running:true};
+  const ctx=vm.createContext({root,spectrumProc,bridgeRetryTimer:{stop(){stopped++}},exitDelay:{restart(){delayed++}}});
+  vm.runInContext(method(bar,'requestExit'),ctx);
+  ctx.requestExit(); ctx.requestExit();
+  assert.equal(spectrumProc.running,false);
+  assert.equal(lease,false); assert.equal(stopped,1); assert.equal(closed,1); assert.equal(delayed,1);
 });

@@ -32,7 +32,8 @@ rule below cost a debugging session.
 4. **Mini visibility = `desktopLive`** (shared `desktop.active` flag +
    2s heartbeat lease). Do NOT gate on process state, do NOT clear the
    flag from the bar based on `detachProc` (fights launcher-opened windows).
-5. **One renderer**: all visual work goes in `VisualCanvas.qml`. Never add
+5. **One renderer**: `VisualCanvas.qml` owns the shared API/physics; `renderer/geometry.cpp` owns
+   shared native GPU drawing. Never add
    a second bar renderer (a duplicated Repeater was deleted for this reason).
 6. **Config writes** go through `writeVizOption(s)` / `writeEngineOption`
    (engine flags need process restart). Base writes on the polled views,

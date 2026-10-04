@@ -1,7 +1,7 @@
-# omaviz — Application Specification (v8.4.5)
+# omaviz — Application Specification (v8.6.0)
 
 > **Plugin id:** `org.omaviz.visualizer`
-> **Version:** 8.4.5 (spec + manifest, git tag)
+> **Version:** 8.6.0 (spec + manifest, git tag)
 > **Status:** Single-package Omarchy QML plugin. Audio analysis is bundled as
 > one native binary (`bin/omaviz-engine`) shipped **inside** the plugin
 > directory. No systemd service, no Unix socket, no `~/.local/bin` binaries.
@@ -19,13 +19,13 @@ This document is the **source of truth** for what ships and how it is verified.
 - **Zero-build install (Architecture A):** the engine binary is **committed**
   at `bin/omaviz-engine`. Installing the plugin is just copying the
   directory + `omarchy plugin enable` — no Rust toolchain required.
-- Canvas-2D based rendering (no GL shader dependency for default path).
+- GPU scene-graph rendering through one bundled Qt Quick geometry module.
 - Winamp-style spectrum analyzer with peak-hold markers.
 
 **Non-Goals (v7.6.1)**
 - No microphone monitoring.
 - No backend switching UI (source is auto + displayed, not chosen).
-- No GPU/ShaderEffect (removed in favor of Canvas-2D).
+- No MilkDrop preset engine in this release (projectM remains a future extension).
 
 ---
 
@@ -39,7 +39,7 @@ repo root = the plugin (deployed to ~/.config/omarchy/plugins/org.omaviz.visuali
 ├── Desktop.qml     (detached window)
 ├── ModelStore.js   (.pragma library: config store — IO, defaults, get/set)
 ├── Physics.js      (.pragma library: shared bar/peak motion model)
-├── VisualCanvas.qml  (Canvas-2D renderer)
+├── VisualCanvas.qml  (shared GPU renderer)
 ├── bin/
 │   └── omaviz-engine   (Rust: capture → FFT/DSP → JSON lines on stdout;
 │                         COMMITTED artifact — see Architecture A, §2)
@@ -60,7 +60,7 @@ Quickshell BarWidget.spectrumProc (Process)
    ▼
 Store.spectrumData { bands, energy, beat, silent, source }
    ▼
-VisualCanvas (Canvas-2D) — used by mini, preview, AND desktop
+VisualCanvas (native GPU geometry) — used by mini, preview, AND desktop
 ```
 
 ---
@@ -72,13 +72,13 @@ VisualCanvas (Canvas-2D) — used by mini, preview, AND desktop
 | `BarWidget.qml` | Waybar mini widget. Spawns engine, renders spectrum, handles detach/attach. |
 | `Panel.qml` | Settings panel. VISUALIZATIONS cards, live PREVIEW, LOOK / COLOR / MOTION groups, collapsed ADVANCED, SOURCE readout. |
 | `Desktop.qml` | Detached visualization window. Same VisualCanvas renderer, larger. |
-| `VisualCanvas.qml` | Canvas-2D renderer. Used by mini, preview, and desktop. |
+| `VisualCanvas.qml` | shared GPU renderer. Used by mini, preview, and desktop. |
 | `ModelStore.js` | Config store: TOML I/O, defaults/validation, reactive get/set, spectrum parsing. |
 | `Physics.js` | Bar/peak motion model (instant attack, rate-limited release, peak sustain). Unit-tested. |
 
 ---
 
-## 4. Rendering — `VisualCanvas.qml` (Canvas-2D, default)
+## 4. Rendering — `VisualCanvas.qml` (shared GPU geometry)
 
 ### 4.0 Physics ownership (v8.4)
 
@@ -99,10 +99,12 @@ passages visible.
 
 The same renderer is used for **all three contexts** (mini, preview, desktop).
 Only the container size and position change.
-Spike and Flame bars use the shared Canvas gradient;
-the data feed and peak physics continue at full cadence while paints are
-capped at roughly 30 Hz. CPU use depends on window size and hardware and
-must be measured on the target desktop.
+All modes use the same native scene-graph geometry backend. FrameAnimation
+drives fixed 60 Hz physics steps with bounded catch-up, independently of audio
+arrivals. Vertex colors provide theme/custom/flame gradients; layered antialiased
+ribbons provide scope and Waves. Settled silent and hidden instances stop their
+frame clock. CPU/GPU acceptance budgets and measurement requirements live in
+GPU_PLAN.md; runtime measurements are required before claiming compliance.
 While the detached desktop is active, the bar suspends its duplicate capture
 engine when the settings preview is closed; opening the preview or closing the
 desktop resumes that feed.
@@ -148,40 +150,34 @@ The bar floor is unconditional (1px) — there is no `minBarHeight` setting.
 
 ## 5. Settings Panel (redesign)
 
-The panel is grouped **by intent**, one concept per control, on a single
-scrollable screen (no slide-out OPTIONS stage):
+The panel uses an opaque theme background and a top-level Spectrum / Waveforms dropdown. Waveforms has a second dropdown
+for Waves (the oscilloscope/audio trace), Strings, and Siri (luminous ribbons). Only relevant controls are shown.
 
-**VISUALIZATIONS**: Two caps-text cards (SPECTRUM / OSCILLOSCOPE) — pick the
-viz first. Artwork is not a viz; it lives in ADVANCED as **Artwork backdrop**.
-No auto-white rule — the Color setting governs bars everywhere.
+- **LOOK** appears for Spectrum: geometry, peaks, and reflection.
+- **COLOR** offers Theme / Custom / Artwork / Flame for Spectrum and
+  Theme / Custom / Flame for Waves,
+  Prism / Custom for Siri, and Original / Custom for Strings. Color editors
+  and presets appear only for Custom or Flame. Custom gradients accept any
+  start/end hex colors and an optional removable middle color. Two-color presets reset to two stops; Peacock supplies editable
+  teal, violet, and gold stops, including for Strings. Flame retains its independent pair. Gradient direction is
+  available for custom Spectrum colors.
+- **MOTION** exposes Response. **FINE TUNING**, collapsed initially, reveals
+  peak fall speed when peaks are enabled, line thickness for Waves and Strings,
+  mini mono, Spectrum linear fall, non-decorative dot grids, and backdrop.
+- **PREVIEW** is last: a 132px live visualization on a pure black canvas,
+  without the atmospheric wash. Clicking it opens the desktop visualizer.
 
-**PREVIEW**: Live visualization (same renderer, larger) + helper text below
-(left-aligned, muted): single-click opens the desktop window.
+Custom middle stops persist as `bar_color_middle_enabled` and
+`bar_color_middle` under `[desktop]`, with backward-compatible defaults.
+All surfaces share these settings and the native renderer.
 
-**LOOK** (Spectrum only): **Geometry** chips — Bars / Spikes / Stacks, one
-exclusive choice (Spikes and Stacks are mutually exclusive) · **Peaks** toggle
-+ **Peak fall speed** slider (the only "drop" control) · **Reflection**.
-
-**COLOR** (all viz): **Color mode** chips — Theme / Custom / Flame, one
-exclusive choice. Flame is a colour *mode*, not a geometry toggle: it lights
-the bar gradient from deep red into the custom tip without touching Geometry.
-**Custom tones** From (base) / To (tip) hex fields (active under Custom and
-Flame, with separate persisted tone pairs) · **Gradient direction** chips — Vertical (bottom→top, default) or
-Horizontal (left→right across the field) · preset swatch row (8 gradients + a
-Fire swatch that selects Flame mode). Custom base is darker and tip lighter;
-Flame uses its own exact base and tip, defaulting to red → yellow.
-Reflection mirror is tinted with the base colour. Theme mode follows the LIVE
-Omarchy accent. Mini Mono overrides this on mini only.
-
-**MOTION**: **Response** slider (writes `[audio] sensitivity`; scales bar
-reactivity AND oscilloscope amplitude with input gain) · **Mono (mini only)**.
-
-**OSCILLOSCOPE** (shown only for the scope viz): **Line thickness** slider.
-
-**ADVANCED** (collapsed by default, "Show"/"Hide"): Linear fall
-(renderer-side, no engine restart) · Dots (static underlay) · Artwork
-backdrop. The legacy `gpu` config key is retained for compatibility but
-does not select a renderer.
+Spectrum Artwork mode (`artwork_colors = true`) extracts three dominant hue
+families from the selected MPRIS cover, sampled once at 48×48 per artwork change.
+It colors bars on all surfaces and adds a cover-derived gradient over the blurred
+desktop backdrop. The backdrop can be disabled independently. Missing, failed,
+or unsupported artwork falls back to the theme; stale replies are discarded.
+The extractor accepts local files and HTTP(S), with a 10-second timeout and
+12 MiB download limit. The settings preview always remains black.
 
 All controls are live-wired via `writeVizOption` / `writeVizOptions`
 (atomic multi-key) / `writeAudioOption` — disk write + instant local update.
@@ -193,8 +189,11 @@ floor is unconditional; Stacks is the canonical key).
 **SOURCE**: Read-only audio source indicator (e.g., "PipeWire · default sink")
 in the persistent footer. The header shows Omaviz and its installed manifest
 version beside the On/Off switch. When Off, content unloads and the panel
-shrinks to the header, helper, and footer. **Exit** disables the plugin via
-`omarchy plugin disable` so its bar widget and engine leave the shell.
+shrinks to the header, helper, and footer. Capture pauses; an open desktop stays
+open with a paused label and media controls. On resumes visualization in place.
+**Exit** stops capture, releases the desktop lease to close its process, then
+unloads the plugin via `omarchy plugin disable`. It does not depend on a settings
+save completing and never quits the shared Omarchy shell.
 
 ---
 
@@ -256,10 +255,12 @@ gpu = true
   delay then `Qt.quit()` (no zombie windowless processes)
 - Desktop window is 600×200; the visualization container is bottom-anchored
   and fills `max(100px, 95% of window height)`
-- No title bar: 68px hover tray fades in on mouse-over (48px artwork
-  thumbnail or same-size fallback, larger monospace track/artist/theme
-  source lines) with a steady 16px × close button; fades out ~200ms
-  after the cursor leaves
+- No title bar: an inset 88px now-playing card fades in on hover, with 64px
+  artwork (independent of backdrop), source, title, artist, and close action.
+  Play/pause appears only when the selected MPRIS player supports the current
+  action. Actions have keyboard and accessibility support; the card fades
+  after leaving the window.
+
 
 ---
 
@@ -298,13 +299,47 @@ omaviz/  (repo root IS the plugin — manifest.json lives here)
 | 1 | Single-package plugin (QML + bundled native engine) | Shipped | 100% |
 | 2 | Zero-build drop-in install | Shipped | 100% |
 | 3 | PipeWire audio capture → 32-band spectrum | Shipped | 100% |
-| 4 | Mini bar visualizer (Canvas-2D) | Shipped | 100% |
+| 4 | Mini bar visualizer (GPU geometry) | Shipped | 100% |
 | 5 | Settings panel (peaks toggle, peak fall speed) | Shipped | 100% |
 | 6 | Read-only audio source indicator | Shipped | 100% |
-| 7 | Desktop detach window (Canvas-2D) | Shipped | 100% |
+| 7 | Desktop detach window (GPU geometry) | Shipped | 100% |
 | 8 | Detach/Attach toggle with mini pause | Shipped | 100% |
 | 9 | Peak-hold markers with configurable falloff | Shipped | 100% |
 | 10 | Theme-dominant gradient colors | Shipped | 100% |
 | 11 | TDD: engine (Rust) + plugin (node) suites green | Shipped | 100% |
-| 12 | GPU/ShaderEffect visuals | Removed (Canvas-only) | — |
+| 12 | Shared GPU geometry + Waves | Implementation; acceptance tracked in GPU_PLAN.md | Pending verification |
 | 13 | Additional backends (PulseAudio/JACK/ALSA) | Planned | 0% |
+
+### Native renderer packaging (8.5)
+
+`native/libomavizrenderer.so` and `native/qmldir` ship with every install.
+Build with `./build.sh` using Qt 6.11+ development files and CMake. The shipped
+binary targets Linux x86_64 and Qt 6.11+ public APIs. VisualCanvas.qml remains
+the only surface-facing rendering API; renderer/geometry.cpp implements its
+shared GPU drawing. The legacy `gpu` key does not switch rendering paths.
+
+`[desktop] visual = "Bars" | "Waves" | "Strings" | "Siri"` selects the mode.
+When absent or invalid, legacy `scope = true` selects Waves, otherwise
+Bars. Explicit visual takes precedence. UI selection writes visual and the
+legacy scope flag atomically. All three waveform modes request the engine wave
+feed. Strings leaves the background transparent and drives individual strand
+amplitude from spectral bands. Each strand's carrier remains fixed in x;
+audio excites standing vibration and adds small local
+motion from waveform samples, without horizontal phase travel.
+The common waveform thickness control affects Waves and Strings. Legacy
+`Oscilloscope` values migrate to Waves; the former layered Waves renderer is retired.
+Siri uses audio-driven translucent sheets with antialiased glowing edges around
+a central axis, rendered by the same native mesh on all surfaces. Its noise-gated,
+perceptually compressed envelope makes quiet music visible without animating silence.
+Siri boosts vertical response below 48px so quiet playback remains legible in the mini.
+Strings uses eight strands below 48px height and sixteen elsewhere. Waves preserves
+the PCM trace with bounded, smoothed display gain for quiet signals. Native geometry
+nodes are created only once drawable data exists and recreated on mode changes
+to reset envelopes and triangle/strip topology.
+
+Desktop config and lease paths resolve directly from Quickshell's XDG/HOME
+environment on both surfaces. Completed FileView loads apply fresh settings;
+100ms polling remains the fallback. Waveform-feed restarts wait for engine exit.
+A passive parent HoverHandler observes the whole desktop content tree, keeping
+controls visible over child buttons. Playback uses explicit pause/play capabilities
+and retains the controlled player after pausing.

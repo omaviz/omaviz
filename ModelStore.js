@@ -218,6 +218,10 @@ function readConfigFromText(tomlText) {
   d.mono = readTomlValue(tomlText, "desktop", "mono") === "true"
   d.linearFall = readTomlValue(tomlText, "desktop", "linear_fall") !== "false"
   d.scope = readTomlValue(tomlText, "desktop", "scope") === "true"
+  var visual = readTomlValue(tomlText, "desktop", "visual")
+  d.visual = visual === "Oscilloscope" || visual === "Wave" ? "Waves"
+    : ["Bars", "Waves", "Strings", "Siri"].indexOf(visual) >= 0
+    ? visual : (d.scope ? "Waves" : "Bars")
   // artwork_mode RETIRED (merged into Spectrum + Artwork-backdrop toggle): an
   // old artwork_mode=true means "spectrum bars with the backdrop on". The key
   // stays READABLE so old configs migrate, but it is never written again and
@@ -228,6 +232,9 @@ function readConfigFromText(tomlText) {
   // Invalid values fall back to the theme pair (never break rendering).
   d.barColorCustom = readTomlValue(tomlText, "desktop", "bar_color_custom") === "true"
   d.barColorFrom = readTomlValue(tomlText, "desktop", "bar_color_from") || "#e68e0d"
+  d.artworkColors = readTomlValue(tomlText, "desktop", "artwork_colors") === "true"
+  d.barColorMiddleEnabled = readTomlValue(tomlText, "desktop", "bar_color_middle_enabled") === "true"
+  d.barColorMiddle = readTomlValue(tomlText, "desktop", "bar_color_middle") || "#a855f7"
   d.barColorTo = readTomlValue(tomlText, "desktop", "bar_color_to") || "#f59e0b"
   if (!isHexColor(d.barColorFrom)) d.barColorFrom = "#e68e0d"
   if (!isHexColor(d.barColorTo)) d.barColorTo = "#f59e0b"
@@ -262,8 +269,11 @@ function defaultConfig() {
     themeTop: "#f59e0b",
     fire: false, fireColorFrom: "#be1400", fireColorTo: "#fde047",
     peaks: true, peakFalloff: 0.1, peakSustainMs: 100, spikes: false, stacks: false, mono: false,
-    linearFall: true, scope: false, artwork: false, scopeThickness: 2, dots: true, reflect: true,
+    linearFall: true, scope: false, visual: "Bars", artwork: false, scopeThickness: 2, dots: true, reflect: true,
     barColorCustom: false, barColorFrom: "#e68e0d", barColorTo: "#f59e0b",
+    artworkColors: false,
+    barColorMiddleEnabled: false,
+    barColorMiddle: "#a855f7",
     barGradientDir: "vertical",
     themeAccent: "#f59e0b",
     gpu: true,
@@ -334,6 +344,7 @@ var KEY_SPEC = [
   ["mono", "desktop", "mono", "bool"],
   ["linearFall", "desktop", "linear_fall", "bool"],
   ["scope", "desktop", "scope", "bool"],
+  ["visual", "desktop", "visual", "str"],
   ["scopeThickness", "desktop", "scope_thickness", "num"],
   ["dots", "desktop", "dots", "bool"],
   ["reflect", "desktop", "reflect", "bool"],
@@ -343,6 +354,9 @@ var KEY_SPEC = [
   ["fireColorTo", "desktop", "fire_color_to", "str"],
   ["barColorCustom", "desktop", "bar_color_custom", "bool"],
   ["barColorFrom", "desktop", "bar_color_from", "str"],
+  ["artworkColors", "desktop", "artwork_colors", "bool"],
+  ["barColorMiddleEnabled", "desktop", "bar_color_middle_enabled", "bool"],
+  ["barColorMiddle", "desktop", "bar_color_middle", "str"],
   ["barColorTo", "desktop", "bar_color_to", "str"],
   ["barGradientDir", "desktop", "bar_gradient_dir", "str"],
   ["gpu", "desktop", "gpu", "bool"],
@@ -432,11 +446,15 @@ function validate(prop, value) {
     case "fireColorFrom":
     case "fireColorTo":
     case "barColorFrom":
+    case "barColorMiddle":
     case "barColorTo":
     case "themeBottom":
     case "themeTop":
     case "themeAccent":
       return isHexColor(value) ? value : null   // null => caller keeps old value
+    case "visual":
+      return value === "Oscilloscope" || value === "Wave" ? "Waves"
+        : ["Bars", "Waves", "Strings", "Siri"].indexOf(value) >= 0 ? value : "Bars"
     case "barGradientDir":
       return value === "horizontal" ? "horizontal" : "vertical"
     default:

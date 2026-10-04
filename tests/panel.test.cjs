@@ -23,7 +23,7 @@ function descriptions() {
 const count = (re) => (src.match(re) || []).length
 
 test("panel is grouped by intent with the expected section headers", () => {
-  for (const h of ["VISUALIZATIONS", "PREVIEW", "LOOK", "COLOR", "MOTION", "OSCILLOSCOPE"]) {
+  for (const h of ["VISUALIZATIONS", "PREVIEW", "LOOK", "COLOR", "MOTION", "WAVEFORM"]) {
     assert.ok(src.includes(`PanelSectionHeader { text: "${h}" }`), `missing ${h} group`)
   }
 })
@@ -43,8 +43,9 @@ test("sliders live in shell-styled boxes", () => {
   assert.ok(src.includes("Style.controlFill(false, false,"))
 })
 
-test("only VizCard + preview use the flat popup fill", () => {
-  assert.equal(count(/Color\.popups\.background/g), 2)
+test("preview has an opaque dark background", () => {
+  assert.ok(src.includes('color: "#000000"'))
+  assert.ok(src.indexOf('text: "PREVIEW"') > src.indexOf('text: "FINE TUNING"'))
 })
 
 test("geometry is ONE exclusive choice via chips (Bars / Spikes / Stacks)", () => {
@@ -58,12 +59,13 @@ test("geometry is ONE exclusive choice via chips (Bars / Spikes / Stacks)", () =
 })
 
 test("colour mode is ONE exclusive choice via chips (Theme / Custom / Flame)", () => {
-  for (const c of ["Theme", "Custom", "Flame"]) {
+  assert.ok(src.includes('chipLabel: root.isStrings ? "Original" : root.isSiri ? "Prism" : "Theme"'))
+  for (const c of ["Custom", "Flame"]) {
     assert.ok(src.includes(`chipLabel: "${c}"`), `missing ${c} chip`)
   }
   // Flame is a colour mode: it sets fire=true and does NOT touch geometry.
   const flame = src.slice(src.indexOf('chipLabel: "Flame"'), src.indexOf('chipLabel: "Flame"') + 260)
-  assert.ok(flame.includes('writeVizOption("fire", true)'), "Flame must set fire")
+  assert.ok(flame.includes('setColorMode("Flame")'), "Flame must set fire")
   assert.ok(!flame.includes('"spikes"') && !flame.includes('"stacks"'), "Flame must not touch geometry")
 })
 

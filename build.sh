@@ -27,3 +27,7 @@ mv -f "$OUT_BIN.new" "$OUT_BIN"
 chmod +x "$OUT_BIN"
 
 echo "engine -> $OUT_BIN"
+
+# Build the shared Qt Quick geometry module shipped beside the QML.
+cmake -S "$SRC/renderer" -B "$SRC/renderer/build" -DCMAKE_BUILD_TYPE=Release
+cmake --build "$SRC/renderer/build" --parallel 2

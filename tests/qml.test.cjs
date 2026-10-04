@@ -69,12 +69,9 @@ test("every surface binds the SAME physics properties (identical fall)", () => {
 
 test("VisualCanvas renders the release envelope, never the raw frame", () => {
   const src = read("VisualCanvas.qml")
-  // Bars must be painted from _barArr (the envelope), not from bands[...].
-  assert.ok(src.includes("var v = _barArr[i] || 0"), "bar body must paint from _barArr")
-  assert.ok(src.includes("var mv = _barArr[m] || 0"), "reflection must paint from _barArr")
-  // And the old silent->0 hard-zero must be gone from the paint paths.
+  assert.ok(src.includes('cv.visual === "Strings" ? cv.bands : cv._barArr'),
+    "spectrum uses release envelopes while Strings receives distinct frequency drives")
   assert.ok(!/silent \? 0/.test(src), "silent must not hard-zero bars")
-  // Physics delegated to the tested module.
   assert.ok(src.includes('import "Physics.js" as Physics'))
   assert.ok(src.includes("Physics.step("))
 })
@@ -128,21 +125,12 @@ test("no QML component declares the same property twice in one scope", () => {
 // REGRESSION: the bar body was filled with a gradient built from fireColorAt()
 // in EVERY mode. The fire ramp's base is hardcoded deep red, which is why the
 // base bar colour was always red regardless of theme or custom colours.
-test("bar body gradient is palette-derived unless Fire is on", () => {
+test("GPU palette keeps theme/custom colors separate from flame colors", () => {
   const src = read("VisualCanvas.qml")
-  assert.ok(src.includes("sharedGrad.addColorStop(0, _plainLUT[0])"),
-    "non-fire bar gradient must come from the palette LUT")
-  assert.ok(src.includes("sharedGrad.addColorStop(1, _plainLUT[100])"))
-  // fireColorAt may only feed the gradient inside the fire branch.
-  const grad = src.slice(src.indexOf("var sharedGrad = null"), src.indexOf("if (useFlat) { ctx.fillStyle"))
-  const fireStops = (grad.match(/sharedGrad\.addColorStop\([^)]*fireColorAt\(/g) || []).length
-  const palStops = (grad.match(/sharedGrad\.addColorStop\([^)]*_plainLUT\[/g) || []).length
-  assert.ok(grad.includes("if (fire) {"), "fire colour must be guarded by `if (fire)`")
-  assert.equal(fireStops, 3, `expected 3 fire gradient stops, got ${fireStops}`)
-  assert.equal(palStops, 3, `expected 3 palette gradient stops, got ${palStops}`)
-  // and the palette LUT must be built from the theme/custom pair
-  const pal = src.slice(src.indexOf("function _rebuildPalette"), src.indexOf("function _lutIdx"))
-  assert.ok(pal.includes("_palBot = [bq.r, bq.g, bq.b]") && pal.includes("_palTop = [tq.r, tq.g, tq.b]"))
+  assert.ok(src.includes("cv.artReady ? cv.artworkPalette[0] : cv.customMode ? cv.barColorFrom : cv.themeBottom"))
+  assert.ok(src.includes("fireBottom: cv.fireColorFrom, fireTop: cv.fireColorTo"))
+  const geometry = read("renderer/geometry.cpp")
+  assert.ok(geometry.includes("if(!fire) return mix(bottom,top,t)"))
 })
 
 // REGRESSION: Panel.vizEnabled read Store.sharedConfig (a non-observable JS
@@ -161,7 +149,7 @@ test("BarWidget routes every config load through syncFromConfig", () => {
   assert.ok(src.includes("function syncFromConfig(txt)"))
   // exactly ONE place assigns root.config (inside syncFromConfig)
   assert.equal((src.match(/root\.config = Store\.loadFromTOML\(/g) || []).length, 1)
-  for (const call of ["onLoaded: root.syncFromConfig", "onFileChanged: root.syncFromConfig"]) {
+  for (const call of ["root._configReady = true; root.syncFromConfig", "onFileChanged: root.syncFromConfig"]) {
     assert.ok(src.includes(call), `missing ${call}`)
   }
 })
