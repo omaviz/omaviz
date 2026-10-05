@@ -1,24 +1,6 @@
 .pragma library
 
-// ModelStore.js — shared singleton for the omaviz Omarchy plugin.
-//
-// Renamed from Model.js (v8.4). .pragma library makes this a SINGLETON:
-// BarWidget.qml, Panel.qml and Desktop.qml import it as
-// `import "ModelStore.js" as Store`, so they all share ONE instance — the
-// bar's spectrum Process writes into Store.spectrumData and the panel reads
-// the same object.
-//
-// Responsibilities
-//   * paths (config.toml, engine binary)
-//   * TOML read/write helpers (section-aware, conservative in-place writes)
-//   * config model: defaults -> parse -> validate
-//   * a small reactive store: get/set/onChanged + loadFromTOML, so settings
-//     flow  UI -> store -> TOML  and  TOML -> store -> UI  through one funnel
-//   * spectrum frame parsing
-//
-// Back-compat: every function the old Model.js exported still exists here
-// (readConfigFromText, writeConfigKey, defaultConfig, parseSpectrumLine,
-// isHexColor, ...) so the migration is a pure rename.
+// Pure settings, path, and frame helpers. QML components own runtime state.
 
 // ---- Paths ----
 // Resolve the user's home WITHOUT a hardcoded username: a literal home path
@@ -363,32 +345,6 @@ var KEY_SPEC = [
 ]
 var SECTION_ORDER = ["audio", "mini", "desktop"]
 
-function _specFor(prop) {
-  for (var i = 0; i < KEY_SPEC.length; i++) {
-    if (KEY_SPEC[i][0] === prop) return KEY_SPEC[i]
-  }
-  return null
-}
-
-// Normalise a store path: accepts either a bare property ("peaks") or a
-// dotted "section.prop" form ("desktop.peaks"); returns the bare property.
-function normalizePath(path) {
-  var p = String(path)
-  var dot = p.lastIndexOf(".")
-  if (dot >= 0) p = p.slice(dot + 1)
-  return p
-}
-
-function sectionFor(prop) {
-  var s = _specFor(normalizePath(prop))
-  return s ? s[1] : "desktop"
-}
-
-function tomlKeyFor(prop) {
-  var s = _specFor(normalizePath(prop))
-  return s ? s[2] : normalizePath(prop)
-}
-
 function _tomlValue(v, kind) {
   if (kind === "bool") return (v === true || v === "true") ? "true" : "false"
   if (kind === "str") return JSON.stringify(String(v))
@@ -401,7 +357,7 @@ function _tomlValue(v, kind) {
 // Used for fresh installs and tests; incremental UI writes go through
 // writeConfigKey instead so user comments/keys survive.
 function toTOML(cfg) {
-  var src = cfg || _state || defaultConfig()
+  var src = cfg || defaultConfig()
   var out = ""
   for (var s = 0; s < SECTION_ORDER.length; s++) {
     var sec = SECTION_ORDER[s]
@@ -417,160 +373,20 @@ function toTOML(cfg) {
   return out
 }
 
-// Validate + coerce a single property value. Returns the sanitized value.
-// Unknown props pass through unchanged (forward compatible).
-function validate(prop, value) {
-  var p = normalizePath(prop)
-  switch (p) {
-    case "sensitivity": {
-      var s = Number(value); if (s !== s || s < 0.1) s = 1.0; if (s > 4) s = 4; return s
-    }
-    case "bands": {
-      var b = Math.round(Number(value)); if (b !== b || b < 4) b = 32; if (b > 512) b = 512; return b
-    }
-    case "gap": {
-      var g = Number(value); if (g !== g || g < 0) g = 1; return g
-    }
-    case "widthScale": {
-      var w = Number(value); if (w !== w || w < 0.5 || w > 4) w = 1.5; return w
-    }
-    case "peakFalloff": {
-      var f = Number(value); if (f !== f || f < 0) f = 0; if (f > 1) f = 1; return f
-    }
-    case "peakSustainMs": {
-      var m = Number(value); if (m !== m || m < 0) m = 0; if (m > 1000) m = 1000; return m
-    }
-    case "scopeThickness": {
-      var t = Number(value); if (t !== t || t < 1) t = 1; if (t > 5) t = 5; return t
-    }
-    case "fireColorFrom":
-    case "fireColorTo":
-    case "barColorFrom":
-    case "barColorMiddle":
-    case "barColorTo":
-    case "themeBottom":
-    case "themeTop":
-    case "themeAccent":
-      return isHexColor(value) ? value : null   // null => caller keeps old value
-    case "visual":
-      return value === "Oscilloscope" || value === "Wave" ? "Waves"
-        : ["Bars", "Waves", "Strings", "Siri"].indexOf(value) >= 0 ? value : "Bars"
-    case "barGradientDir":
-      return value === "horizontal" ? "horizontal" : "vertical"
-    default:
-      if (typeof value === "boolean") return value
-      if (value === "true") return true
-      if (value === "false") return false
-      return value
-  }
-}
-
-// ---- Reactive store ----
-// _state is the live config object. loadFromTOML REPLACES it (a fresh object)
-// so QML `property var config: Store.state()` consumers see the change and
-// re-evaluate their bindings; it RETURNS the new object so callers can do
-// `root.config = Store.loadFromTOML(txt)` (the old Model.js returned nothing
-// here, which blanked the config and killed the widget).
-var _state = defaultConfig()
-var _listeners = {}   // prop -> [cb];  "*" -> [cb] for every change
-var revision = 0      // bumped on every state change (bind to force updates)
-
-function state() {
-  return _state
-}
-
-function get(path) {
-  var p = normalizePath(path)
-  return _state[p]
-}
-
-// Update one property. Returns true when the value actually changed.
-// NOTE: UI reactivity flows through the TOML file (write -> FileView change
-// -> loadFromTOML -> fresh state object). set() is the in-memory half used by
-// the panel preview and by tests; it also bumps `revision`.
-function set(path, value) {
-  var p = normalizePath(path)
-  var v = validate(p, value)
-  if (v === null) return false          // invalid color: keep old value
-  if (_state[p] === v) return false
-  _state[p] = v
-  revision++
-  _notify(p, v)
-  return true
-}
-
-function onChanged(path, cb) {
-  var p = normalizePath(path)
-  if (!_listeners[p]) _listeners[p] = []
-  _listeners[p].push(cb)
-  return _listeners[p].length - 1
-}
-
-function _notify(p, v) {
-  var ls = _listeners[p]
-  if (ls) { for (var i = 0; i < ls.length; i++) ls[i](v, p) }
-  var all = _listeners["*"]
-  if (all) { for (var j = 0; j < all.length; j++) all[j](v, p) }
-}
-
-// Parse TOML text, replace the store state, notify every listener and return
-// the new state object (never undefined).
-function loadFromTOML(tomlText) {
-  _state = readConfigFromText(tomlText)
-  // Keep the legacy shared-config view in step: the panel used to bind to
-  // sharedConfig.enabled, which never changed because loadFromTOML only
-  // replaced _state. That made the ON/OFF control show a stale value on the
-  // first load (the "settings don't sync on first try" bug).
-  sharedConfig.enabled = _state.enabled !== false
-  revision++
-  var all = _listeners["*"]
-  if (all) { for (var j = 0; j < all.length; j++) all[j](_state, "*") }
-  return _state
-}
-
-// ---- Spectrum ----
-
-// Shared state singleton — survives BarWidget noteWrite without re-binding
-// Panel's hcfg copy.
-var sharedConfig = {
-  enabled: true
-}
-
-// Holds the latest spectrum frame (updated by QML Process stdout).
-var spectrumData = {
-  bands: [],
-  wave: [],
-  energy: 0,
-  beat: 0,
-  silent: true,
-  source: "",
-  seq: 0,
-  t: 0
-}
-
-// Parse a JSON line from spectrum-bridge / omaviz-engine stdout.
-function parseSpectrumLine(jsonLine) {
+// Shared protocol boundary: ignore malformed/nonfinite samples while accepting
+// old frames whose optional metadata is absent.
+function decodeFrame(line) {
   try {
-    var data = JSON.parse(jsonLine)
-    // Oscilloscope feed: standalone {wave:[...]} line (see --wave).
-    if (data && Array.isArray(data.wave) && !Array.isArray(data.bands)) {
-      spectrumData.wave = data.wave
-      return
-    }
-    if (data && Array.isArray(data.bands)) {
-      spectrumData.bands = data.bands
-      spectrumData.energy = data.energy !== undefined ? data.energy : 0
-      spectrumData.beat = data.beat !== undefined ? data.beat : 0
-      spectrumData.silent = data.silent === true
-      if (data.t !== undefined) spectrumData.t = data.t
-      spectrumData.seq++
-      if (typeof data.source === "string" && data.source.length > 0) {
-        spectrumData.source = data.source
-      }
-    }
-  } catch (e) {
-    // malformed line — skip
-  }
+    var frame = JSON.parse(String(line))
+    if (!frame || typeof frame !== "object") return null
+    var samples = Array.isArray(frame.bands) ? frame.bands : frame.wave
+    if (!Array.isArray(samples) || samples.length > 4096) return null
+    for (var i = 0; i < samples.length; i++)
+      if (typeof samples[i] !== "number" || !isFinite(samples[i])) return null
+    if (!Array.isArray(frame.bands)) return { wave: samples }
+    return { bands: samples, silent: frame.silent === true,
+      source: typeof frame.source === "string" ? frame.source : "" }
+  } catch (e) { return null }
 }
 
 // Friendly, capitalized label for an audio backend name. Used by the panel's
@@ -593,21 +409,11 @@ function isDesktopActiveFromText(tomlText) {
   return readTomlValue(tomlText, "desktop", "active") === "true"
 }
 
-// Write enabled flag to config TOML (QML-visible)
-function writeEnabled(value, tomlText) {
-  sharedConfig.enabled = value
-  set("enabled", value)
-  return writeConfigKey(tomlText || "", "desktop", "enabled", value)
-}
-
-function getSharedConfig() {
-  return sharedConfig
-}
-
 // ---- Module exports ----
 if (typeof module !== "undefined") {
   module.exports = {
     configPath: configPath,
+    decodeFrame: decodeFrame,
     engineBin: engineBin,
     readTomlValue: readTomlValue,
     readTomlTopKey: readTomlTopKey,
@@ -618,24 +424,7 @@ if (typeof module !== "undefined") {
     defaultConfig: defaultConfig,
     writeConfigKey: writeConfigKey,
     toTOML: toTOML,
-    validate: validate,
-    normalizePath: normalizePath,
-    sectionFor: sectionFor,
-    tomlKeyFor: tomlKeyFor,
-    KEY_SPEC: KEY_SPEC,
-    state: state,
-    get: get,
-    set: set,
-    onChanged: onChanged,
-    loadFromTOML: loadFromTOML,
-    parseSpectrumLine: parseSpectrumLine,
-    spectrumData: spectrumData,
     sourceLabel: sourceLabel,
     isDesktopActiveFromText: isDesktopActiveFromText,
-    writeEnabled: writeEnabled,
-    getSharedConfig: getSharedConfig,
-    // live bindings (module-level vars) for QML consumers
-    get revision() { return revision },
-    get sharedConfigRef() { return sharedConfig }
   }
 }

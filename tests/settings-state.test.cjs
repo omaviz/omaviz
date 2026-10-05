@@ -14,44 +14,6 @@ function method(source, name) {
   assert.ok(match, `missing ${name}`);
   return match[0];
 }
-function harness() {
-  let disk = Store.toTOML(Store.defaultConfig());
-  const writes = [];
-  const root = {_lastWriteText: '', _writingText: '', _writeBusy: false};
-  const ctx = vm.createContext({Store, root,
-    configFile: {text: () => disk},
-    detachConfigWrite: {setText: text => writes.push(text)}});
-  root.syncFromConfig = text => {root.config = Store.readConfigFromText(text)};
-  for (const name of ['readGuarded', 'noteWrite', 'flushSettings', 'writeVizOptions', 'writeVizOption', 'writeVizOptions3']) {
-    vm.runInContext(method(bar, name), ctx);
-    root[name] = ctx[name];
-  }
-  return {root, writes, setDisk: text => {disk = text}};
-}
-
-test('rapid selections merge while an async settings write is in flight', () => {
-  const {root, writes, setDisk} = harness();
-  root.writeVizOption('peaks', false);
-  root.writeVizOption('reflect', false);
-  root.writeVizOptions3('fire', false, 'bar_color_custom', true, 'bar_color_from', '#112233', 'bar_color_to', '#aabbcc');
-  assert.equal(writes.length, 1, 'only one write may be in flight');
-  assert.equal(root.config.peaks, false);
-  assert.equal(root.config.reflect, false);
-  setDisk(writes[0]);
-  assert.equal(Store.readConfigFromText(root.readGuarded()).barColorTo, '#aabbcc', 'stale poll must not reset latest choice');
-  root._writeBusy = false; // first save completes; flush latest merged state
-  root.flushSettings();
-  assert.equal(writes.length, 2);
-  setDisk(writes[1]);
-  root._writeBusy = false;
-  const saved = Store.readConfigFromText(root.readGuarded());
-  assert.equal(saved.peaks, false);
-  assert.equal(saved.reflect, false);
-  assert.equal(saved.barColorTo, '#aabbcc');
-  assert.equal(root._lastWriteText, '', 'acknowledged writes release the optimistic guard');
-  assert.match(writes[1], /peaks = false\n/, 'persist native TOML booleans');
-});
-
 test('desktop heartbeats cannot overwrite persistent settings', () => {
   const source = read('Desktop.qml');
   const writes = [];
@@ -67,31 +29,6 @@ test('desktop heartbeats cannot overwrite persistent settings', () => {
   assert.ok(!source.includes('cfgWrite.setText('), 'desktop settings reader must stay read-only');
 });
 
-test('bar capture pauses behind the detached window and resumes for preview or mini', () => {
-  const spectrumProc = {running: true};
-  let retriesStopped = 0;
-  const root = {vizEnabled: true, desktopLive: false, opened: false, _intentionalFeedStop: false};
-  const ctx = vm.createContext({root, spectrumProc, bridgeRetryTimer: {stop: () => {retriesStopped++}}});
-  for (const name of ['wantsFeed', 'syncBarFeed']) {
-    vm.runInContext(method(bar, name), ctx);
-    root[name] = ctx[name];
-  }
-  root.desktopLive = true;
-  root.syncBarFeed();
-  assert.equal(spectrumProc.running, false);
-  assert.equal(root._intentionalFeedStop, true);
-  assert.equal(retriesStopped, 1);
-  root.opened = true;
-  root.syncBarFeed();
-  assert.equal(spectrumProc.running, false, 'wait for the stopped process to exit');
-  root._intentionalFeedStop = false; // onExited clears the latch before resuming
-  root.syncBarFeed();
-  assert.equal(spectrumProc.running, true, 'opening settings must restore the live preview');
-  root.opened = false;
-  root.desktopLive = false;
-  root.syncBarFeed();
-  assert.equal(spectrumProc.running, true, 'closing the desktop must restore the mini');
-});
 
 test('Flame palette inputs stay independent of the custom/theme palette', () => {
   const renderer = read('VisualCanvas.qml');
@@ -107,7 +44,7 @@ test('theme snapshot cannot replace saved settings before initial config load', 
   const root = {_ready: true, _configReady: false, config: {}, colorHex: () => '#112233',
     readGuarded: () => { throw new Error('read before config is ready'); },
     writeVizOptions3: () => { writes++; }};
-  const ctx = vm.createContext({root, Color: {accent: '#112233'}});
+  const ctx = vm.createContext({root, settingsDocument: {ready:false}, Color: {accent: '#112233'}});
   vm.runInContext(method(read('BarWidget.qml'), 'snapThemeColors'), ctx);
   ctx.snapThemeColors();
   assert.equal(writes, 0);
@@ -132,22 +69,6 @@ test('color modes are exclusive and preserve custom palette values', () => {
 });
 
 
-test('desktop applies loaded settings, pauses without closing, and restarts for waveform feed', () => {
-  const bridge = {running: true};
-  const win = {_lastCfgText: '', _lastScope: false, _claimed: true, _closing: false, _restarting: false};
-  const ctx = vm.createContext({win, bridge, Store, bridgeRetryTimer: {stop() {}}});
-  vm.runInContext(method(read('Desktop.qml'), 'applySettings'), ctx);
-  ctx.applySettings('[desktop]\nvisual = "Siri"\nenabled = true');
-  assert.equal(win.vizConfig.visual, 'Siri');
-  assert.equal(bridge.running, false);
-  assert.equal(win._restarting, true);
-  win._restarting = false; bridge.running = true;
-  ctx.applySettings('[desktop]\nvisual = "Siri"\nenabled = false');
-  assert.equal(bridge.running, false);
-  assert.equal(win._closing, false);
-  ctx.applySettings('[desktop]\nvisual = "Siri"\nenabled = true');
-  assert.equal(bridge.running, true);
-});
 
 test('playback stays on the controlled player and supports pause then play', () => {
   let pauses=0, plays=0;
@@ -160,40 +81,18 @@ test('playback stays on the controlled player and supports pause then play', () 
   assert.equal(pauses,1); assert.equal(plays,1); assert.equal(win.preferredPlayer,player);
 });
 
-test('Exit stops capture and requests desktop close independently of settings saves', () => {
-  let stopped=0, closed=0, delayed=0, lease=null;
-  const root={_exitRequested:false, close(){closed++}, writeDesktopActive(v){lease=v}};
-  const spectrumProc={running:true};
-  const ctx=vm.createContext({root,spectrumProc,bridgeRetryTimer:{stop(){stopped++}},exitDelay:{restart(){delayed++}}});
-  vm.runInContext(method(bar,'requestExit'),ctx);
-  ctx.requestExit(); ctx.requestExit();
-  assert.equal(spectrumProc.running,false);
-  assert.equal(lease,false); assert.equal(stopped,1); assert.equal(closed,1); assert.equal(delayed,1);
-});
 
-test('bar mode changes wait for capture exit and honor Off during restart', () => {
-  const transitions = [];
-  let running = true;
-  const spectrumProc = { get running() { return running }, set running(v) { running=v; transitions.push(v) } };
-  const root = {vizEnabled:true, desktopLive:false, opened:false, _restarting:false, _exitRequested:false};
-  const ctx = vm.createContext({root, spectrumProc, Store:{spectrumData:{wave:[]}}, bridgeRetryTimer:{stop(){}, restart(){}}});
-  for (const name of ['wantsFeed', 'syncBarFeed', 'restartSpectrum']) {
-    vm.runInContext(method(bar, name),ctx); root[name]=ctx[name];
+
+// SettingsQueue and the bounded real-QML component harness cover asynchronous
+// writes and capture transitions shared by both surfaces.
+test('waveform selections and multi-stop palettes survive settings round trips', () => {
+  for (const visual of ['Bars','Waves','Strings','Siri']) {
+    const config = {...Store.defaultConfig(), visual, barColorMiddleEnabled:true,
+      barColorMiddle:'#12abcd', artworkColors:true};
+    const saved = Store.readConfigFromText(Store.toTOML(config));
+    assert.equal(saved.visual,visual);
+    assert.equal(saved.barColorMiddle,'#12abcd');
+    assert.equal(saved.barColorMiddleEnabled,true);
+    assert.equal(saved.artworkColors,true);
   }
-  const handler=bar.match(/    onExited: function\(code, status\) \{([^]*?)^    \}/m);
-  assert.ok(handler);
-  vm.runInContext('function exited(code,status) {'+handler[1]+'}',ctx);
-  root.restartSpectrum(); root.syncBarFeed(); root.restartSpectrum();
-  assert.deepEqual(transitions,[false], 'do not start while the previous capture is stopping');
-  ctx.exited(0,0);
-  assert.deepEqual(transitions,[false,true], 'resume only after exit');
-  root.restartSpectrum(); root.vizEnabled=false; ctx.exited(0,0);
-  assert.equal(spectrumProc.running,false,'Off while stopping must suppress restart');
-  root.vizEnabled=true; root.syncBarFeed();
-  assert.equal(spectrumProc.running,true,'On starts capture again');
-  root.vizEnabled=false; root.syncBarFeed();
-  root.vizEnabled=true; root.syncBarFeed();
-  assert.equal(spectrumProc.running,false,'rapid Off/On waits for intentional stop');
-  ctx.exited(0,0);
-  assert.equal(spectrumProc.running,true,'intentional stop exit resumes the current desired state');
 });

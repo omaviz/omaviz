@@ -63,7 +63,7 @@ check "our launcher installed"          "[ -f \"$(LAUNCHER)\" ]"
 # pattern, so it used to be copied into the plugin dir. Nothing dev-only may
 # ship inside the plugin.
 check "no dev-only files leaked into the plugin dir" \
-  "[ ! -e \"$(PD)/.git\" ] && [ ! -e \"$(PD)/.gitignore\" ] && [ ! -e \"$(PD)/package.json\" ] && [ ! -e \"$(PD)/engine\" ] && [ ! -e \"$(PD)/docs\" ] && [ ! -e \"$(PD)/tools\" ]"
+  "[ ! -e \"$(PD)/.git\" ] && [ ! -e \"$(PD)/.gitignore\" ] && [ ! -e \"$(PD)/package.json\" ] && [ ! -e \"$(PD)/engine\" ] && [ ! -e \"$(PD)/docs\" ] && [ ! -e \"$(PD)/tools\" ] && [ ! -e \"$(PD)/tests\" ]"
 check "no repository script is installed" \
   "! ls \"$(PD)\"/*.sh >/dev/null 2>&1"
 

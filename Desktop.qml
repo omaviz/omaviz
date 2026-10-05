@@ -21,31 +21,18 @@ Window {
 
   readonly property string settingsPath: (Quickshell.env("XDG_CONFIG_HOME") || Quickshell.env("HOME") + "/.config") + "/omaviz/config.toml"
   readonly property string leasePath: (Quickshell.env("XDG_CONFIG_HOME") || Quickshell.env("HOME") + "/.config") + "/omaviz/desktop-state.toml"
-  property var spectrumBands: Store.spectrumData.bands
-  property var spectrumWave: []
-  property bool spectrumSilent: Store.spectrumData.silent
-  // Live viz options (peaks/falloff/spikes/fire) — re-parsed on each poll
-  // so settings-panel changes reflect in the open window within ~250ms.
-  property var vizConfig: Store.defaultConfig()
-  function applySettings(txt) {
-    if (!txt || win._closing) return
-    if (txt !== win._lastCfgText) {
-      win._lastCfgText = txt
-      win.vizConfig = Store.loadFromTOML(txt)
+  readonly property var spectrumBands: bridge.bands
+  readonly property var spectrumWave: bridge.wave
+  readonly property bool spectrumSilent: bridge.silent
+  readonly property var vizConfig: settingsDocument.config
+  SettingsDocument {
+    id: settingsDocument
+    path: win.settingsPath
+    pollInterval: 250
+    onReadyChanged: if (ready && !win._claimed && !win._closing) {
+      win._claimed = true
+      win.setDesktopActive(true)
     }
-    var scope = win.vizConfig.visual !== "Bars"
-    if (win.vizConfig.enabled === false) {
-      bridgeRetryTimer.stop()
-      bridge.running = false
-    } else if (scope !== win._lastScope && bridge.running) {
-      win._lastScope = scope
-      win._restarting = true
-      bridge.running = false
-    } else {
-      win._lastScope = scope
-      if (!bridge.running && !win._restarting) bridge.running = true
-    }
-    if (!win._claimed) { win._claimed = true; win.setDesktopActive(true) }
   }
   ArtworkColors { id: coverPalette; active: win.vizConfig.artworkColors === true && win.vizConfig.visual === "Bars" }
   readonly property bool immersiveArt: win.vizConfig.visual === "Bars" && win.vizConfig.artworkColors === true && coverPalette.colors.length >= 3
@@ -76,52 +63,12 @@ Window {
   readonly property bool hasArt: win.trackArt !== "" && win.vizConfig.artwork !== false
   readonly property string playerSource: win.activePlayer ? (win.activePlayer.identity || win.activePlayer.desktopEntry || "") : ""
 
-  Process {
+  EngineFeed {
     id: bridge
-    running: false
-    // Wave snippet is scope-only: Bars mode never reads it, so omit the
-    // flag (and its ~0.7KB/line of JSON.parse) unless scope is on.
-    // Scope is spawn-time, so the bridge restarts when it flips.
-    command: [Store.engineBin, "--bands", "256"].concat(
-      win.vizConfig.visual !== "Bars" ? ["--wave"] : [])
-    stdout: SplitParser {
-      splitMarker: "\n"
-      onRead: function(data) {
-        try {
-          var obj = JSON.parse(String(data).trim())
-          if (obj && Array.isArray(obj.bands)) {
-            win.spectrumBands = obj.bands
-            win.spectrumSilent = obj.silent === true
-            win._bridgeRetries = 0     // a healthy frame resets the backoff
-          } else if (obj && Array.isArray(obj.wave)) {
-            win.spectrumWave = obj.wave
-            win._bridgeRetries = 0
-          }
-        } catch (e) {}
-      }
-    }
-    // Engine death must never permanently kill the desktop window, and must
-    // never become a hot restart loop either: exponential backoff 1.5s -> 30s,
-    // identical to the bar widget's. A deliberate restart (scope flip) is
-    // flagged so it is not counted as a failure.
-    onExited: function(code, status) {
-      if (win._restarting) {
-        win._restarting = false
-        if (!win._closing && win.vizConfig.enabled !== false) bridge.running = true
-        return
-      }
-      if (!win.visible || win._closing || win.vizConfig.enabled === false) return
-      win._bridgeRetries++
-      bridgeRetryTimer.interval = Math.min(30000, 1500 * win._bridgeRetries)
-      bridgeRetryTimer.restart()
-    }
+    active: settingsDocument.ready && win.vizConfig.enabled !== false && !win._closing
+    waveEnabled: win.vizConfig.visual !== "Bars"
+    bandCount: 256
   }
-
-  property int _bridgeRetries: 0
-  property bool _restarting: false
-  Timer { id: bridgeRetryTimer; interval: 1500; repeat: false; onTriggered: if (!win._closing && win.vizConfig.enabled !== false) bridge.running = true }
-
-
 
   // A passive parent handler observes the whole content tree, including buttons.
   // Keyboard access must also reveal the otherwise hover-only controls.
@@ -441,14 +388,6 @@ Window {
 
   // Heartbeats have their own file: this window only READS settings.
   FileView {
-    id: cfgWrite
-    path: win.settingsPath
-    watchChanges: true
-    onFileChanged: reload()
-    onLoaded: win.applySettings(text() || (win._claimed ? "" : Store.toTOML(Store.defaultConfig())))
-    onLoadFailed: if (!win._claimed) win.applySettings(Store.toTOML(Store.defaultConfig()))
-  }
-  FileView {
     id: desktopState
     path: win.leasePath
     printErrors: false
@@ -465,17 +404,13 @@ Window {
     onTriggered: win.setDesktopActive(true)
   }
   function setDesktopActive(v) {
-    if (!v) { win._closing = true; bridgeRetryTimer.stop(); bridge.running = false }
+    if (!v) { win._closing = true }
     desktopState.setText("[desktop]\nactive = " + v + "\nheartbeat = " + Date.now() + "\n")
   }
   // Claim the shared flag once config text is available (covers
   // app-launcher + keybind paths that bypass BarWidget's detach()).
   property bool _claimed: false
   property bool _allowClose: false
-  property bool _lastScope: false
-  // Config-poll guard (perf): the TOML parse + full binding cascade runs
-  // only when the file text actually changed — not 4x/sec unconditionally.
-  property string _lastCfgText: ""
   Timer { id: closeTimer; interval: 200; repeat: false; onTriggered: win.close() }
   Timer {
     // Delayed quit: FileView.setText is async — quitting instantly in
@@ -486,15 +421,15 @@ Window {
   }
   Timer {
     // Reload asynchronously; onLoaded applies the completed snapshot.
-    interval: 100; repeat: true; running: !win._closing
-    onTriggered: { cfgWrite.reload(); desktopState.reload() }
+    interval: 250; repeat: true; running: !win._closing
+    onTriggered: { desktopState.reload() }
   }
 
   IpcHandler {
     target: "omaviz-desktop"
     function status(): string {
       return JSON.stringify({visual: win.vizConfig.visual, enabled: win.vizConfig.enabled,
-        waveSamples: win.spectrumWave.length, configPath: win.settingsPath, engineRunning: bridge.running, closing: win._closing,
+        waveSamples: win.spectrumWave.length, configPath: win.settingsPath, engineRunning: bridge.started, closing: win._closing,
         trayVisible: trayBox.shown, playbackVisible: !!win.activePlayer && win.activePlayer.canControl})
     }
     function quit() { win.setDesktopActive(false); closeTimer.restart() }

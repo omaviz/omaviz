@@ -238,7 +238,7 @@ play/pause when the active media player supports it.
 Off pauses visualization and capture while keeping the plugin and desktop controls
 available. On resumes in place. Exit closes the desktop, stops Omaviz capture,
 and unloads the plugin from the shared shell. Desktop settings apply on completed
-file loads, with a 100ms polling fallback. Hover controls remain stable while
+file loads, with a 250ms polling fallback. Hover controls remain stable while
 pointing at buttons, and the controlled media player stays selected after Pause.
 
 Native visual regression: after building with `OMAVIZ_RENDER_PROBE=ON`, run

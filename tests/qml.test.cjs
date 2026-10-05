@@ -92,8 +92,7 @@ test("no spawn-time physics flag anywhere (physics is renderer-side)", () => {
 
 test("installer ships ModelStore.js + Physics.js and never the old Model.js", () => {
   const s = read("install.sh")
-  assert.ok(s.includes("ModelStore.js"), "install.sh must ship ModelStore.js")
-  assert.ok(s.includes("Physics.js"), "install.sh must ship Physics.js")
+  assert.ok(s.includes('"$SRC"/*.js'), "installer must ship all shared JS modules")
   assert.ok(!/Model\.js/.test(s), "install.sh must not reference Model.js")
   // The marker is now derived from what was actually installed (each path is
   // claimed only when the installed file is byte-identical to $SRC), so the
@@ -150,15 +149,6 @@ test("panel ON/OFF is bound to the reactive config, not to sharedConfig", () => 
   assert.ok(!/^\s*vizEnabled = /m.test(setter), "setVizEnabled must not assign vizEnabled")
 })
 
-test("BarWidget routes every config load through syncFromConfig", () => {
-  const src = read("BarWidget.qml")
-  assert.ok(src.includes("function syncFromConfig(txt)"))
-  // exactly ONE place assigns root.config (inside syncFromConfig)
-  assert.equal((src.match(/root\.config = Store\.loadFromTOML\(/g) || []).length, 1)
-  for (const call of ["root._configReady = true; root.syncFromConfig", "onFileChanged: root.syncFromConfig"]) {
-    assert.ok(src.includes(call), `missing ${call}`)
-  }
-})
 
 
 test("desktop treats external media metadata as plain text", () => {
@@ -167,4 +157,11 @@ test("desktop treats external media metadata as plain text", () => {
     const block = blocks.find(s => s.includes(`text: win.${field}`))
     assert.ok(block && block.includes("textFormat: Text.PlainText"), `${field} must not interpret markup`)
   }
+})
+
+
+test("desktop shared settings reader uses the same explicit XDG path as its public status", () => {
+  const desktop = read("Desktop.qml")
+  assert.match(desktop, /SettingsDocument\s*\{[^}]*path: win\.settingsPath/)
+  assert.match(desktop, /Quickshell\.env\("XDG_CONFIG_HOME"\)/)
 })

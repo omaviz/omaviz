@@ -27,11 +27,3 @@ test("geometry retains buffers and avoids full-surface image uploads", () => {
   assert.ok(native.includes("count > capacity || indexCount > indexCapacity"))
   assert.ok(!native.includes("QImage"))
 })
-test("desktop keeps feed ownership and config dedup", () => {
-  const desk = read("Desktop.qml")
-  assert.ok(desk.includes("_lastCfgText"))
-  assert.ok(desk.includes("if (txt !== win._lastCfgText)"))
-  assert.ok(desk.includes('win.vizConfig.visual !== "Bars" ? ["--wave"]'))
-  assert.ok(!desk.includes("_frameSeq"))
-  assert.ok(desk.includes("cached: true"))
-})

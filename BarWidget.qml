@@ -9,14 +9,46 @@ BarWidget {
   id: root
   moduleName: "org.omaviz.visualizer"
 
-  readonly property string settingsPath: (Quickshell.env("XDG_CONFIG_HOME") || Quickshell.env("HOME") + "/.config") + "/omaviz/config.toml"
-  readonly property string leasePath: (Quickshell.env("XDG_CONFIG_HOME") || Quickshell.env("HOME") + "/.config") + "/omaviz/desktop-state.toml"
-  property var config: Store.defaultConfig()
+  readonly property var config: settingsDocument.config
+  SettingsDocument {
+    id: settingsDocument
+    path: (Quickshell.env("XDG_CONFIG_HOME") || Quickshell.env("HOME") + "/.config") + "/omaviz/config.toml"
+    writable: true
+    onReadyChanged: if (ready) root.snapThemeColors()
+    onSettled: {
+      if (root._exitRequested && root.config.enabled === false) {
+        root._exitRequested = false
+        exitProc.running = true
+      }
+    }
+    onErrorChanged: if (error) root._exitRequested = false
+  }
+  property bool _exitRequested: false
+  Process {
+    id: exitProc
+    command: ["omarchy", "plugin", "disable", root.moduleName]
+    onExited: function(code) {
+      if (code !== 0) console.warn("omaviz: could not disable plugin (exit " + code + ")")
+    }
+  }
+  function requestExit() {
+    if (root._exitRequested || exitProc.running) return
+    root._exitRequested = true
+    root.close()
+    root.writeDesktopActive(false)
+    if (!settingsDocument.ready) { root._exitRequested = false; return }
+    root.writeEnabled(false)
+    if (root.config.enabled === false && settingsDocument.queue.desired === null &&
+        settingsDocument.queue.inFlight === null && !settingsDocument.queue.awaitingRead) {
+      root._exitRequested = false
+      exitProc.running = true
+    }
+  }
   readonly property var artworkPalette: artworkColors.colors
   ArtworkColors { id: artworkColors; active: root.config.artworkColors === true && root.config.visual === "Bars" }
   // Live theme snapshot: persists the current Omarchy accent triple to
   // config whenever the theme changes, so the standalone desktop window
-  // (no qs.* context) follows theme switches within its 100ms poll.
+  // (no qs.* context) follows theme switches within its 250ms poll.
   // Writes only on actual change — never a loop (source is Color.accent,
   // not the config being written).
   property color accentSnap: Color.accent
@@ -25,7 +57,6 @@ BarWidget {
   // FileView) completes: setText during construction warns "no path"
   // and drops the write.
   property bool _ready: false
-  property bool _configReady: false
   Component.onCompleted: { root._ready = true; root.snapThemeColors() }
   onAccentSnapChanged: root.snapThemeColors()
   onConfigChanged: Qt.callLater(root.snapThemeColors)
@@ -37,11 +68,12 @@ BarWidget {
     return "#" + h2(c.r) + h2(c.g) + h2(c.b)
   }
   function snapThemeColors() {
-    if (!root._ready || !root._configReady) return
+    if (!root._ready) return
     if (!root.config) return
     var top = root.colorHex(Color.accent)
     if (top === root._snappedAccent) return
-    var curTop = Store.readConfigFromText(root.readGuarded()).themeAccent || ""
+    if (!settingsDocument.ready) return
+    var curTop = root.config.themeAccent || ""
     // File already fresh: adopt without writing (avoids a mount-time
     // setText, which FileView can drop with a "no path" warning).
     if (curTop === top) { root._snappedAccent = top; return }
@@ -49,98 +81,18 @@ BarWidget {
     root._snappedAccent = top
     root.writeVizOptions3("theme_bottom", bottom, "theme_top", top, "theme_accent", top)
   }
-  property var spectrumBands: []
-  property var spectrumWave: []
-  property bool spectrumSilent: true
-  property bool vizEnabled: true
-
-  // Liveness lease: true only if the flag is set AND the heartbeat is fresh.
-  // A stranded active=true (crash, kill -9, old code) self-heals within ~6s.
+  readonly property var spectrumBands: spectrumFeed.bands
+  readonly property var spectrumWave: spectrumFeed.wave
+  readonly property bool spectrumSilent: spectrumFeed.silent
+  readonly property bool vizEnabled: root.config.enabled !== false
   property bool desktopLive: false
-  // Keep optimistic settings until the writer finishes and the reader catches up.
-  property string _lastWriteText: ""
-  property string _writingText: ""
-  property bool _writeBusy: false
-  property bool _exitRequested: false
-  // The one place config text becomes live state. Everything (panel bindings,
-  // the engine, the desktop lease) derives from this, so a value can never be
-  // shown that the config does not actually contain.
-  function syncFromConfig(txt) {
-    root.config = Store.loadFromTOML(txt)
-    var on = root.config.enabled !== false
-    if (root.vizEnabled !== on) {
-      root.vizEnabled = on
-      if (!on) {
-        root.spectrumBands = []
-        root.spectrumWave = []
-        Store.spectrumData.bands = []
-        Store.spectrumData.wave = []
-        Store.spectrumData.silent = true
-        root.spectrumSource = ""
-      }
-    }
-    // Scope is a SPAWN-TIME flag (it toggles the engine's `--wave` feed): the
-    // process must be bounced when it flips, or Bars mode would keep paying
-    // ~0.7KB/line of JSON parse for a snippet it never reads.
-    var sc = root.config.visual !== "Bars"
-    if (root._lastScope !== sc) {
-      root._lastScope = sc
-      if (root.wantsFeed()) root.restartSpectrum()
-    }
-    root.refreshDesktopLive()
-    root.syncBarFeed()
-  }
-  // Bounce the engine without tripping the failure backoff (see onExited).
-  function restartSpectrum() {
-    if (!root.wantsFeed() || root._restarting || root._intentionalFeedStop) return
-    if (!spectrumProc.running) { spectrumProc.running = true; return }
-    root._restarting = true
-    root.spectrumWave = []
-    Store.spectrumData.wave = []
-    spectrumProc.running = false
-    // Quickshell stops asynchronously. Resume from onExited so rapid
-    // mode changes cannot overlap capture processes or reuse old flags.
-  }
-  function noteWrite(txt) {
-    root._lastWriteText = txt
-    root.syncFromConfig(txt)
-  }
-  function readGuarded() {
-    if (root._lastWriteText !== "") {
-      if (!root._writeBusy && configFile.text() === root._lastWriteText)
-        root._lastWriteText = ""
-      else return root._lastWriteText
-    }
-    return configFile.text()
-  }
   function refreshDesktopLive() {
     var state = desktopState.text()
     var hb = Number(Store.readTomlValue(state, "desktop", "heartbeat") || 0)
     root.desktopLive = Store.isDesktopActiveFromText(state) && hb <= Date.now() && Date.now() - hb < 6000
   }
-  // The detached window has its own capture engine. With the mini hidden and
-  // settings closed, a second 128-band process and JSON parser do no work for
-  // the user. Resume the bar feed when its preview opens or the desktop leaves.
-  function wantsFeed() {
-    return !root._exitRequested && root.vizEnabled && (!root.desktopLive || root.opened)
-  }
-  function syncBarFeed() {
-    if (root.wantsFeed()) {
-      if (!spectrumProc.running && !root._restarting && !root._intentionalFeedStop) spectrumProc.running = true
-    } else {
-      bridgeRetryTimer.stop()
-      if (spectrumProc.running) {
-        root._intentionalFeedStop = true
-        spectrumProc.running = false
-      }
-    }
-  }
-  onDesktopLiveChanged: root.syncBarFeed()
-  onOpenedChanged: root.syncBarFeed()
   readonly property int barCount: Math.max(8, (root.config && root.config.bands !== undefined) ? root.config.bands : 32)
-  property string spectrumSource: ""
 
-  function applyConfig(text) { root.syncFromConfig(text) }
 
   readonly property bool opened: panelLoader.item ? panelLoader.item.opened === true : false
   readonly property bool popoutSwitchClosing: panelLoader.item ? panelLoader.item.popoutSwitchClosing === true : false
@@ -176,60 +128,12 @@ BarWidget {
   readonly property string engineBin: Store.engineBin
   readonly property string pluginDir: String(Qt.resolvedUrl(".")).replace(/^file:\/\//, "")
 
-  Process {
-    id: spectrumProc
-    running: true
-    // High-res feed (128 bands): mini downsamples to 32, preview to 64 —
-    // both map from rich source detail instead of a coarse 32-band feed.
-    // `--wave` is scope-only (Bars mode never reads the snippet), so it is
-    // added only while the oscilloscope is selected; syncFromConfig bounces
-    // the process when scope flips. Physics (fall/peaks) is renderer-side, so
-    // those are not spawn-time flags.
-    command: root.config.visual !== "Bars"
-      ? [root.engineBin, "--bands", "128", "--wave"]
-      : [root.engineBin, "--bands", "128"]
-    stdout: SplitParser {
-      onRead: function(data) {
-        if (!root.vizEnabled) return
-        var lines = String(data).split("\n")
-        for (var i = 0; i < lines.length; i++) {
-          var line = lines[i].trim()
-          if (line) Store.parseSpectrumLine(line)
-        }
-        root.spectrumBands = Store.spectrumData.bands
-        root.spectrumWave = Store.spectrumData.wave
-        root.spectrumSilent = Store.spectrumData.silent
-        root.spectrumSource = Store.spectrumData.source || ""
-        root.noteSpectrumFrame()
-      }
-    }
-    onExited: function(code, status) {
-      if (root._restarting) {
-        root._restarting = false
-        root.syncBarFeed()
-        return
-      }
-      if (root._intentionalFeedStop) {
-        root._intentionalFeedStop = false
-        root.syncBarFeed()
-        return
-      }
-      if (!root.wantsFeed()) return
-      // Indefinite backoff retry: engine death must never permanently kill
-      // the mini. Interval grows 1.5s → 30s cap; silence shows meanwhile.
-      root._bridgeRetries++
-      bridgeRetryTimer.interval = Math.min(30000, 1500 * root._bridgeRetries)
-      bridgeRetryTimer.restart()
-    }
+  EngineFeed {
+    id: spectrumFeed
+    active: !root._exitRequested && root.vizEnabled && settingsDocument.ready && (!root.desktopLive || root.opened)
+    waveEnabled: root.config.visual !== "Bars"
   }
-
-  property int _bridgeRetries: 0
-  property bool _restarting: false
-  property bool _intentionalFeedStop: false
-  property bool _lastScope: false
-  // Successful frames reset the backoff so the next failure starts fast.
-  function noteSpectrumFrame() { root._bridgeRetries = 0 }
-  Timer { id: bridgeRetryTimer; interval: 1500; repeat: false; onTriggered: root.syncBarFeed() }
+  readonly property string sourceLabel: Store.sourceLabel(spectrumFeed.source)
 
   Process {
     id: detachProc
@@ -254,72 +158,18 @@ BarWidget {
     }
   }
 
-  FileView {
-    id: configFile
-    path: root.settingsPath
-    watchChanges: true
-    printErrors: false
-    onLoaded: { root._configReady = true; root.syncFromConfig(root.readGuarded()) }
-    onFileChanged: root.syncFromConfig(root.readGuarded())
-    onLoadFailed: { root._configReady = true; if (root._lastWriteText === "") root.syncFromConfig("") }
-  }
-  // Poll config (watchChanges is unreliable) so shared flags like
-  // desktop.active propagate — this is what hides the mini.
   Timer {
     interval: 500; repeat: true; running: true
-    onTriggered: { configFile.reload(); desktopState.reload(); root.refreshDesktopLive() }
+    onTriggered: { desktopState.reload(); root.refreshDesktopLive() }
   }
 
   FileView {
     id: desktopState
-    path: root.leasePath
+    path: (Quickshell.env("XDG_CONFIG_HOME") || Quickshell.env("HOME") + "/.config") + "/omaviz/desktop-state.toml"
     watchChanges: true
     printErrors: false
     onLoaded: root.refreshDesktopLive()
     onFileChanged: reload()
-  }
-  FileView {
-    id: detachConfigWrite
-    path: root.settingsPath
-    watchChanges: false
-    printErrors: false
-    onSaved: {
-      root._writeBusy = false
-      if (root._lastWriteText !== root._writingText) root.flushSettings()
-      else {
-        configFile.reload()
-      }
-    }
-    onSaveFailed: {
-      root._writeBusy = false
-      root._lastWriteText = ""
-      console.warn("omaviz: could not save settings")
-      configFile.reload()
-    }
-  }
-  Process {
-    id: exitProc
-    command: ["omarchy", "plugin", "disable", root.moduleName]
-    onExited: function(code) {
-      if (code !== 0) console.warn("omaviz: could not disable plugin (exit " + code + ")")
-    }
-  }
-  Timer { id: exitDelay; interval: 350; onTriggered: exitProc.running = true }
-  function requestExit() {
-    if (root._exitRequested) return
-    root._exitRequested = true
-    root.close()
-    bridgeRetryTimer.stop()
-    root._intentionalFeedStop = true
-    spectrumProc.running = false
-    root.writeDesktopActive(false)
-    exitDelay.restart()
-  }
-  function flushSettings() {
-    if (root._writeBusy || root._lastWriteText === "") return
-    root._writingText = root._lastWriteText
-    root._writeBusy = true
-    detachConfigWrite.setText(root._writingText)
   }
   function writeDesktopActive(value) {
     // This file contains only a lease; it can never clobber user settings.
@@ -328,26 +178,29 @@ BarWidget {
   }
 
   function writeEnabled(value) {
-    var txt = Store.writeEnabled(value, root.readGuarded())
-    root.noteWrite(txt)            // syncFromConfig flips vizEnabled + engine
-    root.flushSettings()
+    settingsDocument.patch("desktop", { enabled: value })
   }
   function writeVizOption(key, value) {
-    writeVizOptions(key, value, null, null)
+    var values = {}; values[key] = value
+    settingsDocument.patch("desktop", values)
   }
-  // Renderer-side options (e.g. linear_fall) apply live through the config
-  // poll — no engine restart, since the CLI no longer takes physics flags.
-  function writeEngineOption(key, value) {
-    writeVizOption(key, value)
-  }
-  // Audio-section options (e.g. sensitivity): same single-write pattern as
-  // writeVizOptions but targeting [audio]. Applied QML-side, so every
-  // surface picks it up live through the config poll — no restart needed.
+  function writeEngineOption(key, value) { writeVizOption(key, value) }
   function writeAudioOption(key, value) {
-    var txt = Store.writeConfigKey(root.readGuarded(), "audio", key, value)
-    root.noteWrite(txt)
-    root.flushSettings()
+    var values = {}; values[key] = value
+    settingsDocument.patch("audio", values)
   }
+  function writeVizOptions(key1, value1, key2, value2) {
+    writeVizOptions3(key1, value1, key2, value2)
+  }
+  function writeVizOptions3(key1, value1, key2, value2, key3, value3, key4, value4, key5, value5) {
+    var values = {}; values[key1] = value1
+    if (key2) values[key2] = value2
+    if (key3) values[key3] = value3
+    if (key4) values[key4] = value4
+    if (key5) values[key5] = value5
+    settingsDocument.patch("desktop", values)
+  }
+
   function setColorMode(mode) {
     if (["Theme", "Custom", "Artwork", "Flame"].indexOf(mode) < 0) return false
     var options = { fire: mode === "Flame", bar_color_custom: mode === "Custom", artwork_colors: mode === "Artwork" }
@@ -355,35 +208,7 @@ BarWidget {
     root.writeVizMap(options)
     return true
   }
-  function writeVizMap(options) {
-    var txt = root.readGuarded()
-    for (var key in options) txt = Store.writeConfigKey(txt, "desktop", key, options[key])
-    root.noteWrite(txt)
-    root.flushSettings()
-  }
-  function writeVizOptions(key1, value1, key2, value2) {
-    // Multi-key single write: two sequential setText calls race on the same
-    // stale base text and the second clobbers the first (e.g. Spikes+Fire).
-    // Apply both keys to ONE base text, then a single setText.
-    var txt = root.readGuarded()
-    txt = Store.writeConfigKey(txt, "desktop", key1, value1)
-    if (key2) txt = Store.writeConfigKey(txt, "desktop", key2, value2)
-    root.noteWrite(txt)
-    root.flushSettings()
-  }
-  // Three/four-key single write (preset swatches, theme snapshot, mode +
-  // tones): same one-base-text rule as writeVizOptions — two sequential
-  // setText calls on the same stale base would clobber each other.
-  function writeVizOptions3(key1, value1, key2, value2, key3, value3, key4, value4, key5, value5) {
-    var txt = root.readGuarded()
-    txt = Store.writeConfigKey(txt, "desktop", key1, value1)
-    if (key2) txt = Store.writeConfigKey(txt, "desktop", key2, value2)
-    if (key3) txt = Store.writeConfigKey(txt, "desktop", key3, value3)
-    if (key4) txt = Store.writeConfigKey(txt, "desktop", key4, value4)
-    if (key5) txt = Store.writeConfigKey(txt, "desktop", key5, value5)
-    root.noteWrite(txt)
-    root.flushSettings()
-  }
+  function writeVizMap(options) { settingsDocument.patch("desktop", options) }
 
   WidgetButton {
     id: button
@@ -501,7 +326,7 @@ BarWidget {
     function status(): string {
       return JSON.stringify({visual: root.config.visual, enabled: root.vizEnabled,
         silent: root.spectrumSilent, bands: root.spectrumBands.length, preview: root.opened,
-        waveSamples: root.spectrumWave.length, engineRunning: spectrumProc.running, restarting: root._restarting})
+        waveSamples: root.spectrumWave.length, engineRunning: spectrumFeed.started, restarting: spectrumFeed.restarting})
     }
   }
 }

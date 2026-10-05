@@ -10,6 +10,37 @@
 - Correct dropdown theme contrast and add native Qt interaction and resize regression coverage.
 - Validation: QML lint, state/QML regressions, 19 native interaction checks, native render captures, and live desktop settings/capture/exit checks passed.
 
+## 8.5.4 — Immersive preview and plugin controls
+
+- Add the plugin name and installed version to the settings header, with Source and Exit in a footer that stays visible while Off.
+- Collapse the settings panel when Off and stop duplicate bar capture while a detached desktop window is active.
+- Showcase four visualizations, a real settings capture, and the supplied horizontal spectrum hero in the marketplace preview.
+
+## 8.5.3 — Marketplace submission recovery
+
+- Filter marketplace issue pages before returning data to the release helper, preventing buffer exhaustion in large catalogs while preserving duplicate detection.
+
+## 8.5.2 — Panel consistency and release verification
+
+- Match the heights of all paired settings controls and display the installed manifest version in the footer.
+- Release the requested tag on manual runs, validate tag input, and include decorated changelog headings.
+- Generate exact-commit marketplace verification links; optionally submit deduplicated requests with a dedicated credential.
+- Run functional CI on every PR, including binary and metadata changes and avoid write-only attestations on pull requests.
+
+## 8.5.1 — GPU exploration without renderer changes
+
+- Report the actual compositing backend instead of the ineffective GPU switch.
+- Add bounded software/native export comparisons for eight visualization modes.
+- Document GPU options, hardware evidence, and parity/profiling requirements; keep production drawing and timing unchanged.
+
+## 8.5.0 — Runtime ownership and functional verification
+
+- Share engine lifecycle and protocol handling through EngineFeed; wait for process exit before restarting and bound failed starts.
+- Move settings persistence into SettingsDocument and a pure serialized-write queue; remove the unused mutable JS store.
+- Extract pure palette computation without changing drawing commands or physics.
+- Replace source-string tests and wall-clock FPS thresholds with functional tests and bounded real QML I/O/process checks.
+- Install only runtime files, excluding tests and development artifacts.
+
 ## 8.4.5 — Settings reliability and review fixes
 
 - Isolate desktop leases from settings; serialize async saves and keep pending selections until acknowledged.
@@ -18,11 +49,6 @@
 - Escape TOML strings, preserve native value types, and accept inline comments.
 - Use the resolved engine path in the bar; clamp FFT band ranges to prevent valid CLI combinations from panicking.
 - Add behavioral persistence/palette regressions and FFT boundary coverage.
-- Add marketplace form metadata, local preflight checks, and an exact-commit update form artifact after merges.
-- Replace the marketplace preview with a titled four-mode showcase and a real settings capture.
-- Show version and plugin details in the settings header; keep Source and Exit visible when Off and collapse the panel.
-- Suspend the duplicate bar capture engine while the detached window is active and settings are closed.
-- Remove the inactive GPU switch; the legacy setting remains readable for older configs.
 
 # Changelog
 

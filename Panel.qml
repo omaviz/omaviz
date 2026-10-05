@@ -12,7 +12,7 @@ Panel {
   ipcTarget: "org.omaviz.visualizer"
   manageIpc: false
 
-  // Live config binding — refreshed when hostWidget.config changes (via noteWrite)
+  // Live config binding — refreshed when hostWidget.config changes (via SettingsDocument)
   readonly property var hcfg: root.hostWidget ? root.hostWidget.config : Store.defaultConfig()
   property var anchorItem: null
   property var hostWidget: null
@@ -32,7 +32,7 @@ Panel {
   readonly property color fgFaint: Qt.darker(fg, 1.6)
 
   readonly property string sourceLabelText:
-    Store.sourceLabel(root.hostWidget ? root.hostWidget.spectrumSource : Store.spectrumData.source || "")
+    root.hostWidget ? root.hostWidget.sourceLabel : "Unknown"
 
   readonly property bool isScope: root.hcfg.visual === "Waves"
   readonly property bool isSpectrum: root.hcfg.visual === "Bars"

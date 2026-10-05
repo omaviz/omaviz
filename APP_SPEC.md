@@ -55,10 +55,10 @@ bin/omaviz-engine  (capture thread → Analyzer → 60Hz frame loop)
    │  one JSON object per line on stdout:
    │  {"bands":[..32],"energy":f,"beat":f,"silent":b,"source":"pipewire"}
    ▼
-Quickshell BarWidget.spectrumProc (Process)
-   │  SplitParser → Store.parseSpectrumLine
+EngineFeed (one Process per active surface)
+   │  SplitParser → Store.decodeFrame
    ▼
-Store.spectrumData { bands, energy, beat, silent, source }
+Observable QML bands, wave, silent, source
    ▼
 VisualCanvas (native GPU geometry) — used by mini, preview, AND desktop
 ```
@@ -339,7 +339,7 @@ to reset envelopes and triangle/strip topology.
 
 Desktop config and lease paths resolve directly from Quickshell's XDG/HOME
 environment on both surfaces. Completed FileView loads apply fresh settings;
-100ms polling remains the fallback. Waveform-feed restarts wait for engine exit.
+250ms polling remains the fallback. Waveform-feed restarts wait for engine exit.
 A passive parent HoverHandler observes the whole desktop content tree, keeping
 controls visible over child buttons. Playback uses explicit pause/play capabilities
 and retains the controlled player after pausing.
