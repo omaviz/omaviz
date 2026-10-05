@@ -1,0 +1,31 @@
+name: Marketplace preflight
+on:
+  pull_request:
+  push:
+    branches: [master]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  preflight:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+      - run: node tools/marketplace-submission.cjs --check
+      - run: node tools/marketplace-update.cjs --check
+      - name: Prepare exact-commit update form after merge
+        if: github.event_name == 'push'
+        run: |
+          node tools/marketplace-update.cjs --title > marketplace-update-title.txt
+          node tools/marketplace-update.cjs > marketplace-update-body.md
+      - name: Attach reviewable update form
+        if: github.event_name == 'push'
+        uses: actions/upload-artifact@v4
+        with:
+          name: marketplace-update-${{ github.sha }}
+          path: |
+            marketplace-update-title.txt
+            marketplace-update-body.md

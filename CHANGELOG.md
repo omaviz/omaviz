@@ -1,3 +1,15 @@
+## 8.6.1 — Desktop fidelity and interaction reliability
+
+- Render external player names and track metadata as plain text, addressing the prior marketplace review finding.
+
+- Preserve centered 3:1 desktop waveform proportions when resizing; keep spectrum bars within the window.
+- Serialize capture restarts during rapid visualization and Off/On changes.
+- Keep custom color fields synchronized after invalid edits and external palette changes.
+- Add keyboard activation, focus visibility, accessible labels, and scrolling for settings controls.
+- Keep desktop playback controls visible while focused and usable at the minimum window size.
+- Correct dropdown theme contrast and add native Qt interaction and resize regression coverage.
+- Validation: QML lint, state/QML regressions, 19 native interaction checks, native render captures, and live desktop settings/capture/exit checks passed.
+
 ## 8.5.4 — Immersive preview and plugin controls
 
 - Add the plugin name and installed version to the settings header, with Source and Exit in a footer that stays visible while Off.

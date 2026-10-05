@@ -10,6 +10,8 @@ Window {
   id: win
   width: 600
   height: 200
+  minimumWidth: 320
+  minimumHeight: 160
   visible: true
   // NOTE: no qs.Commons import here — standalone `quickshell -p` cannot
   // resolve qs.* modules (shell-context only), and the import kills the
@@ -17,16 +19,30 @@ Window {
   color: "#0c0c12"
   flags: Qt.Window | Qt.WindowStaysOnTopHint
 
+  readonly property string settingsPath: (Quickshell.env("XDG_CONFIG_HOME") || Quickshell.env("HOME") + "/.config") + "/omaviz/config.toml"
+  readonly property string leasePath: (Quickshell.env("XDG_CONFIG_HOME") || Quickshell.env("HOME") + "/.config") + "/omaviz/desktop-state.toml"
   readonly property var spectrumBands: bridge.bands
   readonly property var spectrumWave: bridge.wave
   readonly property bool spectrumSilent: bridge.silent
   readonly property var vizConfig: settingsDocument.config
-  SettingsDocument { id: settingsDocument; pollInterval: 250 }
+  SettingsDocument {
+    id: settingsDocument
+    path: win.settingsPath
+    pollInterval: 250
+    onReadyChanged: if (ready && !win._claimed && !win._closing) {
+      win._claimed = true
+      win.setDesktopActive(true)
+    }
+  }
+  ArtworkColors { id: coverPalette; active: win.vizConfig.artworkColors === true && win.vizConfig.visual === "Bars" }
+  readonly property bool immersiveArt: win.vizConfig.visual === "Bars" && win.vizConfig.artworkColors === true && coverPalette.colors.length >= 3
   // ---- Now-playing (MPRIS, zero deps — Quickshell built-in) ----
   // Player pick mirrors the shell media service: prefer a playing source
   // with track metadata, else the first source that has any.
   readonly property var mprisPlayers: Mpris.players ? Mpris.players.values : []
+  property var preferredPlayer: null
   function pickPlayer() {
+    if (win.preferredPlayer && win.mprisPlayers.indexOf(win.preferredPlayer) >= 0) return win.preferredPlayer
     var fallback = null
     for (var i = 0; i < win.mprisPlayers.length; i++) {
       var p = win.mprisPlayers[i]
@@ -42,7 +58,7 @@ Window {
   readonly property string trackArtist: win.activePlayer ? (win.activePlayer.trackArtist || "") : ""
   readonly property string trackArt: win.activePlayer ? (win.activePlayer.trackArtUrl || "") : ""
   readonly property string trackLabel: win.trackArtist !== "" ? win.trackArtist + " — " + win.trackTitle : win.trackTitle
-  readonly property string modeName: win.vizConfig.scope === true ? "Omaviz (Scope)" : "Omaviz"
+  readonly property string modeName: "Omaviz — " + (win.vizConfig.visual || "Bars")
   // Artwork available: MPRIS art URL present and backdrop toggle on.
   readonly property bool hasArt: win.trackArt !== "" && win.vizConfig.artwork !== false
   readonly property string playerSource: win.activePlayer ? (win.activePlayer.identity || win.activePlayer.desktopEntry || "") : ""
@@ -50,25 +66,37 @@ Window {
   EngineFeed {
     id: bridge
     active: settingsDocument.ready && win.vizConfig.enabled !== false && !win._closing
-    waveEnabled: win.vizConfig.scope === true
+    waveEnabled: win.vizConfig.visual !== "Bars"
     bandCount: 256
   }
 
-  // Window hover tracking: shows the tray on enter, fades it after
-  // a short delay on exit (moving within the window keeps it alive).
-  MouseArea {
-    id: hoverArea
-    anchors.fill: parent
-    hoverEnabled: true
-    acceptedButtons: Qt.NoButton
-    onEntered: { fadeTimer.stop(); trayBox.shown = true }
-    onExited: fadeTimer.restart()
+  // A passive parent handler observes the whole content tree, including buttons.
+  // Keyboard access must also reveal the otherwise hover-only controls.
+  Shortcut {
+    sequence: "Tab"
+    enabled: !trayBox.shown
+    onActivated: {
+      trayBox.shown = true
+      Qt.callLater(function() {
+        if (playAction.visible && playAction.enabled) playAction.forceActiveFocus()
+        else closeAction.forceActiveFocus()
+      })
+    }
+  }
+  HoverHandler {
+    id: windowHover
+    parent: win.contentItem
+    blocking: false
+    onHoveredChanged: {
+      if (hovered) { fadeTimer.stop(); trayBox.shown = true }
+      else fadeTimer.restart()
+    }
   }
   Timer {
     id: fadeTimer
     interval: 350
     repeat: false
-    onTriggered: trayBox.shown = false
+    onTriggered: if (!windowHover.hovered && !playAction.activeFocus && !closeAction.activeFocus) trayBox.shown = false
   }
 
   Column {
@@ -76,7 +104,7 @@ Window {
     spacing: 0
 
     Rectangle {
-      width: parent.width; height: parent.height; color: "#0c0c12"
+      width: parent.width; height: parent.height; color: win.vizConfig.visual === "Siri" ? "#000000" : "#0c0c12"
 
       // Artwork backdrop (backdrop toggle): downscaled source = free blur,
       // dimmed so the bars stay readable. Falls back to the
@@ -86,7 +114,7 @@ Window {
       // FastBlur caches: static art costs one frame, not per-frame.
       Item {
         anchors.fill: parent
-        visible: win.vizConfig.artwork !== false
+        visible: win.vizConfig.visual === "Bars" && win.vizConfig.artwork !== false
         opacity: win.trackArt !== "" ? 1 : 0
         Behavior on opacity { NumberAnimation { duration: 900 } }
         Image {
@@ -118,7 +146,20 @@ Window {
         // while making background darker for bar readability.
         Rectangle {
           anchors.fill: parent
-          color: Qt.rgba(0, 0, 0, 0.70)
+          color: Qt.rgba(0, 0, 0, win.immersiveArt ? 0.35 : 0.70)
+        }
+      }
+
+      // Cover-derived color atmosphere, restrained so spectrum edges stay crisp.
+      Rectangle {
+        anchors.fill: parent
+        visible: win.immersiveArt && win.vizConfig.artwork !== false
+        opacity: 0.22
+        gradient: Gradient {
+          orientation: Gradient.Horizontal
+          GradientStop { position: 0; color: coverPalette.colors[0] || "transparent" }
+          GradientStop { position: 0.5; color: coverPalette.colors[1] || "transparent" }
+          GradientStop { position: 1; color: coverPalette.colors[2] || "transparent" }
         }
       }
 
@@ -129,28 +170,23 @@ Window {
         anchors.bottom: parent.bottom
         anchors.bottomMargin: 4
         height: parent.height - 4
-        visible: win.vizConfig.dots !== false
+        visible: win.vizConfig.dots !== false && win.vizConfig.visual !== "Siri" && win.vizConfig.visual !== "Strings"
       }
-      // Single active renderer (Loader unloads the other): a hidden
-      // Canvas still runs its paint JS, so dual instantiation doubles
-      // CPU. GPU preferred, Canvas fallback (no-GPU path).
+      // One active instance of the shared GPU renderer.
       Loader {
         id: vizLoader
-        anchors.left: parent.left; anchors.right: parent.right
-        anchors.leftMargin: 4; anchors.rightMargin: 4
-        // Bottom-anchored: visualization container hugs bottom of window
-        // instead of centering. Minimum 95% of window height, visualization
-        // occupies 95% of container height (like preview mode).
-        anchors.bottom: parent.bottom
-        anchors.bottomMargin: 4
-        anchors.top: undefined
-        // Height: 95% of parent, with minimum of 100px (was 400, but parent
-        // is window height 200px; use proportion instead of fixed min)
-        height: Math.max(100, parent.height * 0.95)
-        // Visual area occupies 95% of container height
-        // GPU path parked (Canvas-only for now): ShaderEffect matched
-        // feature-for-feature but doubled every renderer change; revisit
-        // under GPU_PLAN.md when the viz catalog grows.
+        active: win.vizConfig.enabled !== false
+        readonly property bool waveform: ["Waves", "Wave", "Oscilloscope", "Strings", "Siri"].includes(win.vizConfig.visual)
+        // Fit waveform geometry uniformly: resizing must not turn broad
+        // Siri lobes into flat strings or pull standing strings vertically.
+        // Spectrum instead fills the surface with width-dependent bar density.
+        readonly property real availableWidth: Math.max(0, parent.width - 8)
+        readonly property real availableHeight: Math.max(0, parent.height - 8)
+        width: waveform ? Math.min(availableWidth, availableHeight * 3) : availableWidth
+        height: waveform ? width / 3 : availableHeight
+        x: (parent.width - width) / 2
+        y: waveform ? (parent.height - height) / 2 : parent.height - height - 4
+        // One shared native scene-graph renderer, also used by mini/preview.
         sourceComponent: canvasComp
       }
       Component {
@@ -166,7 +202,7 @@ Window {
         // fall trajectory is identical on every surface.
         dataFps: 60
 
-        visual: win.vizConfig.scope === true ? "Oscilloscope" : "Bars"
+        visual: win.vizConfig.visual || "Bars"
         wash: win.vizConfig.artwork !== false
         dots: false   // static underlay above
         reflect: win.vizConfig.reflect === true
@@ -175,7 +211,7 @@ Window {
         colorSync: win.vizConfig.colorSync !== false
         barCount: Math.max(16, Math.floor((parent.width - 8) / 10))
         gapPx: Math.min(6, Math.max(0, win.vizConfig.gap ?? 1))
-        barWidthExtra: 4
+        barWidthExtra: 0
 
         // Peak settings — live from config (settings panel writes).
         peaks: win.vizConfig.peaks !== false
@@ -190,9 +226,13 @@ Window {
         stacks: win.vizConfig.stacks === true
         stackScale: 2
         sensitivity: win.vizConfig.sensitivity ?? 1.0
+        artworkColors: win.vizConfig.artworkColors === true
+        artworkPalette: coverPalette.colors
         barColorCustom: win.vizConfig.barColorCustom === true
         barColorFrom: win.vizConfig.barColorFrom || "#e68e0d"
         barColorTo: win.vizConfig.barColorTo || "#f59e0b"
+        barColorMiddle: win.vizConfig.barColorMiddle || "#a855f7"
+        barColorMiddleEnabled: win.vizConfig.barColorMiddleEnabled === true
         gradientDir: win.vizConfig.barGradientDir || "vertical"
         themeBottom: win.vizConfig.themeBottom || "#e68e0d"
         themeTop: win.vizConfig.themeTop || "#f59e0b"
@@ -202,150 +242,175 @@ Window {
     }
   }
 
-  // ---- Hover tray (Option A): no title bar. Fades in on window hover,
-  // out ~200ms after the cursor leaves. Left: artwork thumbnail +
-  // monospace track title/artist/source. Right: circular close button,
-  // which stays clickable through the fade.
-  Item {
+  Text {
+    anchors.centerIn: parent
+    visible: win.vizConfig.enabled === false
+    text: "Visualization paused"
+    color: "#b0b6c2"
+    font.pixelSize: 14
+  }
+
+  function togglePlayback() {
+    var player = win.activePlayer
+    if (!player || !player.canControl) return
+    // Keep the controlled source selected after it pauses.
+    win.preferredPlayer = player
+    if (player.isPlaying && player.canPause) player.pause()
+    else if (!player.isPlaying && player.canPlay) player.play()
+    else if (player.canTogglePlaying) player.togglePlaying()
+  }
+
+  // Compact now-playing card; playback follows the selected player's capabilities.
+  Rectangle {
     id: trayBox
     anchors.top: parent.top
     anchors.left: parent.left
     anchors.right: parent.right
-    height: 68
+    anchors.margins: 12
+    height: 88
+    radius: 14
+    color: "#ed151820"
+    border.color: "#32ffffff"
+    border.width: 1
     property bool shown: false
+    readonly property bool canToggle: !!win.activePlayer && win.activePlayer.canControl && (win.activePlayer.canTogglePlaying || (win.activePlayer.isPlaying ? win.activePlayer.canPause : win.activePlayer.canPlay))
     opacity: shown ? 1.0 : 0.0
-    visible: opacity > 0.01
-    Behavior on opacity { NumberAnimation { duration: 250; easing.type: Easing.OutCubic } }
-
-    Rectangle {
-      anchors.fill: parent
-      gradient: Gradient {
-        GradientStop { position: 0.0; color: Qt.rgba(0, 0, 0, 0.55) }
-        GradientStop { position: 0.6; color: Qt.rgba(0, 0, 0, 0.10) }
-        GradientStop { position: 1.0; color: Qt.rgba(0, 0, 0, 0.0) }
-      }
-    }
+    visible: shown || opacity > 0.01
+    enabled: shown
+    Behavior on opacity { NumberAnimation { duration: 180; easing.type: Easing.OutCubic } }
 
     Row {
       anchors.fill: parent
-      anchors.leftMargin: 12
-      anchors.rightMargin: 12
-      anchors.topMargin: 10
-      anchors.bottomMargin: 10
+      anchors.margins: 12
       spacing: 12
-
-      // Artwork thumbnail (48px) or same-size fallback placeholder.
-      Item {
-        width: 48
-        height: 48
-        anchors.verticalCenter: parent.verticalCenter
-
-        Rectangle {
-          anchors.fill: parent
-          radius: 8
-          color: "transparent"
-          border.width: 1
-          border.color: Qt.rgba(255,255,255,0.15)
-          visible: !win.hasArt
-          Text {
-            anchors.centerIn: parent
-            text: "♪"
-            color: Qt.rgba(255,255,255,0.4)
-            font.pixelSize: 18
-          }
+      Rectangle {
+        width: 64; height: 64
+        radius: 8
+        color: "#272d39"
+        clip: true
+        Text {
+          anchors.centerIn: parent
+          text: "♪"
+          color: "#aeb6c6"
+          font.pixelSize: 26
         }
         Image {
           anchors.fill: parent
           source: win.trackArt
+          sourceSize.width: 128
+          sourceSize.height: 128
           fillMode: Image.PreserveAspectCrop
-          cache: true
           asynchronous: true
-          visible: win.hasArt
+          visible: status === Image.Ready
         }
       }
-
-      // Track info: larger monospace title + artist + theme source line.
       Column {
-        width: parent.width - 48 - 12 - 24 - 24
+        width: Math.max(0, parent.width - 64 - actions.width - 24)
         spacing: 4
         anchors.verticalCenter: parent.verticalCenter
-
         Text {
-          text: win.trackTitle !== "" ? win.trackTitle : win.modeName
-          color: "#e8e8f0"
-          font.family: "monospace"
-          font.pixelSize: 14
+          width: parent.width
+          textFormat: Text.PlainText
+          text: win.playerSource || "OMAVIZ"
+          color: "#aeb6c6"
+          font.pixelSize: 10
+          font.letterSpacing: 1
+          elide: Text.ElideRight
+        }
+        Text {
+          width: parent.width
+          textFormat: Text.PlainText
+          text: win.trackTitle || win.modeName
+          color: "#f5f6fa"
+          font.pixelSize: 15
           font.bold: true
           elide: Text.ElideRight
-          width: parent.width
         }
         Text {
-          text: win.trackArtist
-          color: Qt.rgba(255,255,255,0.75)
-          font.family: "monospace"
+          width: parent.width
+          textFormat: Text.PlainText
+          text: win.trackArtist || (win.activePlayer ? (win.activePlayer.isPlaying ? "Playing" : "Paused") : "Listening to system audio")
+          color: "#aeb6c6"
           font.pixelSize: 12
           elide: Text.ElideRight
-          width: parent.width
-          visible: win.trackArtist !== ""
-        }
-        Text {
-          text: win.playerSource
-          color: win.vizConfig.themeAccent || "#f59e0b"
-          font.family: "monospace"
-          font.pixelSize: 10
-          elide: Text.ElideRight
-          width: parent.width
-          visible: win.playerSource !== ""
         }
       }
-
-      // Circular close button: fully steady 16px glyph — no hover
-      // reaction at all, so nothing can flash.
-      Rectangle {
-        id: closeBtn
-        width: 24
-        height: 24
-        radius: 12
+      Row {
+        id: actions
+        spacing: 8
         anchors.verticalCenter: parent.verticalCenter
-        color: "transparent"
-
-        Text {
-          anchors.centerIn: parent
-          text: "×"
-          color: Qt.rgba(255,255,255,0.75)
-          font.pixelSize: 16
-          font.family: "monospace"
+        TrayAction {
+          id: playAction
+          visible: !!win.activePlayer && win.activePlayer.canControl
+          enabled: trayBox.canToggle
+          opacity: enabled ? 1 : 0.4
+          label: win.activePlayer && win.activePlayer.isPlaying ? "Ⅱ" : "▶"
+          accessibleLabel: win.activePlayer && win.activePlayer.isPlaying ? "Pause" : "Play"
+          onTriggered: win.togglePlayback()
         }
-
-        MouseArea {
-          anchors.fill: parent
-          cursorShape: Qt.PointingHandCursor
-          hoverEnabled: true // hand cursor only — no visual hover reaction
-          // Release the shared flag BEFORE closing — FileView writes are
-          // async, so give the write time to flush before the window dies.
-          onClicked: { win.setDesktopActive(false); closeTimer.restart() }
+        TrayAction {
+          id: closeAction
+          label: "×"
+          accessibleLabel: "Close desktop visualizer"
+          onTriggered: { win.setDesktopActive(false); closeTimer.restart() }
         }
       }
     }
   }
 
+  component TrayAction: Rectangle {
+    id: action
+    property string label: ""
+    property string accessibleLabel: ""
+    signal triggered()
+    width: 36; height: 36; radius: 18
+    color: pointer.containsMouse || activeFocus ? "#485268" : "#2c3341"
+    activeFocusOnTab: true
+    Accessible.role: Accessible.Button
+    Accessible.name: accessibleLabel
+    Accessible.onPressAction: triggered()
+    Keys.onSpacePressed: triggered()
+    Keys.onReturnPressed: triggered()
+    Text {
+      anchors.centerIn: parent
+      text: action.label
+      color: "#f5f6fa"
+      font.pixelSize: 18
+    }
+    MouseArea {
+      id: pointer
+      anchors.fill: parent
+      hoverEnabled: true
+      cursorShape: Qt.PointingHandCursor
+      onClicked: action.triggered()
+    }
+  }
+
   // Heartbeats have their own file: this window only READS settings.
-  FileView { id: desktopState; path: Store.desktopStatePath; printErrors: false }
+  FileView {
+    id: desktopState
+    path: win.leasePath
+    printErrors: false
+    onLoaded: {
+      if (win._claimed && !win._closing && Store.readTomlValue(text(), "desktop", "active") === "false") {
+        win.setDesktopActive(false)
+        closeTimer.start()
+      }
+    }
+  }
   property bool _closing: false
   Timer {
     interval: 2000; repeat: true; running: win._claimed && !win._closing
     onTriggered: win.setDesktopActive(true)
   }
   function setDesktopActive(v) {
-    if (!v) win._closing = true
+    if (!v) { win._closing = true }
     desktopState.setText("[desktop]\nactive = " + v + "\nheartbeat = " + Date.now() + "\n")
   }
   // Claim the shared flag once config text is available (covers
   // app-launcher + keybind paths that bypass BarWidget's detach()).
   property bool _claimed: false
   property bool _allowClose: false
-  // Config-poll guard (perf): the TOML parse + full binding cascade runs
-  // only when the file text actually changed — not 4x/sec unconditionally.
   Timer { id: closeTimer; interval: 200; repeat: false; onTriggered: win.close() }
   Timer {
     // Delayed quit: FileView.setText is async — quitting instantly in
@@ -355,25 +420,19 @@ Window {
     onTriggered: { win._allowClose = true; win.close(); Qt.callLater(Qt.quit) }
   }
   Timer {
-    // Config poll: 250ms keeps settings-panel changes feeling instant
-    // while quartering the JS TOML-parse + binding cascade vs 100ms.
-    interval: 250; repeat: true; running: true
-    onTriggered: {
-      desktopState.reload()
-      if (win._claimed && !Store.isDesktopActiveFromText(desktopState.text())) {
-        if (!win._closing) { win.setDesktopActive(false); closeTimer.start() }
-        return
-      }
-      if (!settingsDocument.ready) return
-      if (win.vizConfig.enabled === false) {
-        if (!win._closing) { win.setDesktopActive(false); closeTimer.start() }
-        return
-      }
-      if (!win._claimed) {
-        win._claimed = true
-        win.setDesktopActive(true)
-      }
+    // Reload asynchronously; onLoaded applies the completed snapshot.
+    interval: 250; repeat: true; running: !win._closing
+    onTriggered: { desktopState.reload() }
+  }
+
+  IpcHandler {
+    target: "omaviz-desktop"
+    function status(): string {
+      return JSON.stringify({visual: win.vizConfig.visual, enabled: win.vizConfig.enabled,
+        waveSamples: win.spectrumWave.length, configPath: win.settingsPath, engineRunning: bridge.started, closing: win._closing,
+        trayVisible: trayBox.shown, playbackVisible: !!win.activePlayer && win.activePlayer.canControl})
     }
+    function quit() { win.setDesktopActive(false); closeTimer.restart() }
   }
 
   onClosing: function(close) {

@@ -6,3 +6,5 @@ engine/target/
 .DS_Store
 
 # bin/omaviz-engine is the committed, reproducible runtime artifact.
+
+/renderer/build/

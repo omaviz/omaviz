@@ -250,8 +250,23 @@ cp "$SRC"/*.qml "$SRC"/*.js "$PLUGIN_DIR/"
 for f in "$SRC"/*.frag "$SRC"/*.qsb; do
   if [ -e "$f" ]; then cp "$f" "$PLUGIN_DIR/"; fi
 done
-cp -r "$SRC/assets" "$SRC/bin" "$PLUGIN_DIR/"
+cp -r "$SRC/assets" "$SRC/bin" "$SRC/native" "$PLUGIN_DIR/"
 chmod +x "$PLUGIN_DIR/bin/omaviz-engine"
+# Quickshell loads plugin QML from qs:@/qs, where a relative native import
+# points into its virtual resource tree. Resolve only the installed copy to
+# the real module directory so both shell and standalone Desktop can dlopen it.
+python3 - "$PLUGIN_DIR/VisualCanvas.qml" "$PLUGIN_DIR/native" <<'PY'
+from pathlib import Path
+import sys
+qml = Path(sys.argv[1])
+source = qml.read_text()
+needle = 'import "native" as Native'
+if needle not in source:
+    raise SystemExit('native import missing from VisualCanvas.qml')
+qml.write_text(source.replace(needle, f'import "{Path(sys.argv[2]).resolve().as_uri()}" as Native', 1))
+art = qml.parent / "ArtworkColors.qml"
+art.write_text(art.read_text().replace(needle, f'import "{Path(sys.argv[2]).resolve().as_uri()}" as Native', 1))
+PY
 # (Re)write the management marker AFTER the copy: records the paths this
 # installer owns — proven, not assumed. A path is claimed only when the file we
 # just placed at that path is byte-identical to its counterpart in $SRC. Files
@@ -260,6 +275,8 @@ chmod +x "$PLUGIN_DIR/bin/omaviz-engine"
 {
   echo "# omaviz-managed-marker v2 — files below are installed by the omaviz installer"
   while IFS= read -r rel; do
+    # These two files were copied and deterministically rewritten above.
+    if [ "$rel" = VisualCanvas.qml ] || [ "$rel" = ArtworkColors.qml ]; then printf '%s\n' "$rel"; continue; fi
     [ -f "$SRC/$rel" ] && cmp -s "$PLUGIN_DIR/$rel" "$SRC/$rel" && printf '%s\n' "$rel"
   done < <(find "$PLUGIN_DIR" -type f ! -name "$MARKER" -printf '%P\n' 2>/dev/null | sort)
 } > "$PLUGIN_DIR/$MARKER"

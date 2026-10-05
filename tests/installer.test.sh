@@ -55,6 +55,8 @@ run_install
 check "install exits 0"                 "[ $? -eq 0 ]"
 check "plugin dir created"              "[ -d \"$(PD)\" ]"
 check "marker written"                  "[ -f \"$(PD)/.omaviz-managed\" ]"
+check "native import resolves on disk" "grep -q 'import \"file:.*/native\" as Native' \"$(PD)/VisualCanvas.qml\""
+check "generated QML stays managed" "grep -Fxq 'VisualCanvas.qml' \"$(PD)/.omaviz-managed\""
 check "bundled engine installed + exec" "[ -x \"$(PD)/bin/omaviz-engine\" ]"
 check "our launcher installed"          "[ -f \"$(LAUNCHER)\" ]"
 # A `.git` FILE (worktree/submodule) is not matched by the '/.git/' directory

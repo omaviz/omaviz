@@ -3,10 +3,10 @@
 The spectrum analyzer you stared at for hours in 1999 — reborn as a
 native citizen of your Omarchy desktop. Live bars in your waybar, a full
 desktop visualizer window, and an oscilloscope that dances to whatever
-is playing. Same soul, zero nostalgia tax: buttery Canvas rendering,
+is playing. Same soul, zero nostalgia tax: native GPU rendering,
 theme-aware, and configured with two clicks.
 
-![version](https://img.shields.io/badge/version-8.5.4-amber) ![license](https://img.shields.io/badge/license-MIT-blue)
+![version](https://img.shields.io/badge/version-8.6.1-amber) ![license](https://img.shields.io/badge/license-MIT-blue)
 
 ## Why omaviz
 
@@ -28,16 +28,26 @@ theme-aware, and configured with two clicks.
 
 ## The tour
 
-Fresh native captures from v8.5.4.
+![Omaviz v8.6.1: live fire spectrum with reflection and peaks, waveforms, and redesigned settings](preview.png)
+
+The fire spectrum hero is captured from the native desktop renderer driven by live
+PipeWire audio, with reflection and peaks enabled and Response at 2.2×. Waveform
+examples use controlled audio to show their shapes; the settings screenshot is
+from the running Omarchy panel. Images retain their original proportions.
 
 | | |
 |---|---|
-| ![desktop visualizer with floor reflection](docs/screenshots/Desktop-window.png) | ![fire flame gradient](docs/screenshots/fire.png) |
-| *Desktop visualizer + floor reflection* | *Fire: its own saved red-to-yellow palette* |
-| ![stacked bars](docs/screenshots/Stacked-bars.png) | ![oscilloscope waveform](docs/screenshots/oscilloscope.png) |
-| *Stacks: segmented Winamp-style bars* | *Oscilloscope: true time-domain waveform* |
-| ![custom color tones](docs/screenshots/Custom-colors.png) | ![theme following](docs/screenshots/Theme-enabled.png) |
-| *Bar color: presets or your own From → To tones* | *Theme mode tracks the Omarchy accent live* |
+| ![Siri translucent cyan, blue, and violet ribbons](docs/screenshots/Siri-v8.6.1.png) | ![Strings with warm strands and soft blue foreground curves](docs/screenshots/Strings-v8.6.1.png) |
+| *Siri: luminous, layered ribbons* | *Strings: vibrating strands with depth* |
+| ![Waves showing a true time-domain waveform](docs/screenshots/Waves-v8.6.1.png) | ![Live fire spectrum with peak markers and floor reflection](docs/screenshots/Spectrum-v8.6.1.png) |
+| *Waves: the audio signal as an oscilloscope* | *Live fire spectrum: reflection and Winamp-style peaks* |
+
+<details>
+<summary>Current settings panel</summary>
+
+![Omaviz v8.6.1 settings with visualization dropdowns and black preview](docs/screenshots/Settings-v8.6.1.png)
+
+</details>
 
 ## Features
 
@@ -45,18 +55,20 @@ Fresh native captures from v8.5.4.
   with a dotted-skin backdrop and a B&W Mono mode for tiny sizes
 - **Spectrum** — peaks + fall speed, dense Spikes, Fire flame gradient,
   Winamp Stacks, floor-mirror Reflection, album-art backdrop
-- **Oscilloscope** — true 128-point time-domain waveform, adjustable
+- **Waves** — true 128-point time-domain waveform, adjustable
   thickness, follows your colors
 - **Bar color** — theme-dominant by default (tracks Omarchy theme
   switches live), or custom From → To tones via presets or hex
+- **Strings** — crossing gold, cream and softly blurred blue strands that vibrate around fixed positions like standing waves. Spectral bands pluck individual strands; waveform samples add local motion. Small surfaces use fewer strands to retain separation. The backdrop stays transparent.
+- **Siri** — broad translucent cyan, blue, and violet ribbons on black, with perceptual audio response so ordinary playback remains visible at mini size; custom palettes are supported.
 - **Motion** — exponential easing by default, Winamp-style linear fall
   on demand, adjustable sensitivity
 - **Robust** — desktop lease stored separately from settings (no heartbeat overwrites),
-  engine auto-retry, one shared Canvas renderer everywhere.
+  engine auto-retry, one shared GPU renderer everywhere.
 
 ## Install
 
-Requires Omarchy (Quickshell) + PipeWire. **Nothing has to be built or run by
+Requires Omarchy (Quickshell), Qt 6.11 or newer, an accelerated Qt Quick backend, and PipeWire. The bundled native renderer targets Linux x86_64. **Nothing has to be built or run by
 hand** — the engine binary ships committed, and Omarchy installs the plugin as
 a self-contained folder.
 
@@ -67,6 +79,16 @@ Install from the Omarchy plugin marketplace, or equivalently:
 ```bash
 omarchy plugin add https://github.com/omaviz/omaviz --enable
 ```
+
+The original marketplace issue uses **Widgets** with `bar`, `media`, and
+`quickshell` tags; the manifest's **Audio** category is Omarchy's separate
+bar-widget field. The current listing is already published. For later merges,
+the Marketplace preflight workflow validates local submission inputs and
+attaches an exact-commit update form for review. Run
+`MARKETPLACE_COMMIT="$(git rev-parse origin/master)" node tools/marketplace-update.cjs`
+for its body and add `--title` for its title. Each new upstream commit still
+needs the marketplace's own validation,
+security baseline, and maintainer decision; local CI cannot grant approval.
 
 That is the entire install. `omarchy plugin add` clones this repository,
 validates it, and moves the folder into
@@ -100,26 +122,22 @@ Both scripts are ownership-guarded: they never delete or replace files omaviz
 does not own, and uninstall removes only what this plugin installed
 (`tests/installer.test.sh` proves it).
 
-Requires: Omarchy (quickshell), PipeWire. `cargo` is needed only for `--build`.
+Requires: Omarchy (quickshell), Qt 6.11+, PipeWire. Maintainer builds use Cargo, CMake, a C++17 compiler and Qt Quick development files. `./build.sh` builds both the Rust engine and the native renderer; users receive both binaries.
 
 ## Testing
 
 ```bash
 npm test              # all JS/QML suites (node >= 24)
 npm run test:rust     # engine unit tests (cargo)
-npm run test:qml      # bounded native integration (requires Quickshell)
-npm run lint:qml      # installed Qt/QML syntax validation
 npm run verify        # both
 ```
 
 | Suite | What it proves |
 | --- | --- |
-| `tests/modelstore.test.cjs` | config defaults/schema, TOML round-trips, legacy migrations and malformed input |
+| `tests/modelstore.test.cjs` | config defaults/schema, TOML round-trips, the store funnel (get/set/onChanged) |
 | `tests/physics.test.cjs` | the shared motion model: instant attack, rate-limited release, peak sustain + accelerating fall |
-| `tests/components.cjs` | real Quickshell settings writes, engine restarts, failure recovery and shutdown (software/offscreen) |
-| `tests/settings-queue.test.cjs` | async write ordering, stale reads, rollback and retry |
-| `tests/protocol.test.cjs`, `tests/palette.test.cjs` | frame validation and independent colour ramps |
-| `tests/engine.test.cjs` | drives the committed binary and asserts its frame contract (finite bands, waveform, faint-signal handling, invalid dimensions) |
+| `tests/qml.test.cjs` | real `qmllint` syntax check, duplicate-property guard, cross-surface invariants |
+| `tests/engine.test.cjs` | drives the committed binary and asserts its frame contract (60 Hz, raw bands, faint-signal handling) |
 | `engine/` (cargo) | DSP + frame + source unit tests |
 
 **Safety:** the installer never deletes files it doesn't own. A plugin
@@ -138,7 +156,7 @@ with a dotted-skin backdrop and a B&W Mono mode for tiny sizes.
 Single-click the mini for the settings panel below; single-click the live
 preview inside it to detach the desktop window:
 
-![Settings panel with plugin title, aligned controls, source, and Exit](docs/screenshots/Settings.png)
+![settings panel with mini in the bar](docs/screenshots/Mini.png)
 
 ## Engine
 
@@ -167,11 +185,10 @@ manifest.json    # plugin identity (id, version, entry points)
 BarWidget.qml    # bar mini + engine spawn + all config writes
 Panel.qml        # settings panel (preview + options)
 Desktop.qml      # detached window (standalone quickshell -p, NO qs.* imports)
-VisualCanvas.qml # THE shared renderer (all modes, all options)
-ModelStore.js    # pure config and protocol helpers
-SettingsDocument.qml / SettingsQueue.js  # observable config + serialized persistence
-EngineFeed.qml  # shared process lifecycle and validated audio state
-Palette.js      # pure colour tables used by VisualCanvas
+VisualCanvas.qml # shared display clock, physics and rendering API
+renderer/        # native batched Qt Quick geometry source
+native/          # bundled QML plugin (all modes, all surfaces)
+ModelStore.js    # config store: parse/write, defaults, reactive get/set, spectrum parse
 Physics.js       # shared bar/peak motion model (unit-tested)
 assets/ bin/ tests/  # launcher entry, COMMITTED engine binary, node tests
 engine/          # Rust source: PipeWire capture → FFT → bands + wave frames
@@ -192,7 +209,7 @@ Installs to `~/.config/omarchy/plugins/org.omaviz.visualizer/`.
 > the engine reads your local audio, the panel reads local players, and
 > nothing ever leaves your machine.
 
-MIT-licensed and hackable end to end: QML surfaces, shared Canvas
+MIT-licensed and hackable end to end: QML surfaces, shared GPU
 renderer and the Rust PipeWire engine all live in this repo, with
 `APP_SPEC.md` as the design record and tests for both sides
 (`tests`, `cargo test`). Found a rough edge or a missing
@@ -203,38 +220,42 @@ Settings saves are serialized so rapid selections remain applied. Flame has inde
 `fire_color_from` / `fire_color_to` colors; changing custom swatches preserves them.
 Desktop liveness lives in `desktop-state.toml` alongside `config.toml`.
 
-See [architecture](docs/ARCHITECTURE.md) for ownership, failure handling, and validation boundaries.
+GPU migration acceptance and CPU/GPU budgets are tracked in [GPU_PLAN.md](GPU_PLAN.md). Resource targets require live measurements; passing unit tests alone does not establish them.
 
-GPU compositing is selected by Qt automatically; Advanced shows the actual backend.
-The old `gpu` setting never controlled painting and is now ignored.
-See [GPU exploration and parity checks](docs/GPU_EXPLORATION.md).
+### Minimal settings and playback controls
 
-### Releases and marketplace verification
+Choose Spectrum or Waveforms from the top dropdown. Waveforms offers Waves (the oscilloscope),
+Strings, and Siri in a second dropdown. Only relevant controls appear.
+Fine tuning starts collapsed. The larger live preview sits at the bottom on
+a pure black background. Custom colors support editable start/end hex values
+and an optional middle color across mini, preview, and desktop; presets return
+to two colors. The Peacock preset adds teal, violet, and gold; Strings supports
+the same custom colors. Spectrum’s Artwork mode extracts cover colors for both
+the bars and the desktop’s blurred, tinted background, with theme colors as a
+fallback when artwork is unavailable. The desktop hover card shows artwork and track details, with
+play/pause when the active media player supports it.
 
-The settings header shows the installed `manifest.json` version. Paired controls
-share the height of the taller control, including Motion and Advanced rows.
+Off pauses visualization and capture while keeping the plugin and desktop controls
+available. On resumes in place. Exit closes the desktop, stops Omaviz capture,
+and unloads the plugin from the shared shell. Desktop settings apply on completed
+file loads, with a 250ms polling fallback. Hover controls remain stable while
+pointing at buttons, and the controlled media player stays selected after Pause.
 
-Push a `vX.Y.Z` tag on `master` (matching manifest/package versions), or dispatch
-Release with an existing tag. The workflow checks out that exact commit, runs
-Rust tests, verifies the bundled engine rebuild, and publishes attested assets.
-Every release includes a prefilled [marketplace verification form](https://github.com/omacom/omarchy-plugin-marketplace/issues/new?template=verify-plugin.yml).
-Merging a PR alone does not create a release or submit a marketplace request.
+Native visual regression: after building with `OMAVIZ_RENDER_PROBE=ON`, run
+`tests/renderer-visual.sh /path/to/omaviz-render-probe` in a graphical session.
+Each mode or transition probe closes after three seconds and checks visible color
+coverage, including Spectrum receiving its first bands after startup. Screenshots
+are kept in the reported temporary directory for visual review.
 
-Optional automatic submission requires the repository Actions secret
-`MARKETPLACE_TOKEN`, using a dedicated credential allowed to create issues in
-`omacom/omarchy-plugin-marketplace`. The ordinary repository `GITHUB_TOKEN`
-cannot write to another repository. An outside contributor currently needs a
-classic PAT with `public_repo`; that scope also permits public code operations,
-so prefer a dedicated account with minimal repository privileges and an expiry.
-If the marketplace organization grants access, use a fine-grained credential
-limited to Issues write instead. Add the value under repository Settings →
-Secrets and variables → Actions → New repository secret; never commit it.
+Keyboard controls: use Tab to reach settings, Space/Enter to activate choices,
+and arrow keys or Home/End to adjust sliders. Focused settings scroll into view.
+In the desktop visualizer, Tab reveals playback/close controls; they remain
+visible while focused. The desktop minimum size is 320×160 to keep actions usable.
 
-Use Release's `validate_only` input to authenticate the configured token without
-publishing a release or creating an issue. This read-only check cannot prove
-issue-write permission; that is verified by the actual submission. Submission runs only after a successful release and only while its
-commit remains `master` HEAD. Reruns reuse the existing request, including closed
-requests; a rejected request needs maintainer attention. Missing credentials
-produce a warning and leave the form link available. Submission failures fail
-the workflow after publication, so rerunning can retry without a new release.
-The marketplace retains its own validation and maintainer approval gates.
+Run `npm run test:interactions` on an Omarchy development machine for Qt mouse
+and keyboard regression tests. The tests extract current controls from the QML;
+shell theme decoration and the media player are isolated fixtures.
+
+Desktop waveform resizing preserves a centered 3:1 drawing area for Waves, Strings,
+and Siri, fitting within wide or tall windows without stretching the shapes.
+Spectrum fills the available window with width-dependent bar density.

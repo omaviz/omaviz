@@ -1,6 +1,5 @@
 import QtQuick
 import QtQuick.Controls
-import QtQuick.Layouts
 import Quickshell
 import Quickshell.Io
 import qs.Commons
@@ -13,19 +12,18 @@ Panel {
   ipcTarget: "org.omaviz.visualizer"
   manageIpc: false
 
-  // Live config binding — refreshed when hostWidget.config changes (via noteWrite)
+  // Live config binding — refreshed when hostWidget.config changes (via SettingsDocument)
   readonly property var hcfg: root.hostWidget ? root.hostWidget.config : Store.defaultConfig()
+  property var anchorItem: null
+  property var hostWidget: null
   property string pluginVersion: ""
   FileView {
-    path: String(Qt.resolvedUrl("manifest.json")).replace(/^file:\/\//, "")
+    path: Qt.resolvedUrl("manifest.json")
     onLoaded: {
       try { root.pluginVersion = JSON.parse(text()).version || "" }
       catch (error) { console.warn("omaviz: cannot read plugin version", error) }
     }
   }
-
-  property var anchorItem: null
-  property var hostWidget: null
 
   // Panel foreground palette — the panel is hosted by the bar (bar.foreground)
   // or runs detached (shell Color.foreground). Defined ONCE, used ~18 times.
@@ -36,15 +34,20 @@ Panel {
   readonly property string sourceLabelText:
     root.hostWidget ? root.hostWidget.sourceLabel : "Unknown"
 
-  readonly property bool isScope: root.hcfg.scope === true
-  readonly property bool isSpectrum: !root.isScope
+  readonly property bool isScope: root.hcfg.visual === "Waves"
+  readonly property bool isSpectrum: root.hcfg.visual === "Bars"
+  readonly property bool isWaves: root.hcfg.visual === "Waves"
+  readonly property bool isStrings: root.hcfg.visual === "Strings"
+  readonly property bool isSiri: root.hcfg.visual === "Siri"
+  readonly property bool isDecorative: isSiri || isStrings
 
   // ---- Derived option state (one concept each) ----
   readonly property bool peaksOn: root.hcfg.peaks !== false
   readonly property bool spikesOn: root.hcfg.spikes === true
   readonly property bool stacksOn: root.hcfg.stacks === true
-  readonly property bool fireOn: root.hcfg.fire === true
-  readonly property bool customOn: root.hcfg.barColorCustom === true
+  readonly property bool artworkOn: root.isSpectrum && root.hcfg.artworkColors === true
+  readonly property bool fireOn: !root.artworkOn && !root.isDecorative && root.hcfg.fire === true
+  readonly property bool customOn: !root.artworkOn && root.hcfg.barColorCustom === true
   // Geometry is a single choice: Bars (default) / Spikes / Stacks.
   readonly property bool barsGeom: !root.spikesOn && !root.stacksOn
   // Gradient direction for the bar field.
@@ -69,6 +72,15 @@ Panel {
   function exitPlugin() {
     if (root.hostWidget && root.hostWidget.requestExit) root.hostWidget.requestExit()
     root.close()
+  }
+
+  function revealControl(item) {
+    if (!item.activeFocus) return
+    var p = item.mapToItem(scroll.contentItem, 0, 0)
+    var target = scroll.contentY
+    if (p.y < target) target = p.y
+    else if (p.y + item.height > target + scroll.height) target = p.y + item.height - scroll.height
+    scroll.contentY = Math.max(0, Math.min(target, Math.max(0, scroll.contentHeight - scroll.height)))
   }
 
   // ---- Size-freeze logic (at root level, NOT inside KeyboardPanel) ----
@@ -105,7 +117,7 @@ Panel {
     open: root.opened
     centerOnBar: false
     padding: Math.round(Style.spacing.popupPadding * 2)
-    focusTarget: keyCatcher
+    focusTarget: onOffSwitch
     property bool _sizeLocked: false
     property int _frozenH: 0
     contentWidth: panel.fittedContentWidth(Style.space(560))
@@ -115,7 +127,13 @@ Panel {
       id: keyCatcher
       anchors.fill: parent
       onCloseRequested: root.close()
-      onActivateRequested: root.close()
+    }
+
+    Rectangle {
+      anchors.fill: parent
+      anchors.margins: -panel.padding
+      radius: Style.cornerRadius
+      color: Qt.rgba(Color.popups.background.r, Color.popups.background.g, Color.popups.background.b, 1)
     }
 
     Flickable {
@@ -124,6 +142,7 @@ Panel {
       contentWidth: width
       contentHeight: column.implicitHeight
       clip: true
+      Keys.onEscapePressed: root.close()
       boundsBehavior: Flickable.StopAtBounds
       interactive: contentHeight > height
 
@@ -156,6 +175,15 @@ Panel {
           }
           ToggleSwitch {
             id: onOffSwitch
+            activeFocusOnTab: true
+            hasCursor: activeFocus
+            cursorRing: activeFocus
+            Accessible.role: Accessible.CheckBox
+            Accessible.name: "Enable visualizer"
+            Accessible.checked: checked
+            Accessible.onToggleAction: root.setVizEnabled(!checked)
+            Keys.onSpacePressed: root.setVizEnabled(!checked)
+            Keys.onReturnPressed: root.setVizEnabled(!checked)
             checked: root.vizEnabled
             foreground: root.fg
             accent: Color.accent
@@ -194,36 +222,29 @@ Panel {
           sourceComponent: contentComponent
         }
         PanelSeparator { }
-        RowLayout {
+        Item {
           width: parent.width
-          spacing: Style.space(8)
+          height: Style.space(16)
           Text {
-            text: "SOURCE"
+            anchors.left: parent.left
+            anchors.verticalCenter: parent.verticalCenter
+            width: parent.width - exitText.width - Style.space(8)
+            text: "SOURCE  " + root.sourceLabelText
+            elide: Text.ElideRight
             color: root.fgMuted
             font.family: Style.font.family
             font.pixelSize: Style.font.bodySmall
-            font.letterSpacing: 1
           }
-          Text {
-            Layout.fillWidth: true
-            Layout.minimumWidth: 0
-            text: root.sourceLabelText + " · default sink"
-            elide: Text.ElideRight
-            color: Color.accent
-            font.family: Style.font.family
-            font.pixelSize: Style.font.body
-          }
-          Text {
+          ActionText {
+            id: exitText
+            anchors.right: parent.right
+            anchors.verticalCenter: parent.verticalCenter
             text: "Exit"
             color: root.fg
             font.family: Style.font.family
             font.pixelSize: Style.font.body
             font.bold: true
-            MouseArea {
-              anchors.fill: parent
-              cursorShape: Qt.PointingHandCursor
-              onClicked: root.exitPlugin()
-            }
+            onActivated: root.exitPlugin()
           }
         }
       }
@@ -239,91 +260,36 @@ Panel {
       spacing: Style.space(8)
 
       // ============================================================
-      //  VISUALIZATIONS — two cards (Spectrum / Oscilloscope)
+      //  VISUALIZATIONS — shared GPU modes
       // ============================================================
       PanelSectionHeader { text: "VISUALIZATIONS" }
 
-      Row {
+      ModeSelect {
+        width: parent.width
+        Accessible.name: "Visualization family"
+        model: ["Spectrum", "Waveforms"]
+        currentIndex: root.isSpectrum ? 0 : 1
+        onActivated: function(index) {
+          if (root.hostWidget) root.hostWidget.writeVizOptions("visual", index === 0 ? "Bars" : "Waves", "scope", index !== 0)
+        }
+      }
+      ModeSelect {
+        width: parent.width
+        visible: !root.isSpectrum
+        Accessible.name: "Waveform style"
+        model: ["Waves · audio trace", "Strings · vibrating strands", "Siri · luminous ribbons"]
+        currentIndex: root.isSiri ? 2 : root.isStrings ? 1 : 0
+        onActivated: function(index) {
+          if (root.hostWidget) root.hostWidget.writeVizOptions("visual", ["Waves", "Strings", "Siri"][index], "scope", index === 0)
+        }
+      }
+
+      // Cache static settings separately from the animated preview. Qt keeps
+      // native-resolution text/controls in one texture until a setting changes.
+      Column {
         width: parent.width
         spacing: Style.space(8)
-
-        VizCard {
-          labelText: "SPECTRUM"
-          cardSelected: root.isSpectrum
-          onCardClicked: if (root.hostWidget) root.hostWidget.writeVizOption("scope", false)
-        }
-
-        VizCard {
-          labelText: "OSCILLOSCOPE"
-          cardSelected: root.isScope
-          onCardClicked: if (root.hostWidget) root.hostWidget.writeVizOption("scope", true)
-        }
-      }
-
-      // ============================================================
-      //  PREVIEW — live canvas
-      // ============================================================
-      PanelSectionHeader { text: "PREVIEW" }
-
-      Rectangle {
-        width: parent.width
-        height: Style.space(60)
-        color: Color.popups.background
-        radius: Style.cornerRadius
-        border.width: 1
-        border.color: Qt.rgba(1,1,1,0.08)
-
-        DotsCanvas {
-          anchors.fill: parent
-          anchors.margins: Style.space(6)
-          visible: root.hcfg.dots !== false
-        }
-        VisualCanvas {
-          id: previewViz
-          anchors.fill: parent
-          anchors.margins: Style.space(6)
-          dots: false
-          bands: root.hostWidget ? root.hostWidget.spectrumBands : []
-          silent: root.hostWidget ? root.hostWidget.spectrumSilent : true
-          wave: root.hostWidget ? root.hostWidget.spectrumWave : []
-          visual: root.isScope ? "Oscilloscope" : "Bars"
-          wash: root.hcfg.artwork !== false
-          reflect: root.hcfg.reflect === true
-          scopeLineWidth: (root.hcfg.scopeThickness ?? 2)
-          colorSync: root.hcfg.colorSync !== false
-          barCount: 64
-          gapPx: root.hostWidget ? Math.min(6, Math.max(0, root.hostWidget.barGap)) : 1
-          peaks: root.peaksOn
-          peakFalloff: (root.hcfg.peakFalloff ?? 0.1)
-          peakSustainMs: (root.hcfg.peakSustainMs ?? 100)
-          linearFall: root.hcfg.linearFall !== false
-          noiseFloor: 0.02
-          spikes: root.spikesOn
-          fire: root.fireOn
-          fireColorFrom: root.hcfg.fireColorFrom || "#be1400"
-          fireColorTo: root.hcfg.fireColorTo || "#fde047"
-          stacks: root.stacksOn
-          sensitivity: (root.hcfg.sensitivity ?? 1.0)
-          barColorCustom: root.customOn
-          barColorFrom: root.hcfg.barColorFrom || "#e68e0d"
-          barColorTo: root.hcfg.barColorTo || "#f59e0b"
-          gradientDir: root.gradDir
-          themeBottom: Qt.darker(Color.accent, 1.3)
-          themeTop: Color.accent
-        }
-        MouseArea {
-          anchors.fill: parent
-          onClicked: { if (root.hostWidget) root.hostWidget.detach() }
-        }
-      }
-      Text {
-        text: "Click preview to open full-screen visualization"
-        color: root.fgFaint
-        font.family: Style.font.family
-        font.pixelSize: Style.font.bodySmall
-        width: parent.width
-        horizontalAlignment: Text.AlignLeft
-      }
+        layer.enabled: true
 
       // ============================================================
       //  LOOK — shape of the bars (Spectrum only)
@@ -373,65 +339,38 @@ Panel {
           }
         }
 
-        // Peaks + fall speed (fall speed is the only "drop" control; the
-        // fixed-rate drop lives in Advanced as "Linear fall").
-        RowLayout {
+        // Everyday Spectrum controls; fall behavior lives in Fine tuning.
+        Row {
           width: parent.width
           spacing: Style.space(14)
 
           Toggle {
-            Layout.fillWidth: true
-            Layout.preferredWidth: 1
-            Layout.fillHeight: true
+            onActiveFocusChanged: root.revealControl(this)
+            Accessible.role: Accessible.CheckBox
+            Accessible.name: label
+            Accessible.checked: checked
+            Accessible.onToggleAction: clicked()
+            width: (parent.width - Style.space(14)) / 2
             label: "Peaks"
             description: "Peak-hold markers"
             checked: root.peaksOn
             onClicked: if (root.hostWidget) root.hostWidget.writeVizOption("peaks", !checked)
           }
-
-          BorderSurface {
-            Layout.fillWidth: true
-            Layout.preferredWidth: 1
-            Layout.fillHeight: true
-            implicitHeight: fallCol.implicitHeight + Style.spacing.huge
-            radius: Style.cornerRadius
-            color: Style.controlFill(false, false, Color.foreground, Color.accent)
-            borderSpec: Border.controlSpec("normal", Color.foreground, Color.accent)
-            Column {
-              id: fallCol
-              anchors.left: parent.left
-              anchors.right: parent.right
-              anchors.verticalCenter: parent.verticalCenter
-              anchors.leftMargin: parent.borderLeft + Style.spacing.rowPaddingX
-              anchors.rightMargin: parent.borderRight + Style.spacing.rowPaddingX
-              spacing: Style.space(4)
-              Text {
-                text: "Peak fall speed"
-                color: root.fg
-                font.family: Style.font.family
-                font.pixelSize: Style.font.body
-                width: parent.width
-                elide: Text.ElideRight
-              }
-              PanelSlider {
-                width: parent.width
-                bar: root.bar
-                enabled: root.peaksOn
-                minimum: 0; maximum: 1; step: 0.05
-                value: (root.hcfg.peakFalloff ?? 0.1)
-                onReleased: function(v) { if (root.hostWidget) root.hostWidget.writeVizOption("peak_falloff", Math.round(v * 20) / 20) }
-              }
-            }
+          Toggle {
+            onActiveFocusChanged: root.revealControl(this)
+            Accessible.role: Accessible.CheckBox
+            Accessible.name: label
+            Accessible.checked: checked
+            Accessible.onToggleAction: clicked()
+            width: (parent.width - Style.space(14)) / 2
+            label: "Reflection"
+            description: "Floor mirror"
+            checked: root.hcfg.reflect === true
+            onClicked: if (root.hostWidget) root.hostWidget.writeVizOption("reflect", !checked)
           }
+
         }
 
-        Toggle {
-          width: parent.width
-          label: "Reflection"
-          description: "Floor mirror"
-          checked: root.hcfg.reflect === true
-          onClicked: if (root.hostWidget) root.hostWidget.writeVizOption("reflect", !checked)
-        }
       }
 
       // ============================================================
@@ -456,28 +395,49 @@ Panel {
           width: parent.width
           spacing: Style.space(6)
           Chip {
-            width: (modeRow.width - Style.space(12)) / 3
-            chipLabel: "Theme"
-            selected: !root.fireOn && !root.customOn
-            onChipClicked: if (root.hostWidget) root.hostWidget.writeVizOptions("fire", false, "bar_color_custom", false)
+            width: (modeRow.width - Style.space(6) * (root.isSpectrum ? 3 : root.isDecorative ? 1 : 2)) / (root.isSpectrum ? 4 : root.isDecorative ? 2 : 3)
+            chipLabel: root.isStrings ? "Original" : root.isSiri ? "Prism" : "Theme"
+            selected: !root.artworkOn && !root.fireOn && !root.customOn
+            onChipClicked: if (root.hostWidget) root.hostWidget.setColorMode("Theme")
           }
           Chip {
-            width: (modeRow.width - Style.space(12)) / 3
+            width: (modeRow.width - Style.space(6) * (root.isSpectrum ? 3 : root.isDecorative ? 1 : 2)) / (root.isSpectrum ? 4 : root.isDecorative ? 2 : 3)
             chipLabel: "Custom"
             selected: !root.fireOn && root.customOn
-            onChipClicked: if (root.hostWidget) root.hostWidget.writeVizOptions("fire", false, "bar_color_custom", true)
+            onChipClicked: if (root.hostWidget) root.hostWidget.setColorMode("Custom")
           }
           Chip {
-            width: (modeRow.width - Style.space(12)) / 3
+            width: (modeRow.width - Style.space(18)) / 4
+            visible: root.isSpectrum
+            chipLabel: "Artwork"
+            selected: root.artworkOn
+            onChipClicked: if (root.hostWidget) root.hostWidget.setColorMode("Artwork")
+          }
+          Chip {
+            width: (modeRow.width - Style.space(6) * (root.isSpectrum ? 3 : root.isDecorative ? 1 : 2)) / (root.isSpectrum ? 4 : root.isDecorative ? 2 : 3)
+            visible: !root.isDecorative
             chipLabel: "Flame"
             selected: root.fireOn
-            onChipClicked: if (root.hostWidget) root.hostWidget.writeVizOption("fire", true)
+            onChipClicked: if (root.hostWidget) root.hostWidget.setColorMode("Flame")
           }
         }
       }
 
+      Text {
+        width: parent.width
+        visible: root.artworkOn
+        text: root.hostWidget && root.hostWidget.artworkPalette.length >= 3
+          ? "Colors follow the current cover. Desktop adds a tinted atmosphere."
+          : "Waiting for cover artwork — using theme colors."
+        color: root.fgMuted
+        font.family: Style.font.family
+        font.pixelSize: Style.font.bodySmall
+        wrapMode: Text.WordWrap
+      }
+
       BorderSurface {
         width: parent.width
+        visible: root.tonesActive
         height: colorBoxCol.implicitHeight + Style.spacing.huge
         radius: Style.cornerRadius
         color: Style.controlFill(false, false, Color.foreground, Color.accent)
@@ -494,11 +454,9 @@ Panel {
           Column {
             width: parent.width
             spacing: Style.space(4)
-            enabled: root.tonesActive
-            opacity: root.tonesActive ? 1.0 : 0.45
 
             Text {
-              text: root.fireOn ? "Flame tones" : "Custom tones"
+              text: root.fireOn ? "Flame tones" : root.isStrings ? "String colors" : "Custom tones"
               color: root.fg
               font.family: Style.font.family
               font.pixelSize: Style.font.body
@@ -506,7 +464,7 @@ Panel {
               elide: Text.ElideRight
             }
             Text {
-              text: root.fireOn ? "From (base) · To (flame tip)" : "From (base) · To (tip)"
+              text: root.fireOn ? "From (base) · To (flame tip)" : "Start · End — enter any hex color"
               color: root.fgMuted
               font.family: Style.font.family
               font.pixelSize: Style.font.bodySmall
@@ -519,14 +477,35 @@ Panel {
 
               HexField {
                 width: (parent.width - Style.space(8)) / 2
+                accessibleLabel: "Start color"
                 value: root.fireOn ? root.hcfg.fireColorFrom : root.hcfg.barColorFrom
                 onAccept: function(v) { if (root.hostWidget) root.hostWidget.writeVizOption(root.fireOn ? "fire_color_from" : "bar_color_from", v) }
               }
               HexField {
                 width: (parent.width - Style.space(8)) / 2
+                accessibleLabel: "End color"
                 value: root.fireOn ? root.hcfg.fireColorTo : root.hcfg.barColorTo
                 onAccept: function(v) { if (root.hostWidget) root.hostWidget.writeVizOption(root.fireOn ? "fire_color_to" : "bar_color_to", v) }
               }
+            }
+          }
+
+          Column {
+            width: parent.width
+            spacing: Style.space(6)
+            visible: root.customOn && !root.fireOn
+            Chip {
+              width: parent.width
+              chipLabel: root.hcfg.barColorMiddleEnabled ? "− Remove middle color" : "+ Add middle color"
+              selected: root.hcfg.barColorMiddleEnabled === true
+              onChipClicked: if (root.hostWidget) root.hostWidget.writeVizOption("bar_color_middle_enabled", !root.hcfg.barColorMiddleEnabled)
+            }
+            HexField {
+              width: parent.width
+              visible: root.hcfg.barColorMiddleEnabled === true
+              accessibleLabel: "Middle color"
+              value: root.hcfg.barColorMiddle || "#a855f7"
+              onAccept: function(v) { if (root.hostWidget) root.hostWidget.writeVizOption("bar_color_middle", v) }
             }
           }
 
@@ -534,6 +513,7 @@ Panel {
           Column {
             width: parent.width
             spacing: Style.space(4)
+            visible: root.isSpectrum && root.customOn && !root.fireOn
             Text {
               text: "Gradient direction"
               color: root.fg
@@ -568,26 +548,43 @@ Panel {
             spacing: Style.space(6)
             Repeater {
               model: [["#e68e0d","#f59e0b"],["#ef4444","#f59e0b"],["#0369a1","#38bdf8"],["#7c3aed","#c4b5fd"],["#65a30d","#d9f99d"],["#e11d48","#fda4af"],["#06b6d4","#a5f3fc"],["#6b7280","#f8fafc"]]
-              Rectangle {
-                width: (presetRow.width - Style.space(66)) / 9
+              PaletteSwatch {
+                accessibleLabel: "Palette " + modelData[0] + " to " + modelData[1]
+                width: (presetRow.width - Style.space(root.isDecorative ? 48 : 54)) / (root.isDecorative ? 9 : 10)
                 height: 22
                 radius: 5
                 gradient: Gradient {
                   GradientStop { position: 0.0; color: modelData[0] }
                   GradientStop { position: 1.0; color: modelData[1] }
                 }
-                border.width: (!root.fireOn && root.customOn && root.hcfg.barColorFrom === modelData[0] && root.hcfg.barColorTo === modelData[1]) ? 2 : 0
+                border.width: (!root.fireOn && root.customOn && root.hcfg.barColorFrom === modelData[0] && root.hcfg.barColorTo === modelData[1] && !root.hcfg.barColorMiddleEnabled) ? 2 : 0
                 border.color: Color.accent
-                MouseArea {
-                  anchors.fill: parent
-                  cursorShape: Qt.PointingHandCursor
-                  onClicked: if (root.hostWidget) root.hostWidget.writeVizOptions3("fire", false, "bar_color_custom", true, "bar_color_from", modelData[0], "bar_color_to", modelData[1])
-                }
+                onActivated: if (root.hostWidget) root.hostWidget.writeVizOptions3("fire", false, "bar_color_custom", true, "bar_color_from", modelData[0], "bar_color_to", modelData[1], "bar_color_middle_enabled", false)
               }
             }
+            PaletteSwatch {
+              accessibleLabel: "Peacock palette"
+              width: (presetRow.width - Style.space(root.isDecorative ? 48 : 54)) / (root.isDecorative ? 9 : 10)
+              height: 22
+              radius: 5
+              gradient: Gradient {
+                GradientStop { position: 0; color: "#008c95" }
+                GradientStop { position: 0.5; color: "#663cc8" }
+                GradientStop { position: 1; color: "#c5c94b" }
+              }
+              border.width: root.customOn && root.hcfg.barColorMiddleEnabled && root.hcfg.barColorFrom === "#008c95" && root.hcfg.barColorMiddle === "#663cc8" && root.hcfg.barColorTo === "#c5c94b" ? 2 : 0
+              border.color: Color.accent
+              onActivated: if (root.hostWidget) root.hostWidget.writeVizMap({
+                  fire: false, artwork_colors: false, bar_color_custom: true,
+                  bar_color_from: "#008c95", bar_color_middle: "#663cc8",
+                  bar_color_to: "#c5c94b", bar_color_middle_enabled: true
+                })
+            }
             // Fire swatch — selecting it switches to Flame colour mode.
-            Rectangle {
-              width: (presetRow.width - Style.space(66)) / 9
+            PaletteSwatch {
+              accessibleLabel: "Flame palette"
+              visible: !root.isDecorative
+              width: (presetRow.width - Style.space(54)) / 10
               height: 22
               radius: 5
               gradient: Gradient {
@@ -598,15 +595,11 @@ Panel {
               }
               border.width: root.fireOn ? 2 : 0
               border.color: Color.accent
-              MouseArea {
-                anchors.fill: parent
-                cursorShape: Qt.PointingHandCursor
-                onClicked: if (root.hostWidget) root.hostWidget.writeVizOption("fire", true)
-              }
+              onActivated: if (root.hostWidget) root.hostWidget.setColorMode("Flame")
             }
           }
           Text {
-            text: "Tap a preset or type hex · applies to mini, preview, desktop + wave."
+            text: "Presets apply to mini, preview, and desktop."
             color: root.fgMuted
             font.family: Style.font.family
             font.pixelSize: Style.font.bodySmall
@@ -622,14 +615,13 @@ Panel {
       PanelSeparator { }
       PanelSectionHeader { text: "MOTION" }
 
-      RowLayout {
+      Row {
         width: parent.width
         spacing: Style.space(14)
         BorderSurface {
-          Layout.fillWidth: true
-          Layout.preferredWidth: 1
-          Layout.fillHeight: true
-          implicitHeight: respCol.implicitHeight + Style.spacing.huge
+          id: responseCard
+          width: parent.width
+          height: respCol.implicitHeight + Style.spacing.huge
           radius: Style.cornerRadius
           color: Style.controlFill(false, false, Color.foreground, Color.accent)
           borderSpec: Border.controlSpec("normal", Color.foreground, Color.accent)
@@ -649,26 +641,20 @@ Panel {
               width: parent.width
               elide: Text.ElideRight
             }
-            PanelSlider {
+            OptionSlider {
               width: parent.width
               bar: root.bar
+              accessibleLabel: "Response"
               minimum: 0.5; maximum: 2; step: 0.1
               value: (root.hcfg.sensitivity ?? 1.0)
               onReleased: function(v) { if (root.hostWidget) root.hostWidget.writeAudioOption("sensitivity", Math.round(v * 10) / 10) }
             }
           }
         }
-        Toggle {
-          Layout.fillWidth: true
-          Layout.preferredWidth: 1
-          Layout.fillHeight: true
-          label: "Mono (mini only)"
-          description: "B&W mini bars"
-          checked: root.hcfg.mono === true
-          onClicked: if (root.hostWidget) root.hostWidget.writeVizOption("mono", !checked)
-        }
+
       }
       Text {
+        visible: root.showAdvanced
         text: "Response scales bar reactivity and waveform amplitude with input gain."
         color: root.fgMuted
         font.family: Style.font.family
@@ -678,47 +664,8 @@ Panel {
       }
 
       // ============================================================
-      //  SCOPE — waveform thickness (Oscilloscope only)
+      //  WAVEFORMS — shared line thickness
       // ============================================================
-      Column {
-        width: parent.width
-        spacing: Style.space(4)
-        visible: root.isScope
-
-        PanelSeparator { }
-        PanelSectionHeader { text: "OSCILLOSCOPE" }
-        Text {
-          text: "Line thickness"
-          color: root.fg
-          font.family: Style.font.family
-          font.pixelSize: Style.font.body
-          width: parent.width
-          elide: Text.ElideRight
-        }
-        BorderSurface {
-          width: parent.width
-          height: thickCol.implicitHeight + Style.spacing.huge
-          radius: Style.cornerRadius
-          color: Style.controlFill(false, false, Color.foreground, Color.accent)
-          borderSpec: Border.controlSpec("normal", Color.foreground, Color.accent)
-          Column {
-            id: thickCol
-            anchors.left: parent.left
-            anchors.right: parent.right
-            anchors.verticalCenter: parent.verticalCenter
-            anchors.leftMargin: parent.borderLeft + Style.spacing.rowPaddingX
-            anchors.rightMargin: parent.borderRight + Style.spacing.rowPaddingX
-            spacing: Style.space(4)
-            PanelSlider {
-              width: parent.width
-              bar: root.bar
-              minimum: 1; maximum: 5; step: 0.5
-              value: (root.hcfg.scopeThickness ?? 2)
-              onReleased: function(v) { if (root.hostWidget) root.hostWidget.writeVizOption("scope_thickness", Math.round(v * 2) / 2) }
-            }
-          }
-        }
-      }
 
       // ============================================================
       //  ADVANCED — collapsed; rarely-touched controls
@@ -729,7 +676,7 @@ Panel {
         width: parent.width
         spacing: Style.space(8)
         Text {
-          text: "ADVANCED"
+          text: "FINE TUNING"
           color: root.fgMuted
           font.family: Style.font.family
           font.pixelSize: Style.font.caption
@@ -739,7 +686,7 @@ Panel {
           elide: Text.ElideRight
           anchors.verticalCenter: parent.verticalCenter
         }
-        Text {
+        ActionText {
           id: advLink
           text: root.showAdvanced ? "Hide" : "Show"
           color: Color.accent
@@ -747,11 +694,7 @@ Panel {
           font.pixelSize: Style.font.body
           font.bold: true
           anchors.verticalCenter: parent.verticalCenter
-          MouseArea {
-            anchors.fill: parent
-            cursorShape: Qt.PointingHandCursor
-            onClicked: root.showAdvanced = !root.showAdvanced
-          }
+          onActivated: root.showAdvanced = !root.showAdvanced
         }
       }
 
@@ -759,15 +702,109 @@ Panel {
         width: parent.width
         spacing: Style.space(8)
         visible: root.showAdvanced
+        BorderSurface {
+          id: fallCard
+          visible: root.isSpectrum && root.peaksOn
+          width: parent.width
+          height: fallCol.implicitHeight + Style.spacing.huge
+          radius: Style.cornerRadius
+          color: Style.controlFill(false, false, Color.foreground, Color.accent)
+          borderSpec: Border.controlSpec("normal", Color.foreground, Color.accent)
+          Column {
+            id: fallCol
+            anchors.left: parent.left
+            anchors.right: parent.right
+            anchors.verticalCenter: parent.verticalCenter
+            anchors.leftMargin: parent.borderLeft + Style.spacing.rowPaddingX
+            anchors.rightMargin: parent.borderRight + Style.spacing.rowPaddingX
+            spacing: Style.space(4)
+            Text {
+              text: "Peak fall speed"
+              color: root.fg
+              font.family: Style.font.family
+              font.pixelSize: Style.font.body
+              width: parent.width
+              elide: Text.ElideRight
+            }
+            OptionSlider {
+              width: parent.width
+              bar: root.bar
+              enabled: root.peaksOn
+              accessibleLabel: "Peak fall speed"
+              minimum: 0; maximum: 1; step: 0.05
+              value: (root.hcfg.peakFalloff ?? 0.1)
+              onReleased: function(v) { if (root.hostWidget) root.hostWidget.writeVizOption("peak_falloff", Math.round(v * 20) / 20) }
+            }
+          }
+        }
+        Column {
+          width: parent.width
+          spacing: Style.space(4)
+          visible: !root.isSpectrum && !root.isSiri
 
-        RowLayout {
+          PanelSeparator { }
+          PanelSectionHeader { text: "WAVEFORM" }
+          Text {
+            text: "Line thickness"
+            color: root.fg
+            font.family: Style.font.family
+            font.pixelSize: Style.font.body
+            width: parent.width
+            elide: Text.ElideRight
+          }
+          BorderSurface {
+            width: parent.width
+            height: thickCol.implicitHeight + Style.spacing.huge
+            radius: Style.cornerRadius
+            color: Style.controlFill(false, false, Color.foreground, Color.accent)
+            borderSpec: Border.controlSpec("normal", Color.foreground, Color.accent)
+            Column {
+              id: thickCol
+              anchors.left: parent.left
+              anchors.right: parent.right
+              anchors.verticalCenter: parent.verticalCenter
+              anchors.leftMargin: parent.borderLeft + Style.spacing.rowPaddingX
+              anchors.rightMargin: parent.borderRight + Style.spacing.rowPaddingX
+              spacing: Style.space(4)
+              OptionSlider {
+                width: parent.width
+                bar: root.bar
+                accessibleLabel: "Line thickness"
+                minimum: 1; maximum: 5; step: 0.5
+                value: (root.hcfg.scopeThickness ?? 2)
+                onReleased: function(v) { if (root.hostWidget) root.hostWidget.writeVizOption("scope_thickness", Math.round(v * 2) / 2) }
+              }
+            }
+          }
+        }
+        Toggle {
+          onActiveFocusChanged: root.revealControl(this)
+          Accessible.role: Accessible.CheckBox
+          Accessible.name: label
+          Accessible.checked: checked
+          Accessible.onToggleAction: clicked()
+
+          width: parent.width
+
+          label: "Mono (mini only)"
+          description: "B&W mini bars"
+          checked: root.hcfg.mono === true
+          onClicked: if (root.hostWidget) root.hostWidget.writeVizOption("mono", !checked)
+        }
+
+        Row {
+          visible: !root.isDecorative
           width: parent.width
           spacing: Style.space(14)
 
           Toggle {
-            Layout.fillWidth: true
-            Layout.preferredWidth: 1
-            Layout.fillHeight: true
+            onActiveFocusChanged: root.revealControl(this)
+            Accessible.role: Accessible.CheckBox
+            Accessible.name: label
+            Accessible.checked: checked
+            Accessible.onToggleAction: clicked()
+            width: (parent.width - Style.space(14)) / 2
+            visible: root.isSpectrum
             label: "Linear fall"
             description: "Fixed-rate drop"
             checked: root.hcfg.linearFall === true
@@ -775,9 +812,13 @@ Panel {
           }
 
           Toggle {
-            Layout.fillWidth: true
-            Layout.preferredWidth: 1
-            Layout.fillHeight: true
+            onActiveFocusChanged: root.revealControl(this)
+            Accessible.role: Accessible.CheckBox
+            Accessible.name: label
+            Accessible.checked: checked
+            Accessible.onToggleAction: clicked()
+            width: (parent.width - Style.space(14)) / 2
+            visible: !root.isDecorative
             label: "Dots"
             description: "Faint dot grid"
             checked: root.hcfg.dots !== false
@@ -785,93 +826,222 @@ Panel {
           }
         }
 
-        RowLayout {
+        Row {
+          visible: root.isSpectrum
           width: parent.width
           spacing: Style.space(14)
 
           Toggle {
-            Layout.fillWidth: true
-            Layout.preferredWidth: 1
-            Layout.fillHeight: true
+            onActiveFocusChanged: root.revealControl(this)
+            Accessible.role: Accessible.CheckBox
+            Accessible.name: label
+            Accessible.checked: checked
+            Accessible.onToggleAction: clicked()
+            width: parent.width
             label: "Artwork backdrop"
             description: "Immersive backdrop"
             checked: root.hcfg.artwork !== false
             onClicked: if (root.hostWidget) root.hostWidget.writeVizOption("artwork", !checked)
           }
-
-          BorderSurface {
-            Layout.fillWidth: true
-            Layout.preferredWidth: 1
-            Layout.fillHeight: true
-            implicitHeight: Math.max(54, backendLabel.implicitHeight + Style.spacing.huge)
-            radius: Style.cornerRadius
-            color: Style.controlFill(false, false, Color.foreground, Color.accent)
-            borderSpec: Border.controlSpec("normal", Color.foreground, Color.accent)
-            Column {
-              id: backendLabel
-              anchors.centerIn: parent
-              Text {
-                text: "Compositing"
-                color: root.fg
-                font.family: Style.font.family
-                font.pixelSize: Style.font.subtitle
-                font.bold: true
-              }
-              Text {
-                text: {
-                  switch (previewViz.GraphicsInfo.api) {
-                    case GraphicsInfo.OpenGL: return "OpenGL · automatic"
-                    case GraphicsInfo.Vulkan: return "Vulkan · automatic"
-                    case GraphicsInfo.Metal: return "Metal · automatic"
-                    case GraphicsInfo.Direct3D11: return "Direct3D · automatic"
-                    case GraphicsInfo.Software: return "Software"
-                    default: return "Detecting backend"
-                  }
-                }
-                color: root.fgMuted
-                font.family: Style.font.family
-                font.pixelSize: Style.font.caption
-              }
-            }
-          }
         }
+      }
+
+      } // cached settings
+
+      // ============================================================
+      //  PREVIEW — live canvas
+      // ============================================================
+      PanelSectionHeader { text: "PREVIEW" }
+
+      Rectangle {
+        width: parent.width
+        height: Style.space(132)
+        color: "#000000"
+        radius: Style.cornerRadius
+        border.width: 1
+        border.color: Qt.rgba(1,1,1,0.08)
+
+        DotsCanvas {
+          anchors.fill: parent
+          anchors.margins: Style.space(6)
+          visible: root.hcfg.dots !== false && !root.isDecorative
+        }
+        VisualCanvas {
+          id: previewViz
+          anchors.fill: parent
+          anchors.margins: Style.space(6)
+          dots: false
+          bands: root.hostWidget ? root.hostWidget.spectrumBands : []
+          silent: root.hostWidget ? root.hostWidget.spectrumSilent : true
+          wave: root.hostWidget ? root.hostWidget.spectrumWave : []
+          visual: root.hcfg.visual || "Bars"
+          wash: false
+          reflect: root.hcfg.reflect === true
+          scopeLineWidth: (root.hcfg.scopeThickness ?? 2)
+          colorSync: root.hcfg.colorSync !== false
+          barCount: 64
+          gapPx: root.hostWidget ? Math.min(6, Math.max(0, root.hostWidget.barGap)) : 1
+          peaks: root.peaksOn
+          peakFalloff: (root.hcfg.peakFalloff ?? 0.1)
+          peakSustainMs: (root.hcfg.peakSustainMs ?? 100)
+          linearFall: root.hcfg.linearFall !== false
+          noiseFloor: 0.02
+          spikes: root.spikesOn
+          fire: root.fireOn
+          fireColorFrom: root.hcfg.fireColorFrom || "#be1400"
+          fireColorTo: root.hcfg.fireColorTo || "#fde047"
+          stacks: root.stacksOn
+          sensitivity: (root.hcfg.sensitivity ?? 1.0)
+          artworkColors: root.artworkOn
+          artworkPalette: root.hostWidget ? root.hostWidget.artworkPalette : []
+          barColorCustom: root.customOn
+          barColorFrom: root.hcfg.barColorFrom || "#e68e0d"
+          barColorTo: root.hcfg.barColorTo || "#f59e0b"
+          barColorMiddle: root.hcfg.barColorMiddle || "#a855f7"
+          barColorMiddleEnabled: root.hcfg.barColorMiddleEnabled === true
+          gradientDir: root.gradDir
+          themeBottom: Qt.darker(Color.accent, 1.3)
+          themeTop: Color.accent
+        }
+        Item {
+          anchors.fill: parent
+          activeFocusOnTab: true
+          onActiveFocusChanged: root.revealControl(this)
+          Accessible.role: Accessible.Button
+          Accessible.name: "Open desktop visualizer"
+          function activate() { if (root.hostWidget) root.hostWidget.detach() }
+          Accessible.onPressAction: activate()
+          Keys.onSpacePressed: activate()
+          Keys.onReturnPressed: activate()
+          Rectangle { anchors.fill: parent; color: "transparent"; border.width: parent.activeFocus ? 2 : 0; border.color: Color.accent }
+          MouseArea { anchors.fill: parent; cursorShape: Qt.PointingHandCursor; onClicked: parent.activate() }
+        }
+      }
+      Text {
+        text: "Click preview to open desktop visualizer"
+        color: root.fgFaint
+        font.family: Style.font.family
+        font.pixelSize: Style.font.bodySmall
+        width: parent.width
+        horizontalAlignment: Text.AlignLeft
       }
 
     }
   }
 
   // ---- Reusable components ----
-  component VizCard: Item {
-    id: card
-    property string labelText: ""
-    property bool cardSelected: false
-    signal cardClicked()
+  component ActionText: Text {
+    id: actionText
+    signal activated()
+    activeFocusOnTab: true
+    onActiveFocusChanged: root.revealControl(actionText)
+    font.underline: activeFocus
+    Accessible.role: Accessible.Button
+    Accessible.name: text
+    Accessible.onPressAction: activated()
+    Keys.onSpacePressed: activated()
+    Keys.onReturnPressed: activated()
+    Keys.onEnterPressed: activated()
+    MouseArea { anchors.fill: parent; anchors.margins: -4; cursorShape: Qt.PointingHandCursor; onClicked: actionText.activated() }
+  }
 
-    width: (parent ? (parent.width - Style.space(8)) / 2 : 200)
-    height: 46
+  component PaletteSwatch: Rectangle {
+    id: swatch
+    property string accessibleLabel: "Color palette"
+    signal activated()
+    activeFocusOnTab: true
+    onActiveFocusChanged: root.revealControl(swatch)
+    Accessible.role: Accessible.Button
+    Accessible.name: accessibleLabel
+    Accessible.onPressAction: activated()
+    Keys.onSpacePressed: activated()
+    Keys.onReturnPressed: activated()
+    ToolTip.visible: swatchPointer.containsMouse || activeFocus
+    ToolTip.text: accessibleLabel
+    Rectangle { anchors.fill: parent; anchors.margins: -2; radius: parent.radius + 2; color: "transparent"; border.width: parent.activeFocus ? 1 : 0; border.color: Color.accent }
+    MouseArea { id: swatchPointer; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onClicked: swatch.activated() }
+  }
 
-    Rectangle {
-      anchors.fill: parent
-      radius: Style.cornerRadius
-      border.width: 1
-      border.color: card.cardSelected ? Color.accent : Qt.rgba(1,1,1,0.08)
-      color: card.cardSelected ? Qt.rgba(Color.accent.r, Color.accent.g, Color.accent.b, 0.14) : Color.popups.background
-
-      Text {
-        anchors.centerIn: parent
-        text: card.labelText
-        font.family: Style.font.family
-        font.pixelSize: 13
-        font.bold: true
-        font.letterSpacing: 1.5
-        color: card.cardSelected ? Color.accent : (root.fg)
-      }
+  component OptionSlider: PanelSlider {
+    id: optionSlider
+    property string accessibleLabel: "Visualization setting"
+    activeFocusOnTab: true
+    onActiveFocusChanged: root.revealControl(optionSlider)
+    Accessible.role: Accessible.Slider
+    Accessible.name: accessibleLabel
+    Accessible.description: String(value)
+    function adjust(delta) {
+      var next = Math.max(minimum, Math.min(maximum, Math.round((value + delta) / step) * step))
+      released(next)
     }
+    Keys.onLeftPressed: adjust(-step)
+    Keys.onRightPressed: adjust(step)
+    Keys.onDownPressed: adjust(-step)
+    Keys.onUpPressed: adjust(step)
+    Keys.onPressed: function(event) {
+      if (event.key === Qt.Key_Home) { released(minimum); event.accepted = true }
+      else if (event.key === Qt.Key_End) { released(maximum); event.accepted = true }
+    }
+    Accessible.onIncreaseAction: adjust(step)
+    Accessible.onDecreaseAction: adjust(-step)
+    Rectangle { anchors.fill: parent; anchors.margins: -2; radius: 3; color: "transparent"; border.width: parent.activeFocus ? 1 : 0; border.color: Color.accent }
+  }
 
-    MouseArea {
-      anchors.fill: parent
-      cursorShape: Qt.PointingHandCursor
-      onClicked: card.cardClicked()
+  component ModeSelect: ComboBox {
+    id: selector
+    height: Style.space(38)
+    font.family: Style.font.family
+    font.pixelSize: Style.font.body
+    Accessible.name: "Visualization style"
+    onActiveFocusChanged: root.revealControl(selector)
+    contentItem: Text {
+      leftPadding: Style.space(12)
+      rightPadding: Style.space(32)
+      text: selector.displayText
+      color: root.fg
+      font: selector.font
+      verticalAlignment: Text.AlignVCenter
+      elide: Text.ElideRight
+    }
+    indicator: Text {
+      x: selector.width - width - Style.space(12)
+      anchors.verticalCenter: parent.verticalCenter
+      text: "⌄"
+      color: root.fg
+    }
+    background: Rectangle {
+      radius: Style.cornerRadius
+      color: Qt.rgba(root.fg.r, root.fg.g, root.fg.b, 0.06)
+      border.width: 1
+      border.color: selector.activeFocus ? Color.accent : Qt.rgba(root.fg.r, root.fg.g, root.fg.b, 0.2)
+    }
+    delegate: ItemDelegate {
+      required property int index
+      required property var modelData
+      width: selector.width
+      text: modelData
+      highlighted: selector.highlightedIndex === index
+      contentItem: Text {
+        text: parent.text
+        color: root.fg
+        font: selector.font
+        elide: Text.ElideRight
+      }
+      background: Rectangle { color: parent.highlighted ? Qt.rgba(Color.accent.r, Color.accent.g, Color.accent.b, 0.22) : Color.popups.background }
+    }
+    popup: Popup {
+      y: selector.height + Style.space(4)
+      width: selector.width
+      padding: 1
+      implicitHeight: Math.min(contentItem.implicitHeight + 2, Style.space(240))
+      background: Rectangle { color: Color.popups.background; border.color: Color.accent; radius: Style.cornerRadius }
+      contentItem: ListView {
+        clip: true
+        implicitHeight: contentHeight
+        model: selector.popup.visible ? selector.delegateModel : null
+        currentIndex: selector.highlightedIndex
+        ScrollIndicator.vertical: ScrollIndicator { }
+      }
     }
   }
 
@@ -882,12 +1052,22 @@ Panel {
     signal chipClicked()
 
     height: 30
+    activeFocusOnTab: true
+    Accessible.role: Accessible.Button
+    Accessible.name: chipLabel
+    Accessible.checkable: true
+    Accessible.checked: selected
+    onActiveFocusChanged: root.revealControl(chip)
+    Accessible.onPressAction: chipClicked()
+    Keys.onSpacePressed: chipClicked()
+    Keys.onReturnPressed: chipClicked()
+    Keys.onEnterPressed: chipClicked()
 
     Rectangle {
       anchors.fill: parent
       radius: Style.cornerRadius
       border.width: 1
-      border.color: chip.selected ? Color.accent : Qt.rgba(1,1,1,0.10)
+      border.color: chip.selected || chip.activeFocus ? Color.accent : Qt.rgba(1,1,1,0.10)
       color: chip.selected
         ? Qt.rgba(Color.accent.r, Color.accent.g, Color.accent.b, 0.16)
         : Qt.rgba(1,1,1,0.05)
@@ -914,7 +1094,9 @@ Panel {
     property string value: "#e68e0d"
     property var onAccept: null
 
-    height: 26
+    height: 30
+    property string accessibleLabel: "Hex color"
+    onValueChanged: if (!hexInput.activeFocus) hexInput.text = value
 
     function submit(raw) {
       var v = String(raw).trim()
@@ -950,6 +1132,10 @@ Panel {
 
         TextInput {
           id: hexInput
+          activeFocusOnTab: true
+          Accessible.name: hexField.accessibleLabel
+          selectByMouse: true
+          onActiveFocusChanged: { if (!activeFocus) hexField.submit(text); else root.revealControl(hexInput) }
           width: parent.width - 26
           anchors.verticalCenter: parent.verticalCenter
           text: hexField.value

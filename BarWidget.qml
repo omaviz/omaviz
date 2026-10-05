@@ -12,6 +12,7 @@ BarWidget {
   readonly property var config: settingsDocument.config
   SettingsDocument {
     id: settingsDocument
+    path: (Quickshell.env("XDG_CONFIG_HOME") || Quickshell.env("HOME") + "/.config") + "/omaviz/config.toml"
     writable: true
     onReadyChanged: if (ready) root.snapThemeColors()
     onSettled: {
@@ -33,6 +34,8 @@ BarWidget {
   function requestExit() {
     if (root._exitRequested || exitProc.running) return
     root._exitRequested = true
+    root.close()
+    root.writeDesktopActive(false)
     if (!settingsDocument.ready) { root._exitRequested = false; return }
     root.writeEnabled(false)
     if (root.config.enabled === false && settingsDocument.queue.desired === null &&
@@ -41,9 +44,11 @@ BarWidget {
       exitProc.running = true
     }
   }
+  readonly property var artworkPalette: artworkColors.colors
+  ArtworkColors { id: artworkColors; active: root.config.artworkColors === true && root.config.visual === "Bars" }
   // Live theme snapshot: persists the current Omarchy accent triple to
   // config whenever the theme changes, so the standalone desktop window
-  // (no qs.* context) follows theme switches within its 100ms poll.
+  // (no qs.* context) follows theme switches within its 250ms poll.
   // Writes only on actual change — never a loop (source is Color.accent,
   // not the config being written).
   property color accentSnap: Color.accent
@@ -82,7 +87,6 @@ BarWidget {
   readonly property bool vizEnabled: root.config.enabled !== false
   property bool desktopLive: false
   function refreshDesktopLive() {
-    if (!root.vizEnabled) { root.desktopLive = false; return }
     var state = desktopState.text()
     var hb = Number(Store.readTomlValue(state, "desktop", "heartbeat") || 0)
     root.desktopLive = Store.isDesktopActiveFromText(state) && hb <= Date.now() && Date.now() - hb < 6000
@@ -126,8 +130,8 @@ BarWidget {
 
   EngineFeed {
     id: spectrumFeed
-    active: root.vizEnabled && settingsDocument.ready && (!root.desktopLive || root.opened)
-    waveEnabled: root.config.scope === true
+    active: !root._exitRequested && root.vizEnabled && settingsDocument.ready && (!root.desktopLive || root.opened)
+    waveEnabled: root.config.visual !== "Bars"
   }
   readonly property string sourceLabel: Store.sourceLabel(spectrumFeed.source)
 
@@ -161,7 +165,7 @@ BarWidget {
 
   FileView {
     id: desktopState
-    path: Store.desktopStatePath
+    path: (Quickshell.env("XDG_CONFIG_HOME") || Quickshell.env("HOME") + "/.config") + "/omaviz/desktop-state.toml"
     watchChanges: true
     printErrors: false
     onLoaded: root.refreshDesktopLive()
@@ -170,12 +174,11 @@ BarWidget {
   function writeDesktopActive(value) {
     // This file contains only a lease; it can never clobber user settings.
     desktopState.setText("[desktop]\nactive = " + value + "\nheartbeat = " + Date.now() + "\n")
-    root.desktopLive = value && root.vizEnabled
+    root.desktopLive = value
   }
 
   function writeEnabled(value) {
     settingsDocument.patch("desktop", { enabled: value })
-    if (!value) { detachProc.running = false; root.writeDesktopActive(false) }
   }
   function writeVizOption(key, value) {
     var values = {}; values[key] = value
@@ -189,13 +192,23 @@ BarWidget {
   function writeVizOptions(key1, value1, key2, value2) {
     writeVizOptions3(key1, value1, key2, value2)
   }
-  function writeVizOptions3(key1, value1, key2, value2, key3, value3, key4, value4) {
+  function writeVizOptions3(key1, value1, key2, value2, key3, value3, key4, value4, key5, value5) {
     var values = {}; values[key1] = value1
     if (key2) values[key2] = value2
     if (key3) values[key3] = value3
     if (key4) values[key4] = value4
+    if (key5) values[key5] = value5
     settingsDocument.patch("desktop", values)
   }
+
+  function setColorMode(mode) {
+    if (["Theme", "Custom", "Artwork", "Flame"].indexOf(mode) < 0) return false
+    var options = { fire: mode === "Flame", bar_color_custom: mode === "Custom", artwork_colors: mode === "Artwork" }
+    if (mode === "Artwork") options.artwork = true
+    root.writeVizMap(options)
+    return true
+  }
+  function writeVizMap(options) { settingsDocument.patch("desktop", options) }
 
   WidgetButton {
     id: button
@@ -205,7 +218,7 @@ BarWidget {
     // of hiding — settings stay one click away, no round-trip.
     bar: root.bar
     tooltipText: {
-      var viz = root.config.scope === true ? "Oscilloscope" : "Spectrum"
+      var viz = root.config.visual === "Bars" ? "Spectrum" : root.config.visual
       return "Omaviz — " + viz
     }
     text: ""
@@ -228,7 +241,7 @@ BarWidget {
       height: parent.height * 0.90
       // Theme-aware container: tracks the shell background so it reads
       // correctly on light and dark themes (dark theme ≈ previous look).
-      color: root.config.spikes === true ? "transparent" : Qt.rgba(Color.background.r, Color.background.g, Color.background.b, 0.82)
+      color: root.config.visual === "Siri" ? "#000000" : root.config.spikes === true ? "transparent" : Qt.rgba(Color.background.r, Color.background.g, Color.background.b, 0.82)
       // Spikes run borderless — the dense spectrum sits directly on the bar.
       border.width: root.config.spikes === true ? 0 : 1
       border.color: Qt.rgba(0.20, 0.20, 0.25, 0.50)
@@ -238,15 +251,15 @@ BarWidget {
       DotsCanvas {
         anchors.fill: parent
         anchors.margins: root.config.spikes === true ? 0 : 4
-        visible: root.config.dots !== false && !root.desktopLive
+        visible: root.config.dots !== false && root.config.visual !== "Siri" && root.config.visual !== "Strings" && !root.desktopLive
       }
       VisualCanvas {
         anchors.fill: parent
-        anchors.margins: root.config.spikes === true ? 0 : 4
+        anchors.margins: root.config.spikes === true ? 0 : (root.config.visual === "Siri" || root.config.visual === "Strings" ? 1 : 4)
         dots: false   // static underlay above (per-frame dots = 34K rects)
         bands: root.desktopLive ? [] : root.spectrumBands
         silent: root.desktopLive ? true : root.spectrumSilent
-        visual: root.config.scope === true ? "Oscilloscope" : "Bars"
+        visual: root.config.visual || "Bars"
         colorSync: root.config.colorSync === true
         barCount: root.barCount
         // Rendered gap follows config (same value that sizes the container).
@@ -265,11 +278,16 @@ BarWidget {
         // Mini holds 32 bars even in spikes (downsampled from the 128 feed).
         spikeBars: 32
         sensitivity: root.config.sensitivity ?? 1.0
+        scopeLineWidth: root.config.scopeThickness ?? 2
         // Bar color: custom From→To wins; otherwise LIVE theme accent
         // (Theme mode always follows the Omarchy theme — no stale snapshot).
+        artworkColors: root.config.artworkColors === true
+        artworkPalette: root.artworkPalette
         barColorCustom: root.config.barColorCustom === true
         barColorFrom: root.config.barColorFrom || "#e68e0d"
         barColorTo: root.config.barColorTo || "#f59e0b"
+        barColorMiddle: root.config.barColorMiddle || "#a855f7"
+        barColorMiddleEnabled: root.config.barColorMiddleEnabled === true
         gradientDir: root.config.barGradientDir || "vertical"
         themeBottom: Qt.darker(Color.accent, 1.3)
         themeTop: Color.accent
@@ -297,5 +315,18 @@ BarWidget {
     function toggle() { root.toggle() }
     function show() { root.open() }
     function hide() { root.close() }
+    function selectVisual(mode: string): bool {
+      if (["Bars", "Oscilloscope", "Waves", "Strings", "Siri"].indexOf(mode) < 0) return false
+      root.writeVizOptions("visual", mode === "Oscilloscope" ? "Waves" : mode, "scope", mode === "Waves" || mode === "Oscilloscope")
+      return true
+    }
+    function setEnabled(enabled: bool) { root.writeEnabled(enabled) }
+    function setColorMode(mode: string): bool { return root.setColorMode(mode) }
+    function setFlame(enabled: bool) { root.writeVizOption("fire", enabled) }
+    function status(): string {
+      return JSON.stringify({visual: root.config.visual, enabled: root.vizEnabled,
+        silent: root.spectrumSilent, bands: root.spectrumBands.length, preview: root.opened,
+        waveSamples: root.spectrumWave.length, engineRunning: spectrumFeed.started, restarting: spectrumFeed.restarting})
+    }
   }
 }
