@@ -10,6 +10,8 @@ Window {
   id: win
   width: 600
   height: 200
+  minimumWidth: 320
+  minimumHeight: 160
   visible: true
   // NOTE: no qs.Commons import here — standalone `quickshell -p` cannot
   // resolve qs.* modules (shell-context only), and the import kills the
@@ -122,6 +124,18 @@ Window {
 
 
   // A passive parent handler observes the whole content tree, including buttons.
+  // Keyboard access must also reveal the otherwise hover-only controls.
+  Shortcut {
+    sequence: "Tab"
+    enabled: !trayBox.shown
+    onActivated: {
+      trayBox.shown = true
+      Qt.callLater(function() {
+        if (playAction.visible && playAction.enabled) playAction.forceActiveFocus()
+        else closeAction.forceActiveFocus()
+      })
+    }
+  }
   HoverHandler {
     id: windowHover
     parent: win.contentItem
@@ -135,7 +149,7 @@ Window {
     id: fadeTimer
     interval: 350
     repeat: false
-    onTriggered: if (!windowHover.hovered) trayBox.shown = false
+    onTriggered: if (!windowHover.hovered && !playAction.activeFocus && !closeAction.activeFocus) trayBox.shown = false
   }
 
   Column {
@@ -215,18 +229,16 @@ Window {
       Loader {
         id: vizLoader
         active: win.vizConfig.enabled !== false
-        anchors.left: parent.left; anchors.right: parent.right
-        anchors.leftMargin: 4; anchors.rightMargin: 4
-        // Bottom-anchored: visualization container hugs bottom of window
-        // instead of centering. Minimum 95% of window height, visualization
-        // occupies 95% of container height (like preview mode).
-        anchors.bottom: parent.bottom
-        anchors.bottomMargin: 4
-        anchors.top: undefined
-        // Height: 95% of parent, with minimum of 100px (was 400, but parent
-        // is window height 200px; use proportion instead of fixed min)
-        height: Math.max(100, parent.height * 0.95)
-        // Visual area occupies 95% of container height
+        readonly property bool waveform: ["Waves", "Wave", "Oscilloscope", "Strings", "Siri"].includes(win.vizConfig.visual)
+        // Fit waveform geometry uniformly: resizing must not turn broad
+        // Siri lobes into flat strings or pull standing strings vertically.
+        // Spectrum instead fills the surface with width-dependent bar density.
+        readonly property real availableWidth: Math.max(0, parent.width - 8)
+        readonly property real availableHeight: Math.max(0, parent.height - 8)
+        width: waveform ? Math.min(availableWidth, availableHeight * 3) : availableWidth
+        height: waveform ? width / 3 : availableHeight
+        x: (parent.width - width) / 2
+        y: waveform ? (parent.height - height) / 2 : parent.height - height - 4
         // One shared native scene-graph renderer, also used by mini/preview.
         sourceComponent: canvasComp
       }
@@ -252,7 +264,7 @@ Window {
         colorSync: win.vizConfig.colorSync !== false
         barCount: Math.max(16, Math.floor((parent.width - 8) / 10))
         gapPx: Math.min(6, Math.max(0, win.vizConfig.gap ?? 1))
-        barWidthExtra: 4
+        barWidthExtra: 0
 
         // Peak settings — live from config (settings panel writes).
         peaks: win.vizConfig.peaks !== false
@@ -316,7 +328,7 @@ Window {
     property bool shown: false
     readonly property bool canToggle: !!win.activePlayer && win.activePlayer.canControl && (win.activePlayer.canTogglePlaying || (win.activePlayer.isPlaying ? win.activePlayer.canPause : win.activePlayer.canPlay))
     opacity: shown ? 1.0 : 0.0
-    visible: opacity > 0.01
+    visible: shown || opacity > 0.01
     enabled: shown
     Behavior on opacity { NumberAnimation { duration: 180; easing.type: Easing.OutCubic } }
 
@@ -351,6 +363,7 @@ Window {
         anchors.verticalCenter: parent.verticalCenter
         Text {
           width: parent.width
+          textFormat: Text.PlainText
           text: win.playerSource || "OMAVIZ"
           color: "#aeb6c6"
           font.pixelSize: 10
@@ -359,6 +372,7 @@ Window {
         }
         Text {
           width: parent.width
+          textFormat: Text.PlainText
           text: win.trackTitle || win.modeName
           color: "#f5f6fa"
           font.pixelSize: 15
@@ -367,6 +381,7 @@ Window {
         }
         Text {
           width: parent.width
+          textFormat: Text.PlainText
           text: win.trackArtist || (win.activePlayer ? (win.activePlayer.isPlaying ? "Playing" : "Paused") : "Listening to system audio")
           color: "#aeb6c6"
           font.pixelSize: 12
@@ -378,6 +393,7 @@ Window {
         spacing: 8
         anchors.verticalCenter: parent.verticalCenter
         TrayAction {
+          id: playAction
           visible: !!win.activePlayer && win.activePlayer.canControl
           enabled: trayBox.canToggle
           opacity: enabled ? 1 : 0.4
@@ -386,6 +402,7 @@ Window {
           onTriggered: win.togglePlayback()
         }
         TrayAction {
+          id: closeAction
           label: "×"
           accessibleLabel: "Close desktop visualizer"
           onTriggered: { win.setDesktopActive(false); closeTimer.restart() }

@@ -6,7 +6,7 @@ desktop visualizer window, and an oscilloscope that dances to whatever
 is playing. Same soul, zero nostalgia tax: native GPU rendering,
 theme-aware, and configured with two clicks.
 
-![version](https://img.shields.io/badge/version-8.6.0-amber) ![license](https://img.shields.io/badge/license-MIT-blue)
+![version](https://img.shields.io/badge/version-8.6.1-amber) ![license](https://img.shields.io/badge/license-MIT-blue)
 
 ## Why omaviz
 
@@ -28,19 +28,26 @@ theme-aware, and configured with two clicks.
 
 ## The tour
 
-![Omaviz marketplace preview showing spectrum, Flame, custom gradient, and oscilloscope](preview.png)
+![Omaviz v8.6.1: live fire spectrum with reflection and peaks, waveforms, and redesigned settings](preview.png)
 
-The marketplace preview brings four modes and a captured settings panel together. The screenshots below
-show the individual modes at their actual rendered size.
+The fire spectrum hero is captured from the native desktop renderer driven by live
+PipeWire audio, with reflection and peaks enabled and Response at 2.2×. Waveform
+examples use controlled audio to show their shapes; the settings screenshot is
+from the running Omarchy panel. Images retain their original proportions.
 
 | | |
 |---|---|
-| ![desktop window with artwork backdrop](docs/screenshots/Desktop-window-with-artwork.png) | ![fire flame gradient](docs/screenshots/fire.png) |
-| *Desktop window + artwork backdrop + floor reflection* | *Fire: its own saved red-to-yellow palette* |
-| ![stacked bars](docs/screenshots/Stacked-bars.png) | ![oscilloscope waveform](docs/screenshots/oscilloscope.png) |
-| *Stacks: segmented Winamp-style bars* | *Oscilloscope: true time-domain waveform* |
-| ![custom color tones](docs/screenshots/Custom-colors.png) | ![theme following](docs/screenshots/Theme-enabled.png) |
-| *Bar color: presets or your own From → To tones* | *Theme mode tracks the Omarchy accent live* |
+| ![Siri translucent cyan, blue, and violet ribbons](docs/screenshots/Siri-v8.6.1.png) | ![Strings with warm strands and soft blue foreground curves](docs/screenshots/Strings-v8.6.1.png) |
+| *Siri: luminous, layered ribbons* | *Strings: vibrating strands with depth* |
+| ![Waves showing a true time-domain waveform](docs/screenshots/Waves-v8.6.1.png) | ![Live fire spectrum with peak markers and floor reflection](docs/screenshots/Spectrum-v8.6.1.png) |
+| *Waves: the audio signal as an oscilloscope* | *Live fire spectrum: reflection and Winamp-style peaks* |
+
+<details>
+<summary>Current settings panel</summary>
+
+![Omaviz v8.6.1 settings with visualization dropdowns and black preview](docs/screenshots/Settings-v8.6.1.png)
+
+</details>
 
 ## Features
 
@@ -239,3 +246,16 @@ Native visual regression: after building with `OMAVIZ_RENDER_PROBE=ON`, run
 Each mode or transition probe closes after three seconds and checks visible color
 coverage, including Spectrum receiving its first bands after startup. Screenshots
 are kept in the reported temporary directory for visual review.
+
+Keyboard controls: use Tab to reach settings, Space/Enter to activate choices,
+and arrow keys or Home/End to adjust sliders. Focused settings scroll into view.
+In the desktop visualizer, Tab reveals playback/close controls; they remain
+visible while focused. The desktop minimum size is 320×160 to keep actions usable.
+
+Run `npm run test:interactions` on an Omarchy development machine for Qt mouse
+and keyboard regression tests. The tests extract current controls from the QML;
+shell theme decoration and the media player are isolated fixtures.
+
+Desktop waveform resizing preserves a centered 3:1 drawing area for Waves, Strings,
+and Siri, fitting within wide or tall windows without stretching the shapes.
+Spectrum fills the available window with width-dependent bar density.

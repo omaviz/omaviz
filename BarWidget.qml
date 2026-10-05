@@ -92,12 +92,14 @@ BarWidget {
   }
   // Bounce the engine without tripping the failure backoff (see onExited).
   function restartSpectrum() {
-    if (!root.wantsFeed()) return
+    if (!root.wantsFeed() || root._restarting || root._intentionalFeedStop) return
     if (!spectrumProc.running) { spectrumProc.running = true; return }
     root._restarting = true
+    root.spectrumWave = []
+    Store.spectrumData.wave = []
     spectrumProc.running = false
-    spectrumProc.running = true
-    Qt.callLater(function() { root._restarting = false })
+    // Quickshell stops asynchronously. Resume from onExited so rapid
+    // mode changes cannot overlap capture processes or reuse old flags.
   }
   function noteWrite(txt) {
     root._lastWriteText = txt
@@ -124,7 +126,7 @@ BarWidget {
   }
   function syncBarFeed() {
     if (root.wantsFeed()) {
-      if (!spectrumProc.running) spectrumProc.running = true
+      if (!spectrumProc.running && !root._restarting && !root._intentionalFeedStop) spectrumProc.running = true
     } else {
       bridgeRetryTimer.stop()
       if (spectrumProc.running) {
@@ -202,7 +204,11 @@ BarWidget {
       }
     }
     onExited: function(code, status) {
-      if (root._restarting) { root._restarting = false; return }
+      if (root._restarting) {
+        root._restarting = false
+        root.syncBarFeed()
+        return
+      }
       if (root._intentionalFeedStop) {
         root._intentionalFeedStop = false
         root.syncBarFeed()
@@ -494,7 +500,8 @@ BarWidget {
     function setFlame(enabled: bool) { root.writeVizOption("fire", enabled) }
     function status(): string {
       return JSON.stringify({visual: root.config.visual, enabled: root.vizEnabled,
-        silent: root.spectrumSilent, bands: root.spectrumBands.length, preview: root.opened})
+        silent: root.spectrumSilent, bands: root.spectrumBands.length, preview: root.opened,
+        waveSamples: root.spectrumWave.length, engineRunning: spectrumProc.running, restarting: root._restarting})
     }
   }
 }

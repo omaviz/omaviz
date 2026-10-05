@@ -107,17 +107,23 @@ test("installer ships ModelStore.js + Physics.js and never the old Model.js", ()
 // QML engine rejects the whole component ("Type X unavailable"), which
 // silently kills the widget. This guard caught exactly that.
 test("no QML component declares the same property twice in one scope", () => {
-  const pat = /^(\s*)property\s+[A-Za-z_][\w.]*\s+([A-Za-z_]\w*)/
+  const pat = /^\s*(?:(?:readonly|required)\s+)?property\s+[A-Za-z_][\w.]*\s+([A-Za-z_]\w*)/
   for (const f of QML) {
-    const seen = new Map()
-    read(f).split("\n").forEach((line, i) => {
-      const m = pat.exec(line)
-      if (!m) return
-      const key = m[1].length + ":" + m[2]      // indent + property name
-      if (seen.has(key)) {
-        assert.fail(`${f}: duplicate property "${m[2]}" (lines ${seen.get(key)} and ${i + 1})`)
+    const scopes = [new Map()]
+    // Adjacent inline components are separate scopes even at the same indent.
+    const source = read(f).replace(/\/\*[^]*?\*\//g, "")
+    source.split("\n").forEach((line, i) => {
+      const clean = line.replace(/"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|\/\/.*$/g, "")
+      const m = pat.exec(clean)
+      if (m) {
+        const seen = scopes[scopes.length - 1]
+        assert.ok(!seen.has(m[1]), `${f}: duplicate property "${m[1]}" (line ${i + 1})`)
+        seen.set(m[1], i + 1)
       }
-      seen.set(key, i + 1)
+      for (const token of clean) {
+        if (token === "{") scopes.push(new Map())
+        else if (token === "}" && scopes.length > 1) scopes.pop()
+      }
     })
   }
 })
@@ -151,5 +157,14 @@ test("BarWidget routes every config load through syncFromConfig", () => {
   assert.equal((src.match(/root\.config = Store\.loadFromTOML\(/g) || []).length, 1)
   for (const call of ["root._configReady = true; root.syncFromConfig", "onFileChanged: root.syncFromConfig"]) {
     assert.ok(src.includes(call), `missing ${call}`)
+  }
+})
+
+
+test("desktop treats external media metadata as plain text", () => {
+  const blocks = read("Desktop.qml").match(/Text\s*\{[^{}]*\}/g) || []
+  for (const field of ["playerSource", "trackTitle", "trackArtist"]) {
+    const block = blocks.find(s => s.includes(`text: win.${field}`))
+    assert.ok(block && block.includes("textFormat: Text.PlainText"), `${field} must not interpret markup`)
   }
 })

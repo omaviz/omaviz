@@ -91,7 +91,7 @@ test("preset row keeps 8 gradients + a Fire swatch", () => {
 
 test("Advanced is collapsed, not a separate slide-out view", () => {
   assert.ok(src.includes('text: root.showAdvanced ? "Hide" : "Show"'))
-  assert.ok(src.includes("onClicked: root.showAdvanced = !root.showAdvanced"))
+  assert.ok(src.includes("onActivated: root.showAdvanced = !root.showAdvanced"))
   assert.ok(src.includes("visible: root.showAdvanced"))
   // the old slide-out stage is gone
   assert.ok(!src.includes("id: optStage"))

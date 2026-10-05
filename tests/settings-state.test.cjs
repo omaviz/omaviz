@@ -83,6 +83,9 @@ test('bar capture pauses behind the detached window and resumes for preview or m
   assert.equal(retriesStopped, 1);
   root.opened = true;
   root.syncBarFeed();
+  assert.equal(spectrumProc.running, false, 'wait for the stopped process to exit');
+  root._intentionalFeedStop = false; // onExited clears the latch before resuming
+  root.syncBarFeed();
   assert.equal(spectrumProc.running, true, 'opening settings must restore the live preview');
   root.opened = false;
   root.desktopLive = false;
@@ -166,4 +169,31 @@ test('Exit stops capture and requests desktop close independently of settings sa
   ctx.requestExit(); ctx.requestExit();
   assert.equal(spectrumProc.running,false);
   assert.equal(lease,false); assert.equal(stopped,1); assert.equal(closed,1); assert.equal(delayed,1);
+});
+
+test('bar mode changes wait for capture exit and honor Off during restart', () => {
+  const transitions = [];
+  let running = true;
+  const spectrumProc = { get running() { return running }, set running(v) { running=v; transitions.push(v) } };
+  const root = {vizEnabled:true, desktopLive:false, opened:false, _restarting:false, _exitRequested:false};
+  const ctx = vm.createContext({root, spectrumProc, Store:{spectrumData:{wave:[]}}, bridgeRetryTimer:{stop(){}, restart(){}}});
+  for (const name of ['wantsFeed', 'syncBarFeed', 'restartSpectrum']) {
+    vm.runInContext(method(bar, name),ctx); root[name]=ctx[name];
+  }
+  const handler=bar.match(/    onExited: function\(code, status\) \{([^]*?)^    \}/m);
+  assert.ok(handler);
+  vm.runInContext('function exited(code,status) {'+handler[1]+'}',ctx);
+  root.restartSpectrum(); root.syncBarFeed(); root.restartSpectrum();
+  assert.deepEqual(transitions,[false], 'do not start while the previous capture is stopping');
+  ctx.exited(0,0);
+  assert.deepEqual(transitions,[false,true], 'resume only after exit');
+  root.restartSpectrum(); root.vizEnabled=false; ctx.exited(0,0);
+  assert.equal(spectrumProc.running,false,'Off while stopping must suppress restart');
+  root.vizEnabled=true; root.syncBarFeed();
+  assert.equal(spectrumProc.running,true,'On starts capture again');
+  root.vizEnabled=false; root.syncBarFeed();
+  root.vizEnabled=true; root.syncBarFeed();
+  assert.equal(spectrumProc.running,false,'rapid Off/On waits for intentional stop');
+  ctx.exited(0,0);
+  assert.equal(spectrumProc.running,true,'intentional stop exit resumes the current desired state');
 });

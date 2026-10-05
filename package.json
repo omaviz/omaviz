@@ -1,6 +1,6 @@
 {
   "name": "omaviz",
-  "version": "8.6.0",
+  "version": "8.6.1",
   "private": true,
   "description": "Omarchy audio visualizer plugin (QML + bundled Rust engine)",
   "engines": {
@@ -9,6 +9,7 @@
   "scripts": {
     "test": "node --test \"tests/**/*.test.cjs\"",
     "test:engine": "node --test tests/engine.test.cjs",
+    "test:interactions": "./tests/native-controls/run.sh",
     "test:physics": "node --test tests/physics.test.cjs",
     "test:store": "node --test tests/modelstore.test.cjs",
     "test:qml": "node --test tests/qml.test.cjs",

@@ -1,7 +1,7 @@
-# omaviz — Application Specification (v8.6.0)
+# omaviz — Application Specification (v8.6.1)
 
 > **Plugin id:** `org.omaviz.visualizer`
-> **Version:** 8.6.0 (spec + manifest, git tag)
+> **Version:** 8.6.1 (spec + manifest, git tag)
 > **Status:** Single-package Omarchy QML plugin. Audio analysis is bundled as
 > one native binary (`bin/omaviz-engine`) shipped **inside** the plugin
 > directory. No systemd service, no Unix socket, no `~/.local/bin` binaries.
@@ -343,3 +343,20 @@ environment on both surfaces. Completed FileView loads apply fresh settings;
 A passive parent HoverHandler observes the whole desktop content tree, keeping
 controls visible over child buttons. Playback uses explicit pause/play capabilities
 and retains the controlled player after pausing.
+
+## Interaction acceptance updates
+
+Settings custom actions support Tab, Space/Enter, and accessibility activation.
+Sliders retain the shell pointer behavior and add arrows/Home/End. Focus scrolling
+keeps expanded controls reachable. Hex fields recover from incomplete edits and
+continue tracking subsequent preset changes. Dropdown surfaces follow the shell
+theme instead of assuming a dark background.
+
+Capture restarts wait for process exit, including rapid mode and Off/On changes;
+stale waveform samples are cleared when changing capture flags. Desktop Tab
+reveals the action tray, keyboard focus prevents auto-hide, and a 320×160 minimum
+prevents the artwork/actions from overlapping in small windows.
+
+Desktop waveform resizing preserves a centered 3:1 drawing area for Waves, Strings,
+and Siri, fitting within wide or tall windows without stretching the shapes.
+Spectrum fills the available window with width-dependent bar density.
