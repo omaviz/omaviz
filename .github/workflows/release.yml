@@ -38,6 +38,13 @@ permissions:
   attestations: write    # persist the attestation
 
 jobs:
+  native:
+    if: inputs.validate_only != true
+    uses: ./.github/workflows/native.yml
+    with:
+      ref: ${{ inputs.tag || github.ref }}
+    permissions:
+      contents: read
   credentials:
     runs-on: ubuntu-latest
     permissions: {}
@@ -56,7 +63,7 @@ jobs:
           echo "Marketplace credential authenticated; submission permissions are checked when creating the request." >> "$GITHUB_STEP_SUMMARY"
 
   release:
-    needs: credentials
+    needs: [credentials, native]
     if: inputs.validate_only != true
     runs-on: ubuntu-latest
     steps:

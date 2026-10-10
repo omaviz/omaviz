@@ -48,9 +48,19 @@ ShellRoot {
         feed.active = true
         test.stage = 6
       } else if (test.stage === 6 && feed.bands.length === 32) {
-        feed.active = false
+        feed.siriEnabled = true
         test.stage = 7
-      } else if (test.stage === 7 && !feed.started) {
+      } else if (test.stage === 7 && feed.bandLayout === "siri" && feed.bands.length === 6 && feed.wave.length === 1) {
+        feed.siriEnabled = false
+        feed.stringsEnabled = true
+        test.stage = 8
+      } else if (test.stage === 8 && feed.bandLayout === "strings" && feed.bands.length === 16 && feed.wave.length === 128) {
+        feed.stringsEnabled = false
+        test.stage = 9
+      } else if (test.stage === 9 && feed.bandLayout === "" && feed.bands.length === 32 && feed.wave.length === 128) {
+        feed.active = false
+        test.stage = 10
+      } else if (test.stage === 10 && !feed.started) {
         console.log("COMPONENT_TEST_PASS")
         Qt.quit()
       }

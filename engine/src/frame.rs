@@ -21,23 +21,18 @@ pub struct Frame<'a> {
 /// and skip stale frames. Older parsers ignore unknown keys.
 pub fn build_frame(frame: &Frame) -> String {
     // Build manually to guarantee key order + stable numeric formatting.
-    let bands_json: Vec<String> = frame.bands.iter().map(|v| format!("{:.4}", v)).collect();
-    let source_escaped = frame
-        .source
-        .replace('\\', "\\\\")
-        .replace('"', "\\\"")
-        .replace('\n', "\\n")
-        .replace('\r', "\\r")
-        .replace('\t', "\\t");
+    let finite = |v: f32| if v.is_finite() { v } else { 0.0 };
+    let bands_json: Vec<String> = frame.bands.iter().map(|v| format!("{:.4}", finite(*v))).collect();
+    let source_escaped = serde_json::to_string(frame.source).expect("string serialization");
     let now_ms = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_millis())
         .unwrap_or(0);
     format!(
-        "{{\"bands\":[{}],\"energy\":{:.4},\"beat\":{:.4},\"silent\":{},\"source\":\"{}\",\"t\":{}}}",
+        "{{\"bands\":[{}],\"energy\":{:.4},\"beat\":{:.4},\"silent\":{},\"source\":{},\"t\":{}}}",
         bands_json.join(","),
-        frame.energy,
-        frame.beat,
+        finite(frame.energy),
+        finite(frame.beat),
         frame.silent,
         source_escaped,
         now_ms
@@ -126,5 +121,18 @@ mod tests {
         let s = build_frame(&f);
         let v: serde_json::Value = serde_json::from_str(&s).expect("escaped source must parse");
         assert_eq!(v["source"].as_str().unwrap(), "we\"ird\\name");
+    }
+
+    #[test]
+    fn nonfinite_audio_and_control_characters_cannot_break_json() {
+        let bands = [f32::NAN, f32::INFINITY, f32::NEG_INFINITY];
+        let source = "control\0\u{0008}\u{000c}\u{001f}";
+        let line = build_frame(&Frame { bands: &bands, energy: f32::NAN,
+            beat: f32::INFINITY, silent: true, source });
+        let value: serde_json::Value = serde_json::from_str(&line).unwrap();
+        assert_eq!(value["source"], source);
+        assert_eq!(value["bands"], serde_json::json!([0.0, 0.0, 0.0]));
+        assert_eq!(value["energy"], 0.0);
+        assert_eq!(value["beat"], 0.0);
     }
 }

@@ -277,7 +277,7 @@ Panel {
         width: parent.width
         visible: !root.isSpectrum
         Accessible.name: "Waveform style"
-        model: ["Waves · audio trace", "Strings · vibrating strands", "Siri · luminous ribbons"]
+        model: ["Waves · audio trace", "Strings · vibrating strands", "Siri · luminous waves"]
         currentIndex: root.isSiri ? 2 : root.isStrings ? 1 : 0
         onActivated: function(index) {
           if (root.hostWidget) root.hostWidget.writeVizOptions("visual", ["Waves", "Strings", "Siri"][index], "scope", index === 0)
@@ -616,6 +616,41 @@ Panel {
       PanelSectionHeader { text: "MOTION" }
 
       Row {
+        visible: root.isSiri
+        width: parent.width
+        spacing: Style.spacing.small
+        Toggle {
+          id: siriTravelToggle
+          width: (parent.width - parent.spacing) / 2
+          onActiveFocusChanged: root.revealControl(this)
+          Accessible.role: Accessible.CheckBox
+          Accessible.name: label
+          Accessible.checked: checked
+          Accessible.onToggleAction: clicked()
+          label: "Left to right motion"
+          description: "Let Siri’s waves travel sideways"
+          checked: root.hcfg.siriTravel === true
+          onClicked: if (root.hostWidget) root.hostWidget.writeVizOption("siri_travel", !checked)
+        }
+
+        Toggle {
+          id: siriClassicToggle
+          width: (parent.width - parent.spacing) / 2
+          onActiveFocusChanged: root.revealControl(this)
+          Accessible.role: Accessible.CheckBox
+          Accessible.name: label
+          Accessible.checked: checked
+          Accessible.onToggleAction: clicked()
+          label: "Classic Siri style"
+          description: "Use independent multicolor lobes"
+          checked: root.hcfg.siriClassic === true
+          onClicked: if (root.hostWidget) root.hostWidget.writeVizOption("siri_classic", !checked)
+        }
+
+      }
+
+
+      Row {
         width: parent.width
         spacing: Style.space(14)
         BorderSurface {
@@ -874,10 +909,14 @@ Panel {
           bands: root.hostWidget ? root.hostWidget.spectrumBands : []
           silent: root.hostWidget ? root.hostWidget.spectrumSilent : true
           wave: root.hostWidget ? root.hostWidget.spectrumWave : []
+          waveSerial: root.hostWidget ? root.hostWidget.spectrumWaveSerial : 0
+          bandLayout: root.hostWidget ? root.hostWidget.spectrumBandLayout : ""
           visual: root.hcfg.visual || "Bars"
           wash: false
           reflect: root.hcfg.reflect === true
           scopeLineWidth: (root.hcfg.scopeThickness ?? 2)
+          siriClassic: root.hcfg.siriClassic === true
+          siriTravel: root.hcfg.siriTravel === true
           colorSync: root.hcfg.colorSync !== false
           barCount: 64
           gapPx: root.hostWidget ? Math.min(6, Math.max(0, root.hostWidget.barGap)) : 1

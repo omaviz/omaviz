@@ -201,6 +201,10 @@ test("each panel option round-trips through write + parse", () => {
     ["desktop", "fire", true, "fire", true],
     ["desktop", "scope", true, "scope", true],
     ["desktop", "scope_thickness", 3.5, "scopeThickness", 3.5],
+    ["desktop", "siri_classic", true, "siriClassic", true],
+    ["desktop", "siri_classic", false, "siriClassic", false],
+    ["desktop", "siri_travel", true, "siriTravel", true],
+    ["desktop", "siri_travel", false, "siriTravel", false],
     ["desktop", "linear_fall", true, "linearFall", true],
     ["desktop", "mono", true, "mono", true],
     ["desktop", "dots", false, "dots", false],
@@ -313,3 +317,21 @@ test("TOML comments and escaped strings preserve settings without injecting keys
   assert.equal((written.match(/\[desktop\]/g) || []).length, 1);
   assert.equal(Store.readConfigFromText(written).fire, true);
 });
+
+
+test("Siri travel is opt-in and survives serialization", () => {
+  assert.equal(Store.defaultConfig().siriTravel, false)
+  assert.equal(Store.readConfigFromText('[desktop]\nvisual = "Siri"\n').siriTravel, false)
+  const config = Store.defaultConfig()
+  config.siriTravel = true
+  assert.equal(Store.readConfigFromText(Store.toTOML(config)).siriTravel, true)
+})
+
+assert.equal(Store.defaultConfig().siriClassic, false)
+assert.equal(Store.readConfigFromText('[desktop]\nvisual = "Siri"\n').siriClassic, false)
+for (const siriClassic of [false, true]) for (const siriTravel of [false, true]) {
+  const config = {...Store.defaultConfig(), siriClassic, siriTravel}
+  const restored = Store.readConfigFromText(Store.toTOML(config))
+  assert.equal(restored.siriClassic, siriClassic)
+  assert.equal(restored.siriTravel, siriTravel)
+}

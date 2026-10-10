@@ -69,8 +69,8 @@ test("every surface binds the SAME physics properties (identical fall)", () => {
 
 test("VisualCanvas renders the release envelope, never the raw frame", () => {
   const src = read("VisualCanvas.qml")
-  assert.ok(src.includes('cv.visual === "Strings" ? cv.bands : cv._barArr'),
-    "spectrum uses release envelopes while Strings receives distinct frequency drives")
+  assert.ok(src.includes('(cv.visual === "Strings" || cv.visual === "Siri") ? cv.bands : cv._barArr'),
+    "spectrum uses release envelopes while Strings and Siri receive distinct frequency drives")
   assert.ok(!/silent \? 0/.test(src), "silent must not hard-zero bars")
   assert.ok(src.includes('import "Physics.js" as Physics'))
   assert.ok(src.includes("Physics.step("))
