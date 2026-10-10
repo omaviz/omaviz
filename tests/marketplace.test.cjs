@@ -17,6 +17,17 @@ test('marketplace requests reject ambiguous commits and malformed repository fie
     assert.throws(() => request({id: 'org.omaviz.visualizer', repository: 'omaviz/omaviz', commit: 'a'.repeat(40), ...override}));
 });
 
+test('local update form matches the release submission exactly', () => {
+  const {execFileSync} = require('node:child_process');
+  const path = require('node:path');
+  const commit = 'd'.repeat(40);
+  const expected = request({id: 'org.omaviz.visualizer', repository: 'omaviz/omaviz', commit});
+  const script = path.join(__dirname, '../tools/marketplace-update.cjs');
+  const options = {encoding: 'utf8', env: {...process.env, MARKETPLACE_COMMIT: commit}};
+  assert.equal(execFileSync(process.execPath, [script], options), expected.body);
+  assert.equal(execFileSync(process.execPath, [script, '--title'], options), expected.title + '\n');
+});
+
 const {submit} = require('../tools/release/marketplace.cjs');
 const identity = {id: 'org.omaviz.visualizer', repository: 'omaviz/omaviz', commit: 'b'.repeat(40)};
 function apiSequence(responses) {
