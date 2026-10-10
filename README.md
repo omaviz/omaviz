@@ -43,7 +43,7 @@ from the running Omarchy panel. Images retain their original proportions.
 | *Waves: the audio signal as an oscilloscope* | *Live fire spectrum: reflection and Winamp-style peaks* |
 
 <details>
-<summary>Current settings panel</summary>
+<summary>Settings panel (v8.6.1)</summary>
 
 ![Omaviz v8.6.1 settings with visualization dropdowns and black preview](docs/screenshots/Settings-v8.6.1.png)
 

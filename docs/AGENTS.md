@@ -55,7 +55,7 @@ rule below cost a debugging session.
 
 ## Release review lessons (2026-10-10)
 
-1. Read the dirty status before reviewing. Existing uncommitted renderer work belongs to the user; preserve it and exclude local `backups/` from release commits.
+1. Read full `git status` as well as the dirty-file list before branch operations; this checkout had an unfinished rebase. Preserve existing work and use a separate worktree when needed; exclude local `backups/` from release commits.
 2. Keep these instructions under `docs/`: marketplace preflight explicitly rejects a root `AGENTS.md`.
 3. `npm run verify` covers JS, installer safety, and Rust; native CTest, native controls, and real QML component I/O are separate gates.
 4. Offscreen component tests can fail at process launch inside a sandbox. Read the failure and use the normal approval path; do not classify a launch failure as an application regression.

@@ -18,11 +18,17 @@ Reviewed 2026-10-10, including the existing uncommitted renderer and compact-fee
 
 ## Acceptance evidence
 
-- JS suites, installer safety checks, 48 Rust tests, and QML lint pass locally.
+- All 102 JS tests, 88 installer safety checks, 48 Rust tests, and QML lint pass locally.
 - Real offscreen QML I/O/process tests cover settings writes, compact feed transitions, failure backoff, and shutdown.
-- Native CTest passes both response and artwork suites. Native control tests exercise keyboard/mouse behavior and desktop resizing.
+- Native CTest passes both response and artwork suites. All 19 native control checks pass, covering keyboard/mouse behavior and desktop resizing.
 - Eight bounded mode/transition probes render visible content; captured Bars, Waves, Strings, and Siri images were inspected.
-- Detailed deterministic parity and final exact-commit CI results are recorded in the release PR before merge.
+- Deterministic parity passes: Siri: 18 cases, maximum normalized RMSE 0.00000492; Strings: 13 cases, maximum normalized RMSE 0.00004397; Bars: 20 cases, maximum normalized RMSE 0.00010430. All are below the 0.001 threshold; compact wake/settle checks pass.
+- Exact-commit CI results are recorded in release PR #29 before merge.
+
+The CI engine artifact from run `38094232645` has SHA256
+`156ea7d9ef6d61d2e4585fad7c6f71fc8d95f6c5b5990af7d506723399207af4`.
+Its source build passed the double-build determinism check; the next candidate
+commits those exact bytes for the binary-match gate.
 
 ## Limits and follow-up
 
