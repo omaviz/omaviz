@@ -67,6 +67,8 @@ Window {
     id: bridge
     active: settingsDocument.ready && win.vizConfig.enabled !== false && !win._closing
     waveEnabled: win.vizConfig.visual !== "Bars"
+    siriEnabled: win.vizConfig.visual === "Siri"
+    stringsEnabled: win.vizConfig.visual === "Strings"
     bandCount: 256
   }
 
@@ -198,6 +200,8 @@ Window {
         bands: win.spectrumBands
         silent: win.spectrumSilent
         wave: win.spectrumWave
+        waveSerial: bridge.waveSerial
+        bandLayout: bridge.bandLayout
         // Unified 60Hz feed: identical cadence to the mini/preview, so the
         // fall trajectory is identical on every surface.
         dataFps: 60
@@ -207,6 +211,8 @@ Window {
         dots: false   // static underlay above
         reflect: win.vizConfig.reflect === true
         scopeLineWidth: win.vizConfig.scopeThickness ?? 2
+        siriClassic: win.vizConfig.siriClassic === true
+        siriTravel: win.vizConfig.siriTravel === true
 
         colorSync: win.vizConfig.colorSync !== false
         barCount: Math.max(16, Math.floor((parent.width - 8) / 10))
@@ -428,7 +434,7 @@ Window {
   IpcHandler {
     target: "omaviz-desktop"
     function status(): string {
-      return JSON.stringify({visual: win.vizConfig.visual, enabled: win.vizConfig.enabled,
+      return JSON.stringify({visual: win.vizConfig.visual, siriTravel: win.vizConfig.siriTravel, siriClassic: win.vizConfig.siriClassic, enabled: win.vizConfig.enabled,
         waveSamples: win.spectrumWave.length, configPath: win.settingsPath, engineRunning: bridge.started, closing: win._closing,
         trayVisible: trayBox.shown, playbackVisible: !!win.activePlayer && win.activePlayer.canControl})
     }

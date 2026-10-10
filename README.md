@@ -6,7 +6,7 @@ desktop visualizer window, and an oscilloscope that dances to whatever
 is playing. Same soul, zero nostalgia tax: native GPU rendering,
 theme-aware, and configured with two clicks.
 
-![version](https://img.shields.io/badge/version-8.6.1-amber) ![license](https://img.shields.io/badge/license-MIT-blue)
+![version](https://img.shields.io/badge/version-8.7.0-amber) ![license](https://img.shields.io/badge/license-MIT-blue)
 
 ## Why omaviz
 
@@ -54,15 +54,19 @@ from the running Omarchy panel. Images retain their original proportions.
 - **Mini** — 32 bars in the bar (128-band engine feed, max-downsampled),
   with a dotted-skin backdrop and a B&W Mono mode for tiny sizes
 - **Spectrum** — peaks + fall speed, dense Spikes, Fire flame gradient,
-  Winamp Stacks, floor-mirror Reflection, album-art backdrop
+  Winamp Stacks, floor-mirror Reflection, album-art backdrop.
+  The experimental retained renderer is enabled in this build (`OMAVIZ_SPECTRUM_RETAINED=0` disables it);
+  it preserves peak physics and 60 Hz animation, but has not met the 50% performance target.
 - **Waves** — true 128-point time-domain waveform, adjustable
   thickness, follows your colors
 - **Bar color** — theme-dominant by default (tracks Omarchy theme
   switches live), or custom From → To tones via presets or hex
 - **Strings** — crossing gold, cream and softly blurred blue strands that vibrate around fixed positions like standing waves. Spectral bands pluck individual strands; waveform samples add local motion. Small surfaces use fewer strands to retain separation. The backdrop stays transparent.
-- **Siri** — broad translucent cyan, blue, and violet ribbons on black, with perceptual audio response so ordinary playback remains visible at mini size; custom palettes are supported.
-- **Motion** — exponential easing by default, Winamp-style linear fall
-  on demand, adjustable sensitivity
+  A retained GPU mesh preserves the existing curves and glow; the feed carries the 16 strand excitation values plus the full waveform.
+- **Siri** — the existing cyan/blue/violet ribbons remain the default. Enable **Classic Siri style**, beside **Left to right motion**, for independently appearing, mirrored color lobes on a fine neutral axis, based on the classic Siri reference. Red, green, blue, and cyan overlaps brighten toward white; custom palettes and monochrome remain supported.
+  Six spectral envelopes control the response without a shared minimum height. Lobes have separate lifetimes, widths, and prominence, and disappear into the baseline during pauses. Their shape stays in GPU memory at 60 Hz. Enable **Left to right motion** under **Motion** to add sideways travel; default motion expands and contracts in place.
+- **Motion** — Winamp-style linear fall by default, optional exponential easing,
+  adjustable sensitivity
 - **Robust** — desktop lease stored separately from settings (no heartbeat overwrites),
   engine auto-retry, one shared GPU renderer everywhere.
 
@@ -122,14 +126,14 @@ Both scripts are ownership-guarded: they never delete or replace files omaviz
 does not own, and uninstall removes only what this plugin installed
 (`tests/installer.test.sh` proves it).
 
-Requires: Omarchy (quickshell), Qt 6.11+, PipeWire. Maintainer builds use Cargo, CMake, a C++17 compiler and Qt Quick development files. `./build.sh` builds both the Rust engine and the native renderer; users receive both binaries.
+Requires: Omarchy (quickshell), Qt 6.11+, PipeWire. Maintainer builds use Cargo, CMake, a C++17 compiler, Qt Quick development files and Qt Shader Tools. `./build.sh` builds both the Rust engine and the native renderer; users receive both binaries.
 
 ## Testing
 
 ```bash
 npm test              # all JS/QML suites (node >= 24)
 npm run test:rust     # engine unit tests (cargo)
-npm run verify        # both
+npm run verify        # JS, installer safety, and Rust
 ```
 
 | Suite | What it proves |

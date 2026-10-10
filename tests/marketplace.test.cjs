@@ -21,14 +21,16 @@ const {submit} = require('../tools/release/marketplace.cjs');
 const identity = {id: 'org.omaviz.visualizer', repository: 'omaviz/omaviz', commit: 'b'.repeat(40)};
 function apiSequence(responses) {
   const calls = [];
-  const gh = args => {
+  const bodies = [];
+  const gh = (args, input) => {
     calls.push(args);
+    bodies.push(input);
     assert.ok(responses.length, 'unexpected additional GitHub request');
     const next = responses.shift();
     if (next instanceof Error) throw next;
     return next;
   };
-  return {gh, calls};
+  return {gh, calls, bodies};
 }
 test('stale releases never create marketplace issues, including a HEAD change during lookup', () => {
   for (const responses of [['c'.repeat(40)], [identity.commit, '', 'c'.repeat(40)]]) {
@@ -47,7 +49,8 @@ test('fresh release creates one request for the exact verified commit', () => {
   const url = 'https://github.com/omacom/omarchy-plugin-marketplace/issues/124';
   const api = apiSequence([identity.commit, '', identity.commit, url]);
   assert.deepEqual(submit(identity, api.gh), {status: 'created', url});
-  assert.deepEqual(api.calls.at(-1), ['issue', 'create', '--repo', 'omacom/omarchy-plugin-marketplace', '--title', request(identity).title, '--body', request(identity).body]);
+  assert.deepEqual(api.calls.at(-1), ['issue', 'create', '--repo', 'omacom/omarchy-plugin-marketplace', '--title', request(identity).title, '--body-file', '-']);
+  assert.equal(api.bodies.at(-1), request(identity).body);
 });
 test('API failures stop submission and remain visible to the release workflow', () => {
   const api = apiSequence([identity.commit, new Error('permission denied')]);
