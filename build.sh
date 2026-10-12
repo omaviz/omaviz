@@ -18,7 +18,7 @@ if ! command -v cargo >/dev/null; then
 fi
 
 echo "== building omaviz-engine (Rust) =="
-( cd "$ENGINE_DIR" && cargo build --release )
+( cd "$ENGINE_DIR" && cargo build --release --locked )
 
 # Output the freshly built binary into bin/ (atomic: avoids "Text file busy"
 # when the engine is currently running and being overwritten in place).
@@ -31,3 +31,4 @@ echo "engine -> $OUT_BIN"
 # Build the shared Qt Quick geometry module shipped beside the QML.
 cmake -S "$SRC/renderer" -B "$SRC/renderer/build" -DCMAKE_BUILD_TYPE=Release
 cmake --build "$SRC/renderer/build" --parallel 2
+ctest --test-dir "$SRC/renderer/build" --output-on-failure

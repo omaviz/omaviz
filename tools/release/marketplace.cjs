@@ -30,7 +30,7 @@ function submit({id, repository, commit}, gh) {
   if (existing) return {status: 'existing', url: existing.split('\n')[0]};
   // Pagination may take time; check again immediately before sending.
   if (currentHead() !== commit) return {status: 'stale'};
-  return {status: 'created', url: gh(['issue', 'create', '--repo', target, '--title', data.title, '--body', data.body])};
+  return {status: 'created', url: gh(['issue', 'create', '--repo', target, '--title', data.title, '--body-file', '-'], data.body)};
 }
 module.exports = {request, submit};
 if (require.main === module) {
@@ -43,7 +43,7 @@ if (require.main === module) {
   } else if (!process.env.GH_TOKEN) {
     console.log('::warning::MARKETPLACE_TOKEN is not configured; use the verification link in the release notes.');
   } else {
-    const gh = args => execFileSync('gh', args, {encoding: 'utf8'}).trim();
+    const gh = (args, input) => execFileSync('gh', args, {encoding: 'utf8', input}).trim();
     const result = submit({id: manifest.id, repository, commit}, gh);
     const message = result.status === 'stale'
       ? 'Release is no longer master HEAD; skipping stale marketplace submission.'

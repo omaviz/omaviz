@@ -1,0 +1,33 @@
+name: Native renderer
+on:
+  push:
+  pull_request:
+  workflow_call:
+    inputs:
+      ref:
+        type: string
+        required: false
+permissions:
+  contents: read
+jobs:
+  native:
+    runs-on: ubuntu-latest
+    # Compatibility coverage on the target distribution's Qt. This is not a
+    # reproducibility claim: Arch packages intentionally follow its updates.
+    container: archlinux:base-devel
+    steps:
+      - name: Install native build and test dependencies
+        run: pacman -Syu --noconfirm --needed git cmake ninja qt6-base qt6-declarative qt6-shadertools
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref || github.sha }}
+      - name: Build renderer and shaders
+        run: |
+          cmake -S renderer -B renderer/build -G Ninja -DCMAKE_BUILD_TYPE=Release
+          cmake --build renderer/build --parallel 2
+      - name: Test native response and artwork
+        env:
+          QT_QPA_PLATFORM: offscreen
+          QT_QUICK_BACKEND: software
+        run: |
+          ctest --test-dir renderer/build --output-on-failure

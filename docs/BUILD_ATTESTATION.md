@@ -10,7 +10,7 @@ the maintainer's machine.
 
 | Artifact | Value |
 |---|---|
-| Engine binary | `bin/omaviz-engine` — SHA256 `00dc4b2a1dacd9d723ce4ba5fea7fa2d0e1a249bc39ace3bed88f3e7c09589e1` |
+| Engine binary | `bin/omaviz-engine` — the release `SHA256SUMS` records the digest for each tag |
 | Source | `engine/` (Rust), committed in this repository |
 | Lockfile | `engine/Cargo.lock` — pins every crate version + SHA256 checksum |
 | Toolchain | Rust 1.98.1 (`rustc 1.98.1 (48a229cea 2026-09-01)`) |
@@ -75,20 +75,22 @@ The reproducibility pipeline above is what makes shipping a prebuilt
 executable acceptable: the binary is never trusted blindly; it is continuously
 re-derived from the reviewed source and the build fails if it doesn't match.
 
-## Bootstrapping note
+## Artifact boundaries
 
-The committed binary was produced by this workflow's own pinned-container build
-(run [36288972474](https://github.com/omaviz/omaviz/actions/runs/36288972474),
-`CI build: 00dc4b2a…`) and committed verbatim — never built on a maintainer's
-machine. Every push since re-derives it from source and fails if it differs, so
-the digest above is continuously re-verified rather than asserted once.
+The release workflow compares the tagged engine with a fresh pinned-container
+build and attests that exact binary. A local `build.sh` build is useful for tests,
+but must not be described as CI-attested or reproducible until the gate passes.
+When local Docker access is unavailable, use the artifact from the exact commit's
+reproducibility workflow, commit it, and wait for the matching-binary gate.
 
-To check it yourself:
+The plugin also ships `native/libomavizrenderer.so`. The Native renderer workflow
+builds its C++ and shaders and runs CTest on Arch Linux, but does **not** prove
+byte-for-byte reproducibility of the committed Qt library. Its Qt/system packages
+follow Arch updates. Native image parity and host control checks remain separate.
 
-```
-sha256sum bin/omaviz-engine          # must print 00dc4b2a…
-gh attestation verify bin/omaviz-engine --repo omaviz/omaviz
-```
+The container digest and Cargo lockfile are pinned. Debian package repositories
+can receive updates; the system-library installation is not a frozen snapshot.
+The binary comparison catches resulting drift, but a mismatch needs investigation.
 
 ## Re-pinning the toolchain
 

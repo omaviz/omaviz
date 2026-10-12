@@ -8,18 +8,22 @@ Item {
   id: feed
   property bool active: true
   property bool waveEnabled: false
+  property bool siriEnabled: false
+  property bool stringsEnabled: false
   property int bandCount: 128
   property string sourceSpec: "auto"
   property string executable: Store.engineBin
   property var bands: []
+  property string bandLayout: ""
   property var wave: []
+  property int waveSerial: 0
   property bool silent: true
   property string source: ""
   property int failures: 0
   property bool restarting: false
   property bool started: false
   property bool ready: false
-  readonly property var desiredCommand: [executable, "--source", sourceSpec, "--bands", String(bandCount)].concat(waveEnabled ? ["--wave"] : [])
+  readonly property var desiredCommand: [executable, "--source", sourceSpec, "--bands", String(bandCount)].concat(siriEnabled ? ["--siri"] : stringsEnabled ? ["--strings"] : waveEnabled ? ["--wave"] : [])
 
   function reconcile() {
     if (!ready) return
@@ -29,10 +33,13 @@ Item {
       restarting = false
       process.running = false
       if (process.processId === 0) started = false
-      bands = []; wave = []; silent = true
+      bands = []; wave = []; bandLayout = ""; silent = true
       return
     }
     if (started) {
+      // Compact and full feeds have different sample layouts. Never expose
+      // the old layout to the newly selected visualization during restart.
+      bands = []; wave = []; bandLayout = ""; silent = true
       restarting = true
       process.running = false
     } else if (!restarting) start()
@@ -47,7 +54,7 @@ Item {
   }
   function retryLater() {
     if (!active) return
-    bands = []; wave = []; silent = true
+    bands = []; wave = []; bandLayout = ""; silent = true
     failures = Math.min(failures + 1, 20)
     retry.interval = Math.min(30000, 1500 * failures)
     retry.restart()
@@ -59,12 +66,16 @@ Item {
     id: process
     stdout: SplitParser {
       onRead: function(line) {
-        if (!feed.active) return
+        if (!feed.active || feed.restarting) return
         var frame = Store.decodeFrame(line)
         if (!frame) return
         feed.failures = 0
-        if (frame.wave) feed.wave = frame.wave
+        if (frame.wave) {
+          feed.wave = frame.wave
+          if (frame.waveSerial !== undefined) feed.waveSerial = frame.waveSerial
+        }
         else {
+          feed.bandLayout = frame.bandLayout || ""
           feed.bands = frame.bands
           feed.silent = frame.silent
           feed.source = frame.source

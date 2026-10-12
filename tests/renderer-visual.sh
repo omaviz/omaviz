@@ -2,14 +2,16 @@
 # Explicit native/display test; every probe closes within three seconds.
 set -euo pipefail
 repo=$(cd "$(dirname "$0")/.." && pwd)
+# Also exercise the exact installed payload, including rewritten native imports.
+runtime=${OMAVIZ_RENDER_ROOT:-$repo}
 probe=${1:?Pass the built omaviz-render-probe executable}
 artifacts=$(mktemp -d /tmp/omaviz-render-test.XXXXXX)
-for mode in Bars Waves Strings Siri Siri-to-Strings Strings-to-Bars; do
+for mode in Bars Waves Strings Siri Siri-to-Strings Strings-to-Bars Bars-to-Siri Siri-to-Bars; do
   initial=${mode%%-to-*}
   target=${mode##*-to-}
   cat > "$artifacts/$mode.qml" <<QML
 import QtQuick
-import "file:$repo" as O
+import "file:$runtime" as O
 Rectangle {
   width: 640; height: 240; color: "black"
   O.VisualCanvas {
@@ -21,7 +23,7 @@ Rectangle {
   Timer { interval: 150; running:true; onTriggered: { canvas.visual="$target"; canvas.bands=[.2,.4,.7,.5,.3,.6,.8,.4] } }
 }
 QML
-  OMAVIZ_PROBE_TIMESTAMPS=0 timeout 6 "$probe" "$artifacts/$mode.qml" "$artifacts/$mode.png" 3 > "$artifacts/$mode.log" 2>&1
+  QSG_RENDER_LOOP=basic OMAVIZ_PROBE_FIXED_SIZE=1 OMAVIZ_PROBE_TIMESTAMPS=0 timeout -k 2 10 "$probe" "$artifacts/$mode.qml" "$artifacts/$mode.png" 3 > "$artifacts/$mode.log" 2>&1
   # There must be visible, saturated pixels on the black canvas. This caught
   # the empty-node Spectrum bug that source/unit tests could not detect.
   coverage=$(magick "$artifacts/$mode.png" -colorspace HSL -channel G -separate +channel -threshold 10% -format '%[fx:mean]' info:)

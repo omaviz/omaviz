@@ -23,4 +23,6 @@ private:
     QVariantMap m_style;
     QVariantList m_bars, m_peaks, m_wave;
     double m_phase = 0;
+    enum class NodeKind { Standard, Siri, SiriRibbon, Strings, Spectrum };
+    NodeKind m_nodeKind = NodeKind::Standard; // Render-thread node type.
 };

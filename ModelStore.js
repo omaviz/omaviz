@@ -229,6 +229,8 @@ function readConfigFromText(tomlText) {
   // turned the backdrop ON for every config that predates the key.
   d.artwork = readTomlValue(tomlText, "desktop", "artwork") === "true"
   if (_artModeRetired && readTomlValue(tomlText, "desktop", "artwork") === null) d.artwork = true
+  d.siriClassic = readTomlValue(tomlText, "desktop", "siri_classic") === "true"
+  d.siriTravel = readTomlValue(tomlText, "desktop", "siri_travel") === "true"
   d.scopeThickness = readTomlFloat(tomlText, "desktop", "scope_thickness") ?? 2
   if (d.scopeThickness !== d.scopeThickness || d.scopeThickness < 1) d.scopeThickness = 1
   if (d.scopeThickness > 5) d.scopeThickness = 5
@@ -251,7 +253,7 @@ function defaultConfig() {
     themeTop: "#f59e0b",
     fire: false, fireColorFrom: "#be1400", fireColorTo: "#fde047",
     peaks: true, peakFalloff: 0.1, peakSustainMs: 100, spikes: false, stacks: false, mono: false,
-    linearFall: true, scope: false, visual: "Bars", artwork: false, scopeThickness: 2, dots: true, reflect: true,
+    linearFall: true, scope: false, visual: "Bars", artwork: false, scopeThickness: 2, siriTravel: false, siriClassic: false, dots: true, reflect: true,
     barColorCustom: false, barColorFrom: "#e68e0d", barColorTo: "#f59e0b",
     artworkColors: false,
     barColorMiddleEnabled: false,
@@ -328,6 +330,8 @@ var KEY_SPEC = [
   ["scope", "desktop", "scope", "bool"],
   ["visual", "desktop", "visual", "str"],
   ["scopeThickness", "desktop", "scope_thickness", "num"],
+  ["siriClassic", "desktop", "siri_classic", "bool"],
+  ["siriTravel", "desktop", "siri_travel", "bool"],
   ["dots", "desktop", "dots", "bool"],
   ["reflect", "desktop", "reflect", "bool"],
   ["artwork", "desktop", "artwork", "bool"],
@@ -383,9 +387,17 @@ function decodeFrame(line) {
     if (!Array.isArray(samples) || samples.length > 4096) return null
     for (var i = 0; i < samples.length; i++)
       if (typeof samples[i] !== "number" || !isFinite(samples[i])) return null
-    if (!Array.isArray(frame.bands)) return { wave: samples }
-    return { bands: samples, silent: frame.silent === true,
+    if (!Array.isArray(frame.bands)) {
+      var result = { wave: samples }
+      if (Number.isInteger(frame.wave_serial) && frame.wave_serial >= 0 && frame.wave_serial <= 2147483647)
+        result.waveSerial = frame.wave_serial
+      return result
+    }
+    var spectrum = { bands: samples, silent: frame.silent === true,
       source: typeof frame.source === "string" ? frame.source : "" }
+    if (frame.band_layout === "strings" && samples.length === 16) spectrum.bandLayout = "strings"
+    if (frame.band_layout === "siri" && samples.length === 6) spectrum.bandLayout = "siri"
+    return spectrum
   } catch (e) { return null }
 }
 

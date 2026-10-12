@@ -88,6 +88,35 @@ impl Analyzer {
         self.sample_rate
     }
 
+    /// Whole-window loudness for Siri. Measuring the decimated oscilloscope
+    /// snippet aliases tones whose period coincides with its sample stride.
+    pub fn rms_level(&self) -> f32 {
+        let sum: f32 = self.ring.iter().map(|&v| {
+            let sample = if v.is_finite() { v.clamp(-1.0, 1.0) } else { 0.0 };
+            sample * sample
+        }).sum();
+        (sum / self.ring.len().max(1) as f32).sqrt()
+    }
+
+    /// Six independent RMS controls from the FFT already used by the spectrum.
+    /// Parseval scaling compensates Hann window power; no second FFT or smoothing.
+    pub fn siri_levels(&self) -> [f32; 6] {
+        let mut power = [0.0_f32; 6];
+        let edges = [180.0, 450.0, 1000.0, 2500.0, 6000.0];
+        let mut band = 0;
+        for (i, c) in self.spectrum.iter().enumerate() {
+            let hz = i as f32 * self.sample_rate / self.fft_size as f32;
+            while band < edges.len() && hz >= edges[band] { band += 1; }
+            let p = c.norm_sqr();
+            if p.is_finite() {
+                let weight = if i == 0 || i == self.fft_size / 2 { 1.0 } else { 2.0 };
+                power[band] += p * weight;
+            }
+        }
+        let window_power: f32 = self.window.iter().map(|v| v*v).sum();
+        power.map(|p| (p / (self.fft_size as f32 * window_power)).sqrt().clamp(0.0, 1.0))
+    }
+
     /// Downsampled time-domain snippet (newest last) for the oscilloscope.
     pub fn wave_snippet(&self, n: usize) -> Vec<f32> {
         let len = self.ring.len();
@@ -112,6 +141,10 @@ impl Analyzer {
             let keep = n - samples.len();
             self.ring.copy_within(samples.len().., 0);
             self.ring[keep..].copy_from_slice(samples);
+        }
+        // Invalid capture samples must not poison the FFT or waveform JSON.
+        for sample in &mut self.ring {
+            *sample = if sample.is_finite() { sample.clamp(-1.0, 1.0) } else { 0.0 };
         }
     }
 
@@ -258,6 +291,19 @@ mod tests {
     }
 
     #[test]
+    fn invalid_pcm_is_sanitized_before_fft_and_waveform() {
+        let mut a = Analyzer::new(48_000.0, 32, FFT_SIZE);
+        a.push(&[f32::NAN, f32::INFINITY, f32::NEG_INFINITY, 5.0, -5.0]);
+        a.analyze();
+        assert!(a.bands.iter().all(|v| v.is_finite()));
+        assert!(a.wave_snippet(FFT_SIZE).iter().all(|v| v.is_finite() && v.abs() <= 1.0));
+        assert!(a.energy.is_finite() && a.beat.is_finite());
+        a.push(&vec![0.0; FFT_SIZE]);
+        a.analyze();
+        assert!(a.is_silent());
+    }
+
+    #[test]
     fn fft_1024_analyzes_and_stays_finite() {
         let mut a = Analyzer::new(48_000.0, 16, 1024);
         let chunk: Vec<f32> = (0..512).map(|i| (i as f32 * 0.01).sin()).collect();
@@ -267,6 +313,50 @@ mod tests {
         for b in &a.bands {
             assert!(b.is_finite());
         }
+    }
+
+    #[test]
+    fn siri_loudness_does_not_miss_tones_at_the_display_sample_stride() {
+        let mut a = Analyzer::new(48_000.0, 32, FFT_SIZE);
+        for hz in [3000.0_f32, 6000.0, 12000.0] {
+            let samples: Vec<f32> = (0..FFT_SIZE).map(|i|
+                0.5 * (std::f32::consts::TAU * hz * i as f32 / 48_000.0).sin()).collect();
+            a.push(&samples);
+            let display = a.wave_snippet(128);
+            let aliased = (display.iter().map(|v| v*v).sum::<f32>() / 128.0).sqrt();
+            assert!(aliased < 0.001, "fixture must reproduce decimation blind spot");
+            assert!((a.rms_level() - 0.5/std::f32::consts::SQRT_2).abs() < 0.001);
+        }
+    }
+
+    #[test]
+    fn siri_layers_separate_equal_loudness_tones_and_conserve_power() {
+        for rate in [44100.0, 48000.0] {
+            let mut a = Analyzer::new(rate, 32, FFT_SIZE);
+            for (band, hz) in [93.75, 300.0, 703.125, 1500.0, 3750.0, 9000.0].iter().enumerate() {
+                let samples: Vec<f32> = (0..FFT_SIZE).map(|i|
+                    0.2 * (std::f32::consts::TAU * hz * i as f32 / rate).sin()).collect();
+                a.push(&samples); a.analyze();
+                let levels = a.siri_levels();
+                let rms = a.rms_level();
+                assert!((levels[band] - rms).abs() < 0.004, "dominant band {band}: {levels:?}");
+                assert!(levels.iter().enumerate().all(|(i,v)| i == band || *v < 0.004));
+                assert!((levels.iter().map(|v|v*v).sum::<f32>().sqrt() - rms).abs() < 0.004);
+            }
+            a.push(&vec![0.0; FFT_SIZE]); a.analyze();
+            assert_eq!(a.siri_levels(), [0.0; 6]);
+        }
+    }
+
+    #[test]
+    fn siri_loudness_preserves_quiet_levels_and_silence() {
+        let mut a = Analyzer::new(48_000.0, 32, FFT_SIZE);
+        for level in [0.0_f32, 0.0001, 0.002, 0.07, 1.0] {
+            a.push(&vec![level; FFT_SIZE]);
+            assert!((a.rms_level()-level).abs() < 0.00001);
+        }
+        a.push(&vec![f32::NAN; FFT_SIZE]);
+        assert_eq!(a.rms_level(), 0.0);
     }
 
     #[test]

@@ -67,6 +67,37 @@ test("quiet audible input remains visible", async () => {
   assert.ok(frames.some(frame => !frame.silent && Math.max(...frame.bands) > 0.02));
 });
 
+test("nonfinite PCM cannot corrupt spectrum or waveform JSON", async () => {
+  const {frames} = await run(["--source", "gen=tone:amp=NaN", "--wave"], 12);
+  assert.ok(frames.some(frame => frame.wave));
+  for (const frame of frames) {
+    const samples = frame.wave || frame.bands;
+    assert.ok(samples.every(value => Number.isFinite(value) && value === 0));
+  }
+});
+
+test("Siri compact feed keeps metadata and emits finite scalar waveform energy", async () => {
+  const {frames} = await run(["--source", "gen=tone", "--bands", "256", "--siri"], 20);
+  const spectra = frames.filter(frame => frame.bands);
+  const waves = frames.filter(frame => frame.wave);
+  assert.ok(spectra.length && waves.length);
+  for (const frame of spectra) {
+    assert.equal(frame.band_layout, "siri");
+    assert.equal(frame.bands.length, 6);
+    assert.ok(frame.bands.every(v => Number.isFinite(v) && v >= 0 && v <= 1));
+    assert.equal(typeof frame.silent, "boolean");
+    assert.ok(Number.isFinite(frame.energy) && Number.isFinite(frame.beat));
+    assert.equal(frame.source, "gen");
+    assert.ok(frame.t > 0);
+  }
+  for (const frame of waves) {
+    assert.equal(frame.wave.length, 1);
+    assert.ok(Number.isInteger(frame.wave_serial) && frame.wave_serial > 0);
+    assert.ok(Number.isFinite(frame.wave[0]) && frame.wave[0] >= 0);
+  }
+  assert.ok(waves.some(frame => frame.wave[0] > 0));
+});
+
 test("invalid engine dimensions fail before capture starts", async () => {
   for (const args of [["--bands", "0"], ["--fft-size", "300"]]) {
     const result = await run(["--source", "gen", ...args]);
@@ -74,4 +105,26 @@ test("invalid engine dimensions fail before capture starts", async () => {
     assert.notEqual(result.code, 0);
     assert.match(result.stderr, /must be/);
   }
+});
+test("Strings feed emits sixteen strand drives while retaining the full waveform", async () => {
+  const {frames} = await run(["--source", "gen=tone", "--bands", "256", "--strings"], 20);
+  const spectra = frames.filter(frame => frame.bands);
+  const waves = frames.filter(frame => frame.wave);
+  assert.ok(spectra.length && waves.length);
+  for (const frame of spectra) {
+    assert.equal(frame.band_layout, "strings");
+    assert.equal(frame.bands.length, 16);
+    assert.ok(frame.bands.every(v => Number.isFinite(v) && v >= 0 && v <= 1));
+    assert.equal(typeof frame.silent, "boolean");
+    assert.ok(Number.isFinite(frame.energy) && Number.isFinite(frame.beat) && frame.t > 0);
+  }
+  for (const frame of waves) assert.equal(frame.wave.length, 128);
+});
+
+
+test("Siri measures high tones that the display waveform undersamples", async () => {
+  const {frames} = await run(["--source", "gen=tone:freq=3000", "--siri"], 24);
+  const values = frames.filter(frame => frame.wave).map(frame => frame.wave[0]);
+  assert.ok(values.length > 0);
+  assert.ok(values.slice(-5).every(v => Math.abs(v - 0.5 / Math.sqrt(2)) < 0.01));
 });

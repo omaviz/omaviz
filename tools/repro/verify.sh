@@ -40,7 +40,9 @@ sha256sum "$SRC/bin/omaviz-engine"
 echo
 if [ "${1:-}" = "--build" ]; then
   echo "Copying fresh build into bin/ (rebuild mode)"
-  cp "$SRC/engine/target/release/omaviz-engine" "$SRC/bin/omaviz-engine"
+  cp "$SRC/engine/target/release/omaviz-engine" "$SRC/bin/omaviz-engine.new"
+  chmod +x "$SRC/bin/omaviz-engine.new"
+  mv -f "$SRC/bin/omaviz-engine.new" "$SRC/bin/omaviz-engine"
   echo "Done — commit bin/omaviz-engine together with your source change."
   exit 0
 fi

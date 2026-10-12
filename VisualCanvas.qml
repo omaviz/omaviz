@@ -5,6 +5,7 @@ import "native" as Native
 Item {
   id: cv
   property var bands: []
+  property string bandLayout: ""
   // `silent` is now ADVISORY ONLY (drives the settle optimisation). It never
   // zeroes bars — the engine's silence flag used to hard-zero every bar on any
   // quiet passage, which is what made faint audio invisible and made bars
@@ -61,7 +62,12 @@ Item {
   property bool colorSync: true
   // Oscilloscope feed: 128-point time-domain samples (-1..1, newest last).
   property var wave: []
+  // Compact Siri frames retain change identity even when their RMS is equal.
+  property int waveSerial: 0
+  onWaveSerialChanged: if (visual === "Siri") { _waveDirty = true; wake() }
   property real scopeLineWidth: 2
+  property bool siriTravel: false
+  property bool siriClassic: false
   // B&W mode (mini option): solid black on light themes, white on dark.
   // Takes precedence over Fire — an explicit monochrome choice.
   property bool mono: false
@@ -134,21 +140,27 @@ Item {
   }
   function advance(dt) {
     var b = displayBands(), n = b.length
-    _barArr = Physics.ensure(_barArr, n, 0)
-    _peakArr = Physics.ensure(_peakArr, n, 0)
-    _peakHold = Physics.ensure(_peakHold, n, 0)
-    _peakSpeed = Physics.ensure(_peakSpeed, n, Physics.peakSpeed0(peakFalloff))
-    _targets = Physics.ensure(_targets, n, 0)
+    // Keep array access inside JavaScript; repeated QML property lookups in
+    // the per-band loop cost more than the physics itself on dense spectra.
+    var bars = Physics.ensure(_barArr, n, 0)
+    var peaks = Physics.ensure(_peakArr, n, 0)
+    var holds = Physics.ensure(_peakHold, n, 0)
+    var speeds = Physics.ensure(_peakSpeed, n, Physics.peakSpeed0(peakFalloff))
+    var targets = Physics.ensure(_targets, n, 0)
+    var gain = sensitivity, floor = noiseFloor
     for (var i = 0; i < n; ++i) {
-      var target = Physics.clamp01(b[i] * sensitivity)
-      _targets[i] = target < noiseFloor ? 0 : target
+      var target = Physics.clamp01(b[i] * gain)
+      targets[i] = target < floor ? 0 : target
     }
-    Physics.step(_barArr, _peakArr, _peakHold, _peakSpeed, _targets, dt, {
+    Physics.step(bars, peaks, holds, speeds, targets, dt, {
       linearFall: linearFall, peakFalloff: peakFalloff,
-      peakSustainMs: peakSustainMs, noiseFloor: noiseFloor
+      peakSustainMs: peakSustainMs, noiseFloor: floor
     })
+    _barArr = bars; _peakArr = peaks; _peakHold = holds
+    _peakSpeed = speeds; _targets = targets
   }
   onBandsChanged: {
+    if (visual === "Siri" && bandLayout === "siri") { _waveDirty = true; wake() }
     if (_scopeMode) return
     if (!silent || !Physics.settled(_barArr, _peakArr, _targets, 0.002)) { wake(); return }
     var mapped = displayBands()
@@ -190,7 +202,7 @@ Item {
         cv._waveTail = cv.silent ? Math.max(0, cv._waveTail - 1 / 60) : 0.8
         cv._accumulator -= 1000 / 60
       }
-      mesh.submit(cv.visual === "Strings" ? cv.bands : cv._barArr,
+      mesh.submit((cv.visual === "Strings" || cv.visual === "Siri") ? cv.bands : cv._barArr,
                   cv._peakArr, cv.wave, cv._phase)
       var flowing = !cv.silent || ((cv.visual === "Siri" || cv.visual === "Strings") && cv._waveTail > 0)
       cv._awake = flowing || (!cv._scopeMode && !Physics.settled(cv._barArr, cv._peakArr, cv._targets, 0.002))
@@ -202,6 +214,10 @@ Item {
     id: mesh
     anchors.fill: parent
     style: ({
+      siriTravel: cv.siriTravel,
+      siriClassic: cv.siriClassic,
+      compactSiri: cv.visual === "Siri" && cv.bandLayout === "siri",
+      compactStrings: cv.visual === "Strings" && cv.bandLayout === "strings",
       mode: cv.visual, bottom: Qt.darker(cv.artReady ? cv.artworkPalette[0] : cv.customMode ? cv.barColorFrom : cv.themeBottom, 1.25),
       top: Qt.lighter(cv.artReady ? cv.artworkPalette[2] : cv.customMode ? cv.barColorTo : (cv.colorSync ? cv.themeTop : "#ffffff"), 1.2),
       middle: cv.artReady ? cv.artworkPalette[1] : cv.barColorMiddle, middleEnabled: cv.artReady || (cv.customMode && cv.barColorMiddleEnabled),
