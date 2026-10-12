@@ -53,7 +53,7 @@ rule below cost a debugging session.
 - Don't launch/restart quickshell or the shell from agents — tell the user
   to run `omarchy-restart-shell` if a manual reload is ever needed.
 
-## Release review lessons (2026-10-10)
+## Release review lessons (2026-10-11)
 
 1. Read full `git status` as well as the dirty-file list before branch operations; this checkout had an unfinished rebase. Preserve existing work and use a separate worktree when needed; exclude local `backups/` from release commits.
 2. Keep these instructions under `docs/`: marketplace preflight explicitly rejects a root `AGENTS.md`.
@@ -68,3 +68,9 @@ rule below cost a debugging session.
 11. Local Docker may exist without daemon permission. Use the CI-built engine artifact and verify its digest instead of labeling a local build reproducible.
 12. Release from merged master, wait for exact-commit checks, then tag. The marketplace form must target current upstream HEAD; use the shared generator and duplicate marker, and distinguish submitted from marketplace-approved.
 13. Keep performance claims separate from image parity. The retained Spectrum experiment has not demonstrated its 50% target, and stacks can increase GPU work.
+14. For cheaper delegated verification, specify exact paths/commands, expected evidence, success checks, short output, and hard stop conditions; personally verify decisive results. Do not delegate open-ended diagnosis or visual judgment.
+15. Qt's cached FastBlur can retain artwork across mode changes; unload its entire Loader when the artwork backdrop is inactive, and test Bars → Strings with a real QML Loader.
+16. Stack rows should meet without a vertical gap. Keep their pitch and drawn height equal in both shader and CPU paths, then inspect a screenshot as well as comparing renderer parity.
+17. Strings can use a full desktop surface without changing Siri/Waves' 3:1 silhouette; test viewport bounds at normal, wide, tall, and minimum sizes.
+18. Check `journalctl --user` after a live reinstall: static QML lint did not catch `Style.spacing.small`, which was undefined at runtime. Use the host's valid `Style.space(...)` API for that control.
+19. For Strings, use the user-provided Plexamp frame as the visual target: independent high-frequency warm loops wrap a pipe of uniform radius along its length, its height expands with music, some outer strands are softly defocused, and a few broad blue strands sit in front. A mirrored, center-pinched almond looked unlike the reference; inspect playback frames and measure rotation, audio response, and height expansion.

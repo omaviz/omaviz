@@ -120,7 +120,7 @@ desktop resumes that feed.
 | `spikes` | `false` | Dense thin gapless flame spikes (~2px, width-derived count) |
 | `spikeBars` | `0` | Spike count cap (0=auto; mini passes 32) |
 | `fire` | `false` | Vertical red→tip flame gradient (container-shared) |
-| `stacks` | `false` | Winamp segments: 3px blocks + 1px gaps (preview/desktop; desktop doubles via stackScale) |
+| `stacks` | `false` | Winamp-style stack rows, touching vertically with no dark seams (desktop rows scale via stackScale) |
 | `sensitivity` | `1.0` | Input gain multiplier (also scales the oscilloscope amplitude) |
 | `themeBottom`/`themeTop` | amber | Theme-anchored colors; live shell accent when `colorSync` |
 
@@ -322,10 +322,11 @@ shared GPU drawing. The legacy `gpu` key does not switch rendering paths.
 When absent or invalid, legacy `scope = true` selects Waves, otherwise
 Bars. Explicit visual takes precedence. UI selection writes visual and the
 legacy scope flag atomically. All three waveform modes request the engine wave
-feed. Strings leaves the background transparent and drives individual strand
-amplitude from spectral bands. Each strand's carrier remains fixed in x;
-audio excites standing vibration and adds small local
-motion from waveform samples, without horizontal phase travel.
+feed. Strings leaves the background transparent. Independent strands rotate
+around a uniform virtual pipe at different pitches. Waveform energy expands
+the pipe height, spectral bands pulse individual strand radii, and waveform
+samples add local vibration. Selective strand defocus and broad soft foreground
+strands provide depth.
 The common waveform thickness control affects Waves and Strings. Legacy
 `Oscilloscope` values migrate to Waves; the former layered Waves renderer is retired.
 Siri keeps the existing cyan/blue/violet ribbon renderer as its default.
@@ -407,6 +408,9 @@ stale waveform samples are cleared when changing capture flags. Desktop Tab
 reveals the action tray, keyboard focus prevents auto-hide, and a 320×160 minimum
 prevents the artwork/actions from overlapping in small windows.
 
-Desktop waveform resizing preserves a centered 3:1 drawing area for Waves, Strings,
-and Siri, fitting within wide or tall windows without stretching the shapes.
-Spectrum fills the available window with width-dependent bar density.
+Desktop Waves and Siri retain a centered 3:1 drawing area. Strings fills the
+desktop area to increase its motion and depth in taller/wider windows; its
+carrier frequency and waveform coupling yield broader, audio-responsive curves.
+Spectrum fills the available window and grows bar width from roughly 10 to 18px
+between 600 and 1200px. Stack tiles leave one physical pixel of separation.
+The artwork blur is unloaded whenever leaving Bars, avoiding stale cached art.

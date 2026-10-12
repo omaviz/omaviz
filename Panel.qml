@@ -618,7 +618,7 @@ Panel {
       Row {
         visible: root.isSiri
         width: parent.width
-        spacing: Style.spacing.small
+        spacing: Style.space(4)
         Toggle {
           id: siriTravelToggle
           width: (parent.width - parent.spacing) / 2

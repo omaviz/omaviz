@@ -114,41 +114,46 @@ Window {
       // Plexamp-style backdrop: heavy gaussian blur (no detail survives,
       // only color clouds) + vertical scrim for title/bar legibility.
       // FastBlur caches: static art costs one frame, not per-frame.
-      Item {
+      Loader {
+        id: artBackdrop
         anchors.fill: parent
-        visible: win.vizConfig.visual === "Bars" && win.vizConfig.artwork !== false
-        opacity: win.trackArt !== "" ? 1 : 0
-        Behavior on opacity { NumberAnimation { duration: 900 } }
-        Image {
-          id: artSource
-          anchors.fill: parent
-          source: win.trackArt
-          sourceSize.width: 160; sourceSize.height: 160
-          fillMode: Image.PreserveAspectCrop
-          visible: false
-        }
-        FastBlur {
-          anchors.fill: parent
-          source: artSource
-          radius: 100
-          // Static art: cache the blur, don't re-run a radius-100 kernel
-          // every frame (identical pixels — source only changes on track).
-          cached: true
-        }
-        Rectangle {
-          anchors.fill: parent
-          gradient: Gradient {
-            GradientStop { position: 0.0; color: Qt.rgba(0, 0, 0, 0.55) }
-            GradientStop { position: 0.45; color: Qt.rgba(0, 0, 0, 0.25) }
-            GradientStop { position: 1.0; color: Qt.rgba(0, 0, 0, 0.60) }
+        // Destroy the cached blur when leaving Bars, so it cannot retain a
+        // frozen image over another visualization.
+        active: win.hasArt && win.vizConfig.visual === "Bars"
+        sourceComponent: Component {
+          Item {
+            Image {
+              id: artSource
+              anchors.fill: parent
+              source: win.trackArt
+              sourceSize.width: 160; sourceSize.height: 160
+              fillMode: Image.PreserveAspectCrop
+              visible: false
+            }
+            FastBlur {
+              anchors.fill: parent
+              source: artSource
+              radius: 100
+              // Static art: cache the blur, don't re-run a radius-100 kernel
+              // every frame (identical pixels — source only changes on track).
+              cached: true
+            }
+            Rectangle {
+              anchors.fill: parent
+              gradient: Gradient {
+                GradientStop { position: 0.0; color: Qt.rgba(0, 0, 0, 0.55) }
+                GradientStop { position: 0.45; color: Qt.rgba(0, 0, 0, 0.25) }
+                GradientStop { position: 1.0; color: Qt.rgba(0, 0, 0, 0.60) }
+              }
+            }
+            // Additional darkening overlay on top of blur — adjustable without
+            // affecting the blur quality itself. Keeps color clouds visible
+            // while making background darker for bar readability.
+            Rectangle {
+              anchors.fill: parent
+              color: Qt.rgba(0, 0, 0, win.immersiveArt ? 0.35 : 0.70)
+            }
           }
-        }
-        // Additional darkening overlay on top of blur — adjustable without
-        // affecting the blur quality itself. Keeps color clouds visible
-        // while making background darker for bar readability.
-        Rectangle {
-          anchors.fill: parent
-          color: Qt.rgba(0, 0, 0, win.immersiveArt ? 0.35 : 0.70)
         }
       }
 
@@ -179,15 +184,17 @@ Window {
         id: vizLoader
         active: win.vizConfig.enabled !== false
         readonly property bool waveform: ["Waves", "Wave", "Oscilloscope", "Strings", "Siri"].includes(win.vizConfig.visual)
-        // Fit waveform geometry uniformly: resizing must not turn broad
-        // Siri lobes into flat strings or pull standing strings vertically.
-        // Spectrum instead fills the surface with width-dependent bar density.
+        // Siri/Waves preserve their 3:1 silhouette. Strings uses the full
+        // desktop surface so its standing waves fill tall/wide windows too.
         readonly property real availableWidth: Math.max(0, parent.width - 8)
         readonly property real availableHeight: Math.max(0, parent.height - 8)
-        width: waveform ? Math.min(availableWidth, availableHeight * 3) : availableWidth
-        height: waveform ? width / 3 : availableHeight
+        readonly property bool fittedWave: waveform && win.vizConfig.visual !== "Strings"
+        readonly property int spectrumBarCount: Math.max(16, Math.floor(availableWidth /
+          (10 + 8 * Math.min(1, Math.max(0, (availableWidth - 600) / 600)))))
+        width: fittedWave ? Math.min(availableWidth, availableHeight * 3) : availableWidth
+        height: fittedWave ? width / 3 : availableHeight
         x: (parent.width - width) / 2
-        y: waveform ? (parent.height - height) / 2 : parent.height - height - 4
+        y: fittedWave ? (parent.height - height) / 2 : parent.height - height - 4
         // One shared native scene-graph renderer, also used by mini/preview.
         sourceComponent: canvasComp
       }
@@ -215,7 +222,7 @@ Window {
         siriTravel: win.vizConfig.siriTravel === true
 
         colorSync: win.vizConfig.colorSync !== false
-        barCount: Math.max(16, Math.floor((parent.width - 8) / 10))
+        barCount: vizLoader.spectrumBarCount
         gapPx: Math.min(6, Math.max(0, win.vizConfig.gap ?? 1))
         barWidthExtra: 0
 

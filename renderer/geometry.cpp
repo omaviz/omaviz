@@ -37,7 +37,7 @@ struct MeshNode : QSGGeometryNode {
     std::vector<float> waveEnvelope;
     std::vector<float> stringEnvelope;
     int stringSamples = 0;
-    std::vector<float> stringX, stringCarriers, stringModes;
+    std::vector<float> stringX, stringCarriers, stringCos, stringModes;
     double lastPhase = 0;
     qint64 buildNs = 0;
     int buildFrames = 0;
@@ -238,7 +238,7 @@ QSGNode *VisualGeometry::updatePaintNode(QSGNode *old,UpdatePaintNodeData *) {
         float dt=std::clamp(m_phase-m.lastPhase,0.,.1);
         m.waveEnvelope[0]+=(energy-m.waveEnvelope[0])*(1-std::exp(-dt*5));
         m.lastPhase=m_phase;
-        float amplitude=std::sqrt(unit((m.waveEnvelope[0]-.001f)*5.f));
+        float amplitude=std::pow(unit((m.waveEnvelope[0]-.001f)*3.5f),.7f);
         const float gain=std::clamp(number("gain",1),.1f,4.f);
         const QColor colors[]={QColor("#d8c889"),QColor("#bda76f"),QColor("#b78560"),
             QColor("#e6d7ad"),QColor("#c49a73"),QColor("#aebcbe")};
@@ -249,16 +249,18 @@ QSGNode *VisualGeometry::updatePaintNode(QSGNode *old,UpdatePaintNodeData *) {
             m.stringSamples=count;
             m.stringX.resize(count);
             m.stringCarriers.resize(16*count);
-            m.stringModes.resize(3*count);
+            m.stringCos.resize(16*count);
+            m.stringModes.resize(count);
             for(int i=0;i<count;++i) {
                 const float x=float(i)/(count-1);
                 m.stringX[i]=x;
-                for(int mode=0;mode<3;++mode)
-                    m.stringModes[mode*count+i]=std::sin(x*3.14159265f*(1+mode));
+                m.stringModes[i]=std::sin(x*3.14159265f);
                 for(int layer=0;layer<16;++layer) {
                     const bool foreground=layer>=13;
-                    const float frequency=foreground?(.65f+(layer-13)*.38f):(2.1f+(layer%7)*.46f);
-                    m.stringCarriers[layer*count+i]=std::sin(x*6.2831853f*frequency+layer*.83f);
+                    const float frequency=foreground?(.78f+(layer-13)*.43f):(2.35f+(layer%7)*.53f);
+                    const float angle=x*6.2831853f*frequency+layer*.83f;
+                    m.stringCarriers[layer*count+i]=std::sin(angle);
+                    m.stringCos[layer*count+i]=std::cos(angle);
                 }
             }
         }
@@ -283,8 +285,7 @@ QSGNode *VisualGeometry::updatePaintNode(QSGNode *old,UpdatePaintNodeData *) {
             if(h<48 && layer%2) continue; // Preserve separation in the mini.
             const bool foreground=layer>=13;
             const bool distant=!foreground && layer%4==0;
-            const float vibrationPhase=m_phase*(7.5f+layer*.68f)+layer*.47f;
-            const float oscillation=std::sin(vibrationPhase);
+            const float rotation=m_phase*(foreground?.65f+(layer-13)*.07f:1.1f+layer*.045f);
             // Distinct FFT regions pluck distinct strings. Fast attack and a
             // slower release make each strand ring after the transient.
             float drive=0;
@@ -297,24 +298,23 @@ QSGNode *VisualGeometry::updatePaintNode(QSGNode *old,UpdatePaintNodeData *) {
             }
             // Perceptual compression lets ordinary playback visibly pluck
             // strings without requiring the user to raise global gain.
-            drive=std::sqrt(drive);
+            drive=std::pow(drive,.72f);
             // The broad cool strands follow whole-signal motion. High-band
             // energy alone leaves them nearly flat on ordinary music.
             if(foreground) drive=std::max(drive,amplitude*.8f);
             float &ring=m.stringEnvelope[layer];
             ring+=(drive-ring)*(1-std::exp(-dt*(drive>ring?22.f:3.8f)));
-            float extent=(.39f+.09f*std::sin(layer*2.1f))
-                *std::clamp(amplitude*.35f+ring*.85f,0.f,1.f);
+            float extent=(.44f+.10f*std::sin(layer*2.1f))
+                *std::clamp(.40f+amplitude*1.05f+ring*.50f,.40f,1.8f);
             points.clear();
             for(int i=0;i<count;++i) {
                 float x=m.stringX[i];
-                // The carrier shape stays fixed in x. Audio excites an
-                // in-place standing mode whose nodes remain at the edges.
-                const float stringMotion=extent*m.stringCarriers[layer*count+i]
-                    *(.35f+.65f*oscillation);
-                const float standingMotion=ring*.14f*std::sin(vibrationPhase*.71f+layer)
-                    *m.stringModes[(layer%3)*count+i];
-                const float audioMotion=vibration[i]*(amplitude*.3f+ring*.7f)*(foreground?.11f:.045f)
+                // Sin/cos bases rotate each strand around a constant-radius
+                // tube; spectral energy changes its radius and local wobble.
+                const float stringMotion=extent*(m.stringCarriers[layer*count+i]*std::cos(rotation)
+                    +m.stringCos[layer*count+i]*std::sin(rotation));
+                const float standingMotion=ring*.10f*std::sin(rotation*1.4f+layer)*m.stringModes[i];
+                const float audioMotion=vibration[i]*(amplitude*.3f+ring*.7f)*(foreground?.18f:.10f)
                     *std::sin(x*3.14159265f);
                 float y=.5f+.46f*std::tanh(gain*(stringMotion+standingMotion+audioMotion)/.46f);
                 points.emplace_back(x*w,y*h);
@@ -323,9 +323,9 @@ QSGNode *VisualGeometry::updatePaintNode(QSGNode *old,UpdatePaintNodeData *) {
             // Defocused blue foreground strings overlay finer warm strands.
             float size=std::clamp(h/360.f,.25f,1.5f);
             ribbon(m,points,(foreground?1.55f:.65f)*size*std::clamp(number("lineWidth",2)/2.f,.5f,2.5f),tint,tint,
-                   foreground?.32f:(distant?.34f:.72f),
-                   std::max(pixel,(foreground?3.3f:(distant?2.3f:1.1f))*size),h>=48,
-                   (foreground?14.f:(distant?9.f:4.5f))*size,
+                   foreground?.42f:(distant?.38f:.78f),
+                   std::max(pixel,(foreground?3.3f:(distant?4.2f:1.1f))*size),h>=48,
+                   (foreground?14.f:(distant?12.f:4.5f))*size,
                    (foreground?6.f:(distant?4.f:2.f))*size);
         }
     } else if(mode=="Oscilloscope" || mode=="Wave" || mode=="Waves") {
@@ -385,7 +385,7 @@ QSGNode *VisualGeometry::updatePaintNode(QSGNode *old,UpdatePaintNodeData *) {
             if(stacks) {
                 float scale=std::max(1.f,number("stackScale",1));
                 for(float sy=base;sy>y;sy-=4*scale) {
-                    float sh=std::min(3*scale,sy-y); rect(x,sy-sh,right-x,sh);
+                    float sh=std::min(4*scale,sy-y); rect(x,sy-sh,right-x,sh);
                 }
             } else if(spikes) {
                 float tip=std::min(bh,std::min(bw*.8f,6.f));

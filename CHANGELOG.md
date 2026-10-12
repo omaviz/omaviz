@@ -4,6 +4,7 @@
 - Retain Siri and Strings geometry on the GPU; send six spectral Siri controls or sixteen Strings drives instead of full spectrum arrays. Measure Siri loudness from the full PCM window to avoid waveform sampling blind spots.
 - Include the experimental retained Spectrum path with `OMAVIZ_SPECTRUM_RETAINED=0` as an opt-out. No 50% performance improvement is claimed.
 - Clear waveform data and preserve compact feed layouts when capture stops; sanitize invalid PCM and serialize control characters safely.
+- Unload cached artwork when leaving Spectrum, remove seams between stack rows, and let desktop bars grow roughly 80% wider in wide windows. Make Strings rotate around a uniform virtual pipe that expands with music, with selective depth blur and waveform ripples on a full desktop surface.
 - Exercise compact feed transitions, native response/artwork tests, shader parity, and keyboard/mouse interactions. Add native renderer compilation and tests to CI and the release gate.
 - Share marketplace form generation between preflight and release submission, retain exact-commit duplicate detection, and document release evidence and development lessons.
 

@@ -38,8 +38,12 @@ controls=desktop[desktop.index('  function togglePlayback()'):desktop.index('  /
 controls=controls.replace('id: trayBox','id: trayBox; objectName:"tray"').replace('id: playAction','id: playAction; objectName:"playback"').replace('id: closeAction','id: closeAction; objectName:"close"')
 start=desktop.index('      Loader {', desktop.index('// One active instance'))
 viewport=desktop[start:desktop.index('      Component {',start)].replace('id: vizLoader', 'id: vizLoader; objectName: "viewport"')
+backdrop_start=desktop.index('      Loader {',desktop.index('// FastBlur caches:'))
+backdrop=desktop[backdrop_start:desktop.index('      // Cover-derived',backdrop_start)]
+backdrop=backdrop.replace('id: artBackdrop','id: artBackdrop; objectName: "artworkBackdrop"')
 (out/'desktop.qml').write_text("""import QtQuick
 import QtQuick.Controls
+import Qt5Compat.GraphicalEffects
 Rectangle {
  id: win; width:600; height:200
  property var vizConfig: ({visual:"Siri",enabled:true})
@@ -57,11 +61,13 @@ Rectangle {
    function pause() { isPlaying=false }
    function togglePlaying() { isPlaying=!isPlaying }
  }
- property string trackArt:""
+ property string trackArt:"""+repr((repo/'preview.png').as_uri())+"""
+ readonly property bool hasArt: trackArt !== "" && vizConfig.artwork !== false
+ readonly property bool immersiveArt: false
  property string playerSource:"Test player"
  property string trackTitle:"Hover and keyboard test"
  property string trackArtist:"Test artist"
  property string modeName:"Omaviz"
  function setDesktopActive(v) { closed=!v }
  Timer { id:closeTimer }
-"""+viewport+hover+controls+'}')
+"""+backdrop+viewport+hover+controls+'}')

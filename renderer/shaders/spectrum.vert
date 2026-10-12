@@ -34,7 +34,7 @@ void main() {
     float tip=min(bh,u.flags.w),kind=shape.y;
     if(kind<1.5) {
         if(kind>0.5)top=base-values.x*area;
-        else if(u.flags.z>0.5) {bottom=row;top=min(row,max(top,row-3.0*u.geometry.z));}
+        else if(u.flags.z>0.5) {bottom=row;top=min(row,max(top,row-4.0*u.geometry.z));}
         else if(u.flags.w>=0.0)top+=tip;
         top=clamp(top,0.0,u.metrics.z);bottom=clamp(bottom,0.0,u.metrics.z);
         if(u.flags.x<0.5&&u.flags.y>0.5) {

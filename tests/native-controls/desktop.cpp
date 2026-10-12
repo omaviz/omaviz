@@ -38,15 +38,33 @@ int main(int argc,char **argv) {
  if(!root->property("closed").toBool()) return 11;
  puts("PASS: keyboard closes desktop through the same action");
  auto viewport=root->findChild<QQuickItem*>("viewport");
- if(!viewport) return 12;
+ auto artwork=root->findChild<QQuickItem*>("artworkBackdrop");
+ if(!viewport || !artwork) return 12;
  for(const auto &mode: {"Waves","Strings","Siri","Bars"}) {
   root->setProperty("vizConfig",QVariantMap{{"visual",mode},{"enabled",true}});
   for(const auto &size: {QSize(600,200),QSize(1200,180),QSize(360,600),QSize(320,160)}) {
    view.resize(size); QTest::qWait(25);
    if(viewport->x()<0 || viewport->y()<0 || viewport->x()+viewport->width()>view.width() || viewport->y()+viewport->height()>view.height()) return 13;
-   if(QString(mode)!="Bars" && std::abs(viewport->width()/viewport->height()-3)>0.001) return 14;
-   if(QString(mode)=="Bars" && std::abs(viewport->width()-(view.width()-8))>0.001) return 15;
+   if(QString(mode)!="Bars" && QString(mode)!="Strings" && std::abs(viewport->width()/viewport->height()-3)>0.001) return 14;
+   if((QString(mode)=="Bars" || QString(mode)=="Strings") &&
+      (std::abs(viewport->width()-(view.width()-8))>0.001 ||
+       std::abs(viewport->height()-(view.height()-8))>0.001)) return 15;
+   if(artwork->property("active").toBool() != (QString(mode)=="Bars")) return 16;
   }
  }
- puts("PASS: all desktop modes preserve intended proportions at normal, wide, tall, and minimum sizes");
+ puts("PASS: Siri/Waves preserve 3:1 and Strings/Bars fill the desktop at normal, wide, tall, and minimum sizes");
+ root->setProperty("vizConfig",QVariantMap{{"visual","Bars"},{"enabled",true}});
+ view.resize(600,200); QTest::qWait(50);
+ const double smallSlot=viewport->width()/viewport->property("spectrumBarCount").toInt();
+ view.resize(1200,400); QTest::qWait(50);
+ const double wideSlot=viewport->width()/viewport->property("spectrumBarCount").toInt();
+ if(smallSlot<9 || smallSlot>11 || wideSlot<smallSlot*1.5 || wideSlot>smallSlot*2.0) return 19;
+ puts("PASS: spectrum bars grow 50-100% wider in a wide desktop");
+ root->setProperty("vizConfig",QVariantMap{{"visual","Bars"},{"artwork",true},{"enabled",true}});
+ QTest::qWait(100);
+ if(!artwork->property("active").toBool() || artwork->property("item").value<QObject*>()==nullptr) return 17;
+ root->setProperty("vizConfig",QVariantMap{{"visual","Strings"},{"artwork",true},{"enabled",true}});
+ QTest::qWait(100);
+ if(artwork->property("active").toBool() || artwork->property("item").value<QObject*>()!=nullptr) return 18;
+ puts("PASS: leaving artwork spectrum unloads the cached backdrop");
 }

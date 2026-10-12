@@ -47,6 +47,7 @@ if mode == "Strings":
     cases["silence"]["inputBands: [.1,.5,.8,.3,.2,.7,.9,.4]"] = "inputBands: []"
     cases["thick"] = {"lineWidth: 2": "lineWidth: 5"}
     cases["thin"] = {"lineWidth: 2": "lineWidth: 1"}
+    cases["orbit"] = {"phaseOffset: 0": "phaseOffset: 2.3"}
 if mode == "Bars":
     scene = scene.replace("Math.min(parent.height - 8, width/3)", "parent.height - 8")
     scene = scene.replace("mesh.submit(bands,[],inputWave", "mesh.submit(bands,[.12,.55,.9,.4,.02,.01,1,.6],inputWave")
@@ -107,6 +108,28 @@ for name, replacements in cases.items():
     results.append({"case": name, "normalized_rmse": error})
     print(f"{name}: PASS ({error:.8f})", flush=True)
 (output / "report.json").write_text(json.dumps(results, indent=2) + "\n")
+if mode == "Strings":
+    for first, second, label in (("desktop", "orbit", "phase rotation"),
+                                  ("quiet", "loud", "audio response")):
+        if first not in cases or second not in cases:
+            continue
+        changed = subprocess.run(["magick", "compare", "-metric", "RMSE",
+                                  str(output / f"{first}-shader.png"),
+                                  str(output / f"{second}-shader.png"),
+                                  str(output / f"{label.replace(' ', '-')}.png")], capture_output=True, text=True)
+        assert changed.returncode in (0, 1), changed.stderr
+        delta = float(re.search(r"\(([^)]+)\)", changed.stderr)[1])
+        assert delta > .02, f"Strings {label} too small: normalized RMSE {delta}"
+        print(f"Strings {label}: PASS ({delta:.5f})", flush=True)
+    if "quiet" in cases and "loud" in cases:
+        heights = []
+        for name in ("quiet", "loud"):
+            measured = subprocess.run(["magick", str(output / f"{name}-shader.png"),
+                                       "-colorspace", "gray", "-threshold", "20%", "-trim",
+                                       "-format", "%h", "info:"], capture_output=True, text=True, check=True)
+            heights.append(int(measured.stdout))
+        assert heights[1] >= heights[0] * 1.15, f"Strings pipe failed to expand: {heights}"
+        print(f"Strings pipe height: PASS ({heights[0]} → {heights[1]} px)", flush=True)
 env = dict(os.environ, QSG_RENDER_LOOP="basic", OMAVIZ_PROBE_FIXED_SIZE="1", OMAVIZ_PROBE_TIMESTAMPS="0")
 with (output / "wake.log").open("w") as log:
     subprocess.run(["timeout", "-k", "2", "12", str(probe), str(root / "tests/siri-wake.qml"),

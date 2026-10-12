@@ -114,12 +114,12 @@ struct StringsNode : QSGGeometryNode {
         for(int layer=0;layer<16;++layer) {
             if(h<48 && layer%2) continue;
             const bool foreground=layer>=13,distant=!foreground && layer%4==0,glow=h>=48;
-            const float frequency=foreground?(.65f+(layer-13)*.38f):(2.1f+(layer%7)*.46f);
+            const float frequency=foreground?(.78f+(layer-13)*.43f):(2.35f+(layer%7)*.53f);
             const float halfWidth=(foreground?1.55f:.65f)*size
                 *std::clamp(finite(s.value("lineWidth",2).toFloat(),2)/2.f,.5f,2.5f);
-            const float opacity=foreground?.32f:(distant?.34f:.72f);
-            const float feather=std::max(pixel,(foreground?3.3f:(distant?2.3f:1.1f))*size);
-            const float halo=(foreground?14.f:(distant?9.f:4.5f))*size;
+            const float opacity=foreground?.42f:(distant?.38f:.78f);
+            const float feather=std::max(pixel,(foreground?3.3f:(distant?4.2f:1.1f))*size);
+            const float halo=(foreground?14.f:(distant?12.f:4.5f))*size;
             const float bloom=(foreground?6.f:(distant?4.f:2.f))*size;
             const int levels=glow?3:2,edges=levels*2;
             const float distances[]={0,feather,std::max(feather+.001f,halo)};
@@ -140,8 +140,9 @@ struct StringsNode : QSGGeometryNode {
                 v.layer=float(layer);
                 for(int neighbor=0;neighbor<3;++neighbor) {
                     const float x=float(std::clamp(i+neighbor-1,0,count-1))/(count-1);
-                    v.basis[neighbor*3]=std::sin(x*6.2831853f*frequency+layer*.83f);
-                    v.basis[neighbor*3+1]=std::sin(x*3.14159265f*(1+layer%3));
+                    const float angle=x*6.2831853f*frequency+layer*.83f;
+                    v.basis[neighbor*3]=std::sin(angle);
+                    v.basis[neighbor*3+1]=std::cos(angle);
                     v.basis[neighbor*3+2]=std::sin(x*3.14159265f);
                 }
                 const int start=int(vertices.size());
@@ -176,7 +177,7 @@ struct StringsNode : QSGGeometryNode {
         rms=std::sqrt(rms/std::max(1,n));
         const float dt=std::clamp(phase-lastPhase,0.,.1);
         energy+=(rms-energy)*(1-std::exp(-dt*5));lastPhase=phase;
-        const float amplitude=std::sqrt(unit((energy-.001f)*5.f));
+        const float amplitude=std::pow(unit((energy-.001f)*3.5f),.7f);
         shader.vibration.fill(0);
         if(n>4) {
             for(int i=0;i<n;++i) {
@@ -200,14 +201,15 @@ struct StringsNode : QSGGeometryNode {
                 const int band=std::clamp(int((layer+.5f)/16*bands.size()),0,int(bands.size())-1);
                 for(int tap=-2;tap<=2;++tap) drive=std::max(drive,unit(bands[std::clamp(band+tap,0,int(bands.size())-1)].toFloat()));
             }
-            drive=std::sqrt(drive);
+            drive=std::pow(drive,.72f);
             if(foreground) drive=std::max(drive,amplitude*.8f);
             auto &ring=rings[layer];ring+=(drive-ring)*(1-std::exp(-dt*(drive>ring?22.f:3.8f)));
-            const float extent=(.39f+.09f*std::sin(layer*2.1f))*std::clamp(amplitude*.35f+ring*.85f,0.f,1.f);
-            const float vibrationPhase=phase*(7.5f+layer*.68f)+layer*.47f;
-            shader.coefficients[layer*4]=extent*(.35f+.65f*std::sin(vibrationPhase));
-            shader.coefficients[layer*4+1]=ring*.14f*std::sin(vibrationPhase*.71f+layer);
-            shader.coefficients[layer*4+2]=(amplitude*.3f+ring*.7f)*(foreground?.11f:.045f);
+            const float extent=(.44f+.10f*std::sin(layer*2.1f))*std::clamp(.40f+amplitude*1.05f+ring*.50f,.40f,1.8f);
+            const float rotation=phase*(foreground?.65f+(layer-13)*.07f:1.1f+layer*.045f);
+            shader.coefficients[layer*4]=extent*std::cos(rotation);
+            shader.coefficients[layer*4+1]=extent*std::sin(rotation);
+            shader.coefficients[layer*4+2]=(amplitude*.3f+ring*.7f)*(foreground?.18f:.10f);
+            shader.coefficients[layer*4+3]=ring*.10f*std::sin(rotation*1.4f+layer);
         }
         markDirty(DirtyMaterial);
     }

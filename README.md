@@ -61,7 +61,7 @@ from the running Omarchy panel. Images retain their original proportions.
   thickness, follows your colors
 - **Bar color** — theme-dominant by default (tracks Omarchy theme
   switches live), or custom From → To tones via presets or hex
-- **Strings** — crossing gold, cream and softly blurred blue strands that vibrate around fixed positions like standing waves. Spectral bands pluck individual strands; waveform samples add local motion. Small surfaces use fewer strands to retain separation. The backdrop stays transparent.
+- **Strings** — gold and cream strands rotate around a uniform pipe that grows taller with music energy; some strands soften near the outer arcs, with broad blurred blue strands in front. Spectral bands pulse each strand's radius while waveform samples ripple the loops. Small surfaces use fewer strands to retain separation. The backdrop stays transparent.
   A retained GPU mesh preserves the existing curves and glow; the feed carries the 16 strand excitation values plus the full waveform.
 - **Siri** — the existing cyan/blue/violet ribbons remain the default. Enable **Classic Siri style**, beside **Left to right motion**, for independently appearing, mirrored color lobes on a fine neutral axis, based on the classic Siri reference. Red, green, blue, and cyan overlaps brighten toward white; custom palettes and monochrome remain supported.
   Six spectral envelopes control the response without a shared minimum height. Lobes have separate lifetimes, widths, and prominence, and disappear into the baseline during pauses. Their shape stays in GPU memory at 60 Hz. Enable **Left to right motion** under **Motion** to add sideways travel; default motion expands and contracts in place.
@@ -260,6 +260,6 @@ Run `npm run test:interactions` on an Omarchy development machine for Qt mouse
 and keyboard regression tests. The tests extract current controls from the QML;
 shell theme decoration and the media player are isolated fixtures.
 
-Desktop waveform resizing preserves a centered 3:1 drawing area for Waves, Strings,
-and Siri, fitting within wide or tall windows without stretching the shapes.
-Spectrum fills the available window with width-dependent bar density.
+Desktop Waves and Siri preserve a centered 3:1 silhouette. Strings fills the
+window with broader, more responsive curves. Spectrum fills the window with
+bars that grow wider as the desktop grows instead of staying tiny.

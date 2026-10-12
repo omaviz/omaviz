@@ -17,9 +17,9 @@ layout(std140, binding = 0) uniform buf {
     vec4 coefficients[16];
 } u;
 vec2 pointAt(int index, vec3 b) {
-    vec3 c = u.coefficients[int(shape.x)].xyz;
+    vec4 c = u.coefficients[int(shape.x)];
     float wave = u.vibration[index/4][index%4];
-    float displacement = c.x*b.x + c.y*b.y + wave*c.z*b.z;
+    float displacement = c.x*b.x + c.y*b.y + c.w*b.z + wave*c.z*b.z;
     float y = .5 + .46*tanh(u.gain*displacement/.46);
     return vec2(float(index)*u.width/(u.count-1.0),y*u.height);
 }
