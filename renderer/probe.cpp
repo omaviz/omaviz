@@ -1,4 +1,5 @@
 #include <QGuiApplication>
+#include <QSurfaceFormat>
 #include <QQuickView>
 #include <QQmlContext>
 #include <QTimer>
@@ -17,7 +18,17 @@
 #include <vector>
 #include <sys/resource.h>
 int main(int argc,char **argv) {
-    qInstallMessageHandler([](QtMsgType,const QMessageLogContext &,const QString &s){ fprintf(stderr,"%s\n",qPrintable(s)); });
+    static bool renderError=false;
+    qInstallMessageHandler([](QtMsgType,const QMessageLogContext &,const QString &s){
+        fprintf(stderr,"%s\n",qPrintable(s));
+        if(s.contains("Failed to compile shader") || s.contains("Failed to build graphics pipeline")) renderError=true;
+    });
+    // Retained shaders require modern GLSL; offscreen Qt otherwise chooses GL 2.
+    QSurfaceFormat format;
+    format.setVersion(3,3);
+    format.setProfile(QSurfaceFormat::CoreProfile);
+    QSurfaceFormat::setDefaultFormat(format);
+    QQuickWindow::setGraphicsApi(QSGRendererInterface::OpenGL);
     QGuiApplication app(argc,argv);
     if(argc<3) { qCritical()<<"usage: probe scene.qml output.png [seconds]"; return 2; }
     QQuickView view;
@@ -38,15 +49,21 @@ int main(int argc,char **argv) {
                 auto obj=QJsonDocument::fromJson(pending.left(end)).object();
                 pending.remove(0,end+1);
                 if(obj.contains("bands")) {
+                    view.rootObject()->setProperty("inputBandLayout",obj["band_layout"].toString());
                     view.rootObject()->setProperty("inputBands",obj["bands"].toArray().toVariantList());
                     view.rootObject()->setProperty("inputSilent",obj["silent"].toBool());
                 }
-                if(obj.contains("wave")) view.rootObject()->setProperty("inputWave",obj["wave"].toArray().toVariantList());
+                if(obj.contains("wave")) {
+                    view.rootObject()->setProperty("inputWave",obj["wave"].toArray().toVariantList());
+                    if(obj.contains("wave_serial")) view.rootObject()->setProperty("inputWaveSerial",obj["wave_serial"].toInt());
+                }
             }
         });
         QStringList args {"--source",qEnvironmentVariable("OMAVIZ_PROBE_SOURCE","gen=mixed"),
                           "--bands",qEnvironmentVariable("OMAVIZ_PROBE_BANDS","128")};
         if(qEnvironmentVariable("OMAVIZ_PROBE_WAVE")!="0") args<<"--wave";
+        if(qEnvironmentVariableIsSet("OMAVIZ_PROBE_SIRI")) args<<"--siri";
+        if(qEnvironmentVariableIsSet("OMAVIZ_PROBE_STRINGS")) args<<"--strings";
         engine.start(qEnvironmentVariable("OMAVIZ_PROBE_ENGINE"),args);
         if(!engine.waitForStarted()) return 5;
     }
@@ -70,8 +87,13 @@ int main(int argc,char **argv) {
         if(last>1000) frames.push_back(now-last);
         last=now;
     });
-    view.show();
     if(argc>5) view.resize(atoi(argv[4]),atoi(argv[5]));
+    // Fixed-size comparisons must not inherit the compositor's tiled layout.
+    if(qEnvironmentVariableIsSet("OMAVIZ_PROBE_FIXED_SIZE")) {
+        view.setMinimumSize(view.size());
+        view.setMaximumSize(view.size());
+    }
+    view.show();
     if(qEnvironmentVariableIsSet("OMAVIZ_PROBE_SEQUENCE")) {
         const QString base=QString::fromLocal8Bit(argv[2]);
         for(int i=0;i<3;++i) QTimer::singleShot(2000+i*250,&app,[&,i,base] {
@@ -84,6 +106,8 @@ int main(int argc,char **argv) {
     QTimer::singleShot(duration*1000,&app,[&] {
         const auto image=view.grabWindow();
         if(image.isNull() || !image.save(QString::fromLocal8Bit(argv[2]))) { app.exit(4); return; }
+        if(view.rootObject()->property("frame").isValid())
+            qInfo()<<"scene_frame"<<view.rootObject()->property("frame").toInt();
         engine.terminate(); engine.waitForFinished(1000);
         rusage child{}; getrusage(RUSAGE_CHILDREN,&child);
         const double childCpu=child.ru_utime.tv_sec+child.ru_utime.tv_usec/1e6+child.ru_stime.tv_sec+child.ru_stime.tv_usec/1e6;
@@ -97,8 +121,9 @@ int main(int argc,char **argv) {
         qInfo()<<"frames"<<frames.size()<<"p50_ms"<<(frames.empty()?0:frames[frames.size()/2])
                <<"p95_ms"<<(frames.empty()?0:frames[frames.size()*95/100])
                <<"cpu_pct_including_startup"<<cpu/(clock.elapsed()/1000.)*100
-               <<"graphics_api"<<view.rendererInterface()->graphicsApi();
-        app.quit();
+               <<"graphics_api"<<view.rendererInterface()->graphicsApi()
+               <<"size"<<view.size()<<"dpr"<<view.devicePixelRatio();
+        app.exit(renderError ? 6 : 0);
     });
     return app.exec();
 }

@@ -1,4 +1,8 @@
 #include "geometry.h"
+#include "sirinode.h"
+#include "siriribbonnode.h"
+#include "stringsnode.h"
+#include "spectrumnode.h"
 #include <QSGGeometryNode>
 #include <QSGVertexColorMaterial>
 #include <QQuickWindow>
@@ -33,9 +37,8 @@ struct MeshNode : QSGGeometryNode {
     std::vector<float> waveEnvelope;
     std::vector<float> stringEnvelope;
     int stringSamples = 0;
-    std::vector<float> stringX, stringCarriers, stringModes;
+    std::vector<float> stringX, stringCarriers, stringCos, stringModes;
     double lastPhase = 0;
-    float siriEnergy = 0;
     qint64 buildNs = 0;
     int buildFrames = 0;
     ~MeshNode() override { if (qEnvironmentVariableIsSet("OMAVIZ_PROFILE")) fprintf(stderr,"geometry mean_cpu_ms %.4f frames %d\n",buildFrames?buildNs/1e6/buildFrames:0,buildFrames); }
@@ -169,14 +172,32 @@ void VisualGeometry::setStyle(const QVariantMap &v) {
     m_style=v; emit styleChanged(); update();
 }
 void VisualGeometry::submit(const QVariantList &bars,const QVariantList &peaks,
-                            const QVariantList &wave,double phase) {
-    m_bars=bars; m_peaks=peaks; m_wave=wave; m_phase=phase; update();
+                            const QVariantList &wave,double phase,double rms) {
+    m_bars=bars; m_peaks=peaks; m_wave=wave; m_phase=phase; m_rms=std::isfinite(rms) && rms>=0 ? std::clamp(float(rms),0.f,1.f) : -1; update();
 }
 void VisualGeometry::geometryChange(const QRectF &n,const QRectF &o) {
     QQuickItem::geometryChange(n,o); if(n.size()!=o.size()) update();
 }
 QSGNode *VisualGeometry::updatePaintNode(QSGNode *old,UpdatePaintNodeData *) {
     const QString mode=m_style.value("mode","Bars").toString();
+    // Keep the original path as a bounded-probe comparison oracle.
+    static const bool legacyStrings = qEnvironmentVariableIsSet("OMAVIZ_STRINGS_LEGACY");
+    // Enabled for this build; retain an explicit opt-out for comparisons.
+    static const bool retainedSpectrum = !qEnvironmentVariableIsSet("OMAVIZ_SPECTRUM_RETAINED")
+        || qEnvironmentVariableIntValue("OMAVIZ_SPECTRUM_RETAINED") != 0;
+    static const bool legacySpectrum = qEnvironmentVariableIsSet("OMAVIZ_BARS_LEGACY");
+    const auto kind = mode == "Siri" ? (m_style.value("siriClassic",false).toBool()?NodeKind::Siri:NodeKind::SiriRibbon)
+                    : mode == "Strings" && !legacyStrings ? NodeKind::Strings
+                    : mode == "Bars" && retainedSpectrum && !legacySpectrum && m_bars.size()<=1024 ? NodeKind::Spectrum : NodeKind::Standard;
+    if (kind != m_nodeKind) { delete old; old = nullptr; m_nodeKind = kind; }
+    if (kind == NodeKind::SiriRibbon) return updateSiriRibbonNode(old,m_style,m_bars,m_wave,m_phase,width(),height(),
+                                  window()?window()->effectiveDevicePixelRatio():1);
+    if (kind == NodeKind::Siri) return updateSiriNode(old, m_style, m_bars, m_wave, m_phase, width(), height(),
+                                  window() ? window()->effectiveDevicePixelRatio() : 1);
+    if (kind == NodeKind::Strings) return updateStringsNode(old, m_style, m_bars, m_wave, m_phase,
+                                  width(), height(), window() ? window()->effectiveDevicePixelRatio() : 1, m_rms);
+    if (kind == NodeKind::Spectrum) return updateSpectrumNode(old, m_style, m_bars, m_peaks,
+                                  width(), height(), window() ? window()->effectiveDevicePixelRatio() : 1);
     auto *node=static_cast<MeshNode *>(old);
     // A mode switch can change primitive topology and envelope state. Give
     // the scene graph a fresh node instead of reusing its cached pipeline.
@@ -212,12 +233,12 @@ QSGNode *VisualGeometry::updatePaintNode(QSGNode *old,UpdatePaintNodeData *) {
         // The containing surface owns the backdrop; preserve alpha here.
         float energy=0;
         for(const auto &sample:m_wave) { float v=finite(sample.toFloat()); energy+=v*v; }
-        energy=std::sqrt(energy/std::max(1,int(m_wave.size())));
+        energy=m_rms>=0?m_rms:std::sqrt(energy/std::max(1,int(m_wave.size())));
         if(m.waveEnvelope.size()!=1) m.waveEnvelope.assign(1,0);
         float dt=std::clamp(m_phase-m.lastPhase,0.,.1);
         m.waveEnvelope[0]+=(energy-m.waveEnvelope[0])*(1-std::exp(-dt*5));
         m.lastPhase=m_phase;
-        float amplitude=std::sqrt(unit((m.waveEnvelope[0]-.001f)*5.f));
+        float amplitude=std::pow(unit((m.waveEnvelope[0]-.001f)*3.5f),.7f);
         const float gain=std::clamp(number("gain",1),.1f,4.f);
         const QColor colors[]={QColor("#d8c889"),QColor("#bda76f"),QColor("#b78560"),
             QColor("#e6d7ad"),QColor("#c49a73"),QColor("#aebcbe")};
@@ -228,16 +249,18 @@ QSGNode *VisualGeometry::updatePaintNode(QSGNode *old,UpdatePaintNodeData *) {
             m.stringSamples=count;
             m.stringX.resize(count);
             m.stringCarriers.resize(16*count);
-            m.stringModes.resize(3*count);
+            m.stringCos.resize(16*count);
+            m.stringModes.resize(count);
             for(int i=0;i<count;++i) {
                 const float x=float(i)/(count-1);
                 m.stringX[i]=x;
-                for(int mode=0;mode<3;++mode)
-                    m.stringModes[mode*count+i]=std::sin(x*3.14159265f*(1+mode));
+                m.stringModes[i]=std::sin(x*3.14159265f);
                 for(int layer=0;layer<16;++layer) {
                     const bool foreground=layer>=13;
-                    const float frequency=foreground?(.65f+(layer-13)*.38f):(2.1f+(layer%7)*.46f);
-                    m.stringCarriers[layer*count+i]=std::sin(x*6.2831853f*frequency+layer*.83f);
+                    const float frequency=foreground?(.78f+(layer-13)*.43f):(2.35f+(layer%7)*.53f);
+                    const float angle=x*6.2831853f*frequency+layer*.83f;
+                    m.stringCarriers[layer*count+i]=std::sin(angle);
+                    m.stringCos[layer*count+i]=std::cos(angle);
                 }
             }
         }
@@ -262,36 +285,36 @@ QSGNode *VisualGeometry::updatePaintNode(QSGNode *old,UpdatePaintNodeData *) {
             if(h<48 && layer%2) continue; // Preserve separation in the mini.
             const bool foreground=layer>=13;
             const bool distant=!foreground && layer%4==0;
-            const float vibrationPhase=m_phase*(7.5f+layer*.68f)+layer*.47f;
-            const float oscillation=std::sin(vibrationPhase);
+            const float rotation=m_phase*(foreground?.65f+(layer-13)*.07f:1.1f+layer*.045f);
             // Distinct FFT regions pluck distinct strings. Fast attack and a
             // slower release make each strand ring after the transient.
             float drive=0;
-            if(!m_bars.isEmpty()) {
+            if(flag("compactStrings") && m_bars.size()==16) {
+                drive=unit(m_bars[layer].toFloat());
+            } else if(!m_bars.isEmpty()) {
                 int band=std::clamp(int((layer+.5f)/16*m_bars.size()),0,int(m_bars.size())-1);
                 for(int tap=-2;tap<=2;++tap)
                     drive=std::max(drive,unit(m_bars[std::clamp(band+tap,0,int(m_bars.size())-1)].toFloat()));
             }
             // Perceptual compression lets ordinary playback visibly pluck
             // strings without requiring the user to raise global gain.
-            drive=std::sqrt(drive);
+            drive=std::pow(drive,.72f);
             // The broad cool strands follow whole-signal motion. High-band
             // energy alone leaves them nearly flat on ordinary music.
             if(foreground) drive=std::max(drive,amplitude*.8f);
             float &ring=m.stringEnvelope[layer];
             ring+=(drive-ring)*(1-std::exp(-dt*(drive>ring?22.f:3.8f)));
-            float extent=(.39f+.09f*std::sin(layer*2.1f))
-                *std::clamp(amplitude*.35f+ring*.85f,0.f,1.f);
+            float extent=(.44f+.10f*std::sin(layer*2.1f))
+                *std::clamp(.40f+amplitude*1.05f+ring*.50f,.40f,1.8f);
             points.clear();
             for(int i=0;i<count;++i) {
                 float x=m.stringX[i];
-                // The carrier shape stays fixed in x. Audio excites an
-                // in-place standing mode whose nodes remain at the edges.
-                const float stringMotion=extent*m.stringCarriers[layer*count+i]
-                    *(.35f+.65f*oscillation);
-                const float standingMotion=ring*.14f*std::sin(vibrationPhase*.71f+layer)
-                    *m.stringModes[(layer%3)*count+i];
-                const float audioMotion=vibration[i]*(amplitude*.3f+ring*.7f)*(foreground?.11f:.045f)
+                // Sin/cos bases rotate each strand around a constant-radius
+                // tube; spectral energy changes its radius and local wobble.
+                const float stringMotion=extent*(m.stringCarriers[layer*count+i]*std::cos(rotation)
+                    +m.stringCos[layer*count+i]*std::sin(rotation));
+                const float standingMotion=ring*.10f*std::sin(rotation*1.4f+layer)*m.stringModes[i];
+                const float audioMotion=vibration[i]*(amplitude*.3f+ring*.7f)*(foreground?.18f:.10f)
                     *std::sin(x*3.14159265f);
                 float y=.5f+.46f*std::tanh(gain*(stringMotion+standingMotion+audioMotion)/.46f);
                 points.emplace_back(x*w,y*h);
@@ -300,66 +323,17 @@ QSGNode *VisualGeometry::updatePaintNode(QSGNode *old,UpdatePaintNodeData *) {
             // Defocused blue foreground strings overlay finer warm strands.
             float size=std::clamp(h/360.f,.25f,1.5f);
             ribbon(m,points,(foreground?1.55f:.65f)*size*std::clamp(number("lineWidth",2)/2.f,.5f,2.5f),tint,tint,
-                   foreground?.32f:(distant?.34f:.72f),
-                   std::max(pixel,(foreground?3.3f:(distant?2.3f:1.1f))*size),h>=48,
-                   (foreground?14.f:(distant?9.f:4.5f))*size,
+                   foreground?.42f:(distant?.38f:.78f),
+                   std::max(pixel,(foreground?3.3f:(distant?4.2f:1.1f))*size),h>=48,
+                   (foreground?14.f:(distant?12.f:4.5f))*size,
                    (foreground?6.f:(distant?4.f:2.f))*size);
         }
-    } else if(mode=="Siri") {
-        // Translucent, intersecting sheets around a luminous central axis.
-        // Geometry only: no per-frame textures or full-window blur passes.
-        float rms=0;
-        for(const auto &sample:m_wave) { float v=finite(sample.toFloat()); rms+=v*v; }
-        rms=std::sqrt(rms/std::max(1, int(m_wave.size())));
-        // Perceptual response: normal -26 dBFS playback must form visible
-        // sheets, while silence and noise still settle to the axis.
-        float target=std::pow(unit((rms-.001f)*8.f*std::clamp(number("gain",1),.1f,4.f)),.42f);
-        float dt=std::clamp(float(m_phase-m.lastPhase),0.f,.1f);
-        m.siriEnergy+=(target-m.siriEnergy)*(1-std::exp(-dt*(target>m.siriEnergy?14.f:5.f)));
-        m.lastPhase=m_phase;
-        const float visibleEnergy=unit(m.siriEnergy*(h<48?1.9f:1.2f));
-        const int count=std::clamp(int(w*dpr/5),64,240);
-        const QColor hues[]={QColor("#ba32dd"),QColor("#4936ca"),QColor("#087dda"),
-            QColor("#00bde8"),QColor("#36ceef"),QColor("#acdfff")};
-        for(int layer=0;layer<6;++layer) {
-            const float center=.28f+.085f*layer+.055f*std::sin(float(m_phase)*.8f+layer), spread=.20f;
-            const float speed=1.8f+.27f*layer, phase=float(m_phase)*speed+layer*.83f;
-            std::vector<QPointF> upper, lower;
-            upper.reserve(count); lower.reserve(count);
-            auto shape=[&](float x) {
-                float taper=std::sin(x*3.14159265f);
-                float gaussian=std::exp(-std::pow((x-center)/spread,2.f)*.65f);
-                float carrier=std::sin(x*(13.f+layer*1.3f)-phase);
-                // Broad lobes keep their filled silhouette even at 24px.
-                return taper*gaussian*(.24f+.76f*std::abs(carrier))*h*.47f*visibleEnergy*(1-.045f*layer);
-            };
-            QColor tint=mono?flat:flag("custom")?palette(float(layer)/5):hues[layer];
-            for(int i=0;i<count;++i) {
-                float x=float(i)/(count-1), y=shape(x);
-                upper.emplace_back(x*w,h*.5f-y);
-                lower.emplace_back(x*w,h*.5f+y*(.72f+.22f*std::sin(phase+x*8)));
-            }
-            for(int i=1;i<count;++i) {
-                float x0=float(i-1)/(count-1), x1=float(i)/(count-1);
-                float a0=std::pow(std::max(0.f,std::sin(x0*3.14159265f)),1.2f), a1=std::pow(std::max(0.f,std::sin(x1*3.14159265f)),1.2f);
-                QColor rim0=alpha(tint,.48f*a0), rim1=alpha(tint,.48f*a1);
-                QColor core0=alpha(tint,(layer==5?.22f:.46f)*a0), core1=alpha(tint,(layer==5?.22f:.46f)*a1);
-                QPointF c0(x0*w,h*.5f), c1(x1*w,h*.5f);
-                m.quad(upper[i-1],upper[i],c1,c0,rim0,rim1,core1,core0);
-                m.quad(c0,c1,lower[i],lower[i-1],core0,core1,rim1,rim0);
-            }
-            ribbon(m,upper,.45f*pixel,tint,tint,.24f,pixel,true,std::min(h*.035f,5.f)*pixel,pixel);
-            ribbon(m,lower,.4f*pixel,tint,tint,.18f,pixel,false);
-        }
-        std::vector<QPointF> axis={{0,h*.5f},{w*.5f,h*.5f},{w,h*.5f}};
-        ribbon(m,axis,.22f*pixel,mono?flat:flag("custom")?palette(0):QColor("#a8e7ff"),mono?flat:flag("custom")?palette(1):QColor("#cdefff"),
-               .10f+.12f*m.siriEnergy,pixel,false);
     } else if(mode=="Oscilloscope" || mode=="Wave" || mode=="Waves") {
         const int count=std::clamp(int(m_wave.size()),2,2048);
         const float gain=std::clamp(number("gain",1),.1f,4.f);
         float rms=0;
         for(const auto &sample:m_wave) { const float v=finite(sample.toFloat()); rms+=v*v; }
-        rms=std::sqrt(rms/std::max(1,int(m_wave.size())));
+        rms=m_rms>=0?m_rms:std::sqrt(rms/std::max(1,int(m_wave.size())));
         if(m.waveEnvelope.size()!=1) m.waveEnvelope.assign(1,0);
         const float dt=std::clamp(float(m_phase-m.lastPhase),0.f,.1f);
         m.waveEnvelope[0]+=(rms-m.waveEnvelope[0])*(1-std::exp(-dt*8));
@@ -411,7 +385,7 @@ QSGNode *VisualGeometry::updatePaintNode(QSGNode *old,UpdatePaintNodeData *) {
             if(stacks) {
                 float scale=std::max(1.f,number("stackScale",1));
                 for(float sy=base;sy>y;sy-=4*scale) {
-                    float sh=std::min(3*scale,sy-y); rect(x,sy-sh,right-x,sh);
+                    float sh=std::min(4*scale,sy-y); rect(x,sy-sh,right-x,std::max(0.f,sh-scale));
                 }
             } else if(spikes) {
                 float tip=std::min(bh,std::min(bw*.8f,6.f));

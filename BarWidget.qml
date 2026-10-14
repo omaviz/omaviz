@@ -9,6 +9,7 @@ BarWidget {
   id: root
   moduleName: "org.omaviz.visualizer"
 
+  readonly property string settingsError: settingsDocument.error ? settingsDocument.error + ". Check that your config folder is writable, then try again." : ""
   readonly property var config: settingsDocument.config
   SettingsDocument {
     id: settingsDocument
@@ -82,7 +83,10 @@ BarWidget {
     root.writeVizOptions3("theme_bottom", bottom, "theme_top", top, "theme_accent", top)
   }
   readonly property var spectrumBands: spectrumFeed.bands
+  readonly property real spectrumWaveRms: spectrumFeed.waveRms
   readonly property var spectrumWave: spectrumFeed.wave
+  readonly property int spectrumWaveSerial: spectrumFeed.waveSerial
+  readonly property string spectrumBandLayout: spectrumFeed.bandLayout
   readonly property bool spectrumSilent: spectrumFeed.silent
   readonly property bool vizEnabled: root.config.enabled !== false
   property bool desktopLive: false
@@ -132,8 +136,10 @@ BarWidget {
     id: spectrumFeed
     active: !root._exitRequested && root.vizEnabled && settingsDocument.ready && (!root.desktopLive || root.opened)
     waveEnabled: root.config.visual !== "Bars"
+    siriEnabled: root.config.visual === "Siri"
+    stringsEnabled: root.config.visual === "Strings"
   }
-  readonly property string sourceLabel: Store.sourceLabel(spectrumFeed.source)
+  readonly property string sourceLabel: Store.sourceLabel(spectrumFeed.source) + " · " + spectrumFeed.status
 
   Process {
     id: detachProc
@@ -200,6 +206,9 @@ BarWidget {
     if (key5) values[key5] = value5
     settingsDocument.patch("desktop", values)
   }
+
+  function selectVisual(mode) { settingsDocument.replace(Store.selectVisual(settingsDocument.text,mode)) }
+  function selectGroup(group) { settingsDocument.replace(Store.selectGroup(settingsDocument.text,group)) }
 
   function setColorMode(mode) {
     if (["Theme", "Custom", "Artwork", "Flame"].indexOf(mode) < 0) return false
@@ -279,6 +288,8 @@ BarWidget {
         spikeBars: 32
         sensitivity: root.config.sensitivity ?? 1.0
         scopeLineWidth: root.config.scopeThickness ?? 2
+        siriClassic: root.config.siriClassic === true
+        siriTravel: root.config.siriTravel === true
         // Bar color: custom From→To wins; otherwise LIVE theme accent
         // (Theme mode always follows the Omarchy theme — no stale snapshot).
         artworkColors: root.config.artworkColors === true
@@ -291,7 +302,10 @@ BarWidget {
         gradientDir: root.config.barGradientDir || "vertical"
         themeBottom: Qt.darker(Color.accent, 1.3)
         themeTop: Color.accent
+        waveRms: root.spectrumWaveRms
         wave: root.desktopLive ? [] : root.spectrumWave
+        waveSerial: root.spectrumWaveSerial
+        bandLayout: root.spectrumBandLayout
         reflect: false
         // Mono: B&W bars by theme luminance (black on light, white on dark).
         mono: root.config.mono === true
@@ -317,14 +331,16 @@ BarWidget {
     function hide() { root.close() }
     function selectVisual(mode: string): bool {
       if (["Bars", "Oscilloscope", "Waves", "Strings", "Siri"].indexOf(mode) < 0) return false
-      root.writeVizOptions("visual", mode === "Oscilloscope" ? "Waves" : mode, "scope", mode === "Waves" || mode === "Oscilloscope")
+      root.selectVisual(mode === "Oscilloscope" ? "Waves" : mode)
       return true
     }
     function setEnabled(enabled: bool) { root.writeEnabled(enabled) }
     function setColorMode(mode: string): bool { return root.setColorMode(mode) }
+    function setSiriClassic(enabled: bool) { root.writeVizOption("siri_classic", enabled) }
+    function setSiriTravel(enabled: bool) { root.writeVizOption("siri_travel", enabled) }
     function setFlame(enabled: bool) { root.writeVizOption("fire", enabled) }
     function status(): string {
-      return JSON.stringify({visual: root.config.visual, enabled: root.vizEnabled,
+      return JSON.stringify({visual: root.config.visual, siriTravel: root.config.siriTravel, siriClassic: root.config.siriClassic, enabled: root.vizEnabled,
         silent: root.spectrumSilent, bands: root.spectrumBands.length, preview: root.opened,
         waveSamples: root.spectrumWave.length, engineRunning: spectrumFeed.started, restarting: spectrumFeed.restarting})
     }

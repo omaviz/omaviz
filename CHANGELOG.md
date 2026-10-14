@@ -1,3 +1,30 @@
+## 8.8.0 — Automatic settings, transport controls, and clipboard safety
+
+- Remove clipboard-reading Qt color inputs; use bounded key-only hex entry, including while controls are hidden. Preserve PlainText player metadata.
+- Restore visible spacing between Stack segments so they remain distinct from Bars.
+- Preserve density-dependent resource usage with the original spectrum frequency placement; retain stereo power without phase cancellation and bound capture buffering.
+- Recover stalled engines, clear stale geometry, and expose listening/recovery status.
+- Replace the desktop control card with a translucent poster/transport panel; share player selection with artwork colors. Add fullscreen, Escape, visual cycling and remembered window size.
+- Use category/sub-option buttons below five choices and dropdowns otherwise; automatically retain per-mode settings, with square buttons and no Save/Restore/Reset or starting-look presets.
+- Remove ineffective panel size-lock polling and replace source-string tests with outcome checks. Reject non-rendering benchmark runs and detect stale bundled renderer source stamps.
+
+
+- Preserve contiguous capture audio, honor PipeWire offsets/stride, and retry disconnected capture.
+- Preserve waveform extrema and transmit full-window loudness for Strings/Waves.
+- Simplify settings borders, move preview beside mode selection, expose numeric values and save errors.
+- Repair installer safety fixtures and replace obsolete Canvas tests with native rendering checks.
+- Correct artwork privacy documentation and make the probe's OpenGL requirement explicit.
+
+## 8.7.0 — Retained visualizations and release hardening
+
+- Add optional Classic Siri lobes and sideways motion while preserving the ribbon default, custom palettes, and monochrome.
+- Retain Siri and Strings geometry on the GPU; send six spectral Siri controls or sixteen Strings drives instead of full spectrum arrays. Measure Siri loudness from the full PCM window to avoid waveform sampling blind spots.
+- Include the experimental retained Spectrum path with `OMAVIZ_SPECTRUM_RETAINED=0` as an opt-out. No 50% performance improvement is claimed.
+- Clear waveform data and preserve compact feed layouts when capture stops; sanitize invalid PCM and serialize control characters safely.
+- Unload cached artwork when leaving Spectrum, remove seams between stack rows, and let desktop bars grow roughly 80% wider in wide windows. Make Strings rotate around a uniform virtual pipe that expands with music, with selective depth blur and waveform ripples on a full desktop surface.
+- Exercise compact feed transitions, native response/artwork tests, shader parity, and keyboard/mouse interactions. Add native renderer compilation and tests to CI and the release gate.
+- Share marketplace form generation between preflight and release submission, retain exact-commit duplicate detection, and document release evidence and development lessons.
+
 ## 8.6.1 — Desktop fidelity and interaction reliability
 
 - Render external player names and track metadata as plain text, addressing the prior marketplace review finding.

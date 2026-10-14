@@ -21,6 +21,7 @@ const SILENCE_FLOOR: f32 = 0.02;
 pub struct AudioChunk {
     pub samples: Vec<f32>,
     pub rate: u32,
+    pub channels: usize,
 }
 
 pub struct Analyzer {
@@ -28,6 +29,8 @@ pub struct Analyzer {
     fft_size: usize,
     window: Vec<f32>,
     ring: Vec<f32>,
+    channel_rings: Vec<Vec<f32>>,
+    power: Vec<f32>,
     scratch_in: Vec<f32>,
     spectrum: Vec<Complex32>,
     band_edges: Vec<(usize, usize)>,
@@ -75,6 +78,8 @@ impl Analyzer {
             fft_size,
             window,
             ring: vec![0.0; fft_size],
+            channel_rings: Vec::new(),
+            power: vec![0.0; fft_size / 2 + 1],
             band_edges,
             bands: vec![0.0; n_bands],
             energy: 0.0,
@@ -88,50 +93,97 @@ impl Analyzer {
         self.sample_rate
     }
 
-    /// Downsampled time-domain snippet (newest last) for the oscilloscope.
-    pub fn wave_snippet(&self, n: usize) -> Vec<f32> {
-        let len = self.ring.len();
-        if n == 0 || len == 0 {
-            return vec![];
+    /// Whole-window loudness for Siri. Measuring the decimated oscilloscope
+    /// snippet aliases tones whose period coincides with its sample stride.
+    pub fn rms_level(&self) -> f32 {
+        if !self.channel_rings.is_empty() {
+            let sum: f32 = self.channel_rings.iter().flatten().map(|v| v*v).sum();
+            return (sum / (self.fft_size * self.channel_rings.len()) as f32).sqrt();
         }
-        (0..n)
-            .map(|i| {
-                let idx = (i * len / n).min(len - 1);
-                self.ring[idx].clamp(-1.0, 1.0)
-            })
-            .collect()
+        (self.ring.iter().map(|v| v*v).sum::<f32>() / self.ring.len().max(1) as f32).sqrt()
     }
 
-    /// Push interleaved-mixed mono samples; keeps the newest fft_size.
-    pub fn push(&mut self, samples: &[f32]) {
-        let n = self.fft_size;
-        if samples.len() >= n {
-            self.ring
-                .copy_from_slice(&samples[samples.len() - n..]);
-        } else {
-            let keep = n - samples.len();
-            self.ring.copy_within(samples.len().., 0);
-            self.ring[keep..].copy_from_slice(samples);
+    /// Six independent RMS controls from the FFT already used by the spectrum.
+    /// Parseval scaling compensates Hann window power; no second FFT or smoothing.
+    pub fn siri_levels(&self) -> [f32; 6] {
+        let mut power = [0.0_f32; 6];
+        let edges = [180.0, 450.0, 1000.0, 2500.0, 6000.0];
+        let mut band = 0;
+        for (i, c) in self.spectrum.iter().enumerate() {
+            let hz = i as f32 * self.sample_rate / self.fft_size as f32;
+            while band < edges.len() && hz >= edges[band] { band += 1; }
+            let p = c.norm_sqr();
+            if p.is_finite() {
+                let weight = if i == 0 || i == self.fft_size / 2 { 1.0 } else { 2.0 };
+                power[band] += p * weight;
+            }
         }
+        let window_power: f32 = self.window.iter().map(|v| v*v).sum();
+        power.map(|p| (p / (self.fft_size as f32 * window_power)).sqrt().clamp(0.0, 1.0))
+    }
+
+    /// Peak-preserving display envelope: ordered min/max pairs per bucket.
+    /// Unlike point decimation, a narrow transient or high tone cannot vanish
+    /// between display samples. This is a waveform envelope, not a frequency plot.
+    pub fn wave_snippet(&self, n: usize) -> Vec<f32> {
+        let len = self.ring.len();
+        if n == 0 || len == 0 { return vec![]; }
+        if n >= len { return self.ring.clone(); }
+        if n == 1 { return vec![self.ring.iter().copied().max_by(|a,b| a.abs().total_cmp(&b.abs())).unwrap_or(0.0)]; }
+        let buckets = n / 2;
+        let mut out = Vec::with_capacity(n);
+        for bucket in 0..buckets {
+            let start = bucket * len / buckets;
+            let end = (bucket + 1) * len / buckets;
+            let mut lo = start; let mut hi = start;
+            for i in start+1..end {
+                if self.ring[i] < self.ring[lo] { lo = i; }
+                if self.ring[i] > self.ring[hi] { hi = i; }
+            }
+            let (first, second) = if lo <= hi { (lo,hi) } else { (hi,lo) };
+            out.push(self.ring[first]); out.push(self.ring[second]);
+        }
+        if n % 2 != 0 { out.push(self.ring[len-1]); }
+        out
+    }
+
+    /// Mono input stays on the single-FFT fast path.
+    pub fn push(&mut self, samples: &[f32]) {
+        self.channel_rings.clear();
+        push_ring(&mut self.ring, samples.iter().copied(), samples.len());
+    }
+
+    pub fn push_interleaved(&mut self, samples: &[f32], channels: usize) {
+        if channels <= 1 { self.push(samples); return; }
+        if self.channel_rings.len() != channels {
+            self.channel_rings = vec![vec![0.0; self.fft_size]; channels];
+        }
+        let frames = samples.len() / channels;
+        for (c, ring) in self.channel_rings.iter_mut().enumerate() {
+            push_ring(ring, samples.chunks_exact(channels).map(|frame| frame[c]), frames);
+        }
+        // A real channel is a meaningful audio trace; arithmetic downmixing
+        // would erase antiphase content. Choose the strongest whole window.
+        let strongest = self.channel_rings.iter().max_by(|a,b| {
+            let energy = |r: &Vec<f32>| r.iter().map(|v| v*v).sum::<f32>();
+            energy(a).total_cmp(&energy(b))
+        }).unwrap();
+        self.ring.copy_from_slice(strongest);
     }
 
     /// Recompute bands from the current ring. Cheap enough for 60 Hz.
     /// RAW output: no smoothing/attack/decay — the renderer owns motion.
     pub fn analyze(&mut self) {
-        for (d, (s, w)) in self
-            .scratch_in
-            .iter_mut()
-            .zip(self.ring.iter().zip(self.window.iter()))
-        {
-            *d = s * w;
+        self.power.fill(0.0);
+        let channels = self.channel_rings.len().max(1);
+        for channel in 0..channels {
+            let ring = if self.channel_rings.is_empty() { &self.ring } else { &self.channel_rings[channel] };
+            for (d, (s, w)) in self.scratch_in.iter_mut().zip(ring.iter().zip(&self.window)) { *d = s * w; }
+            if self.fft.process(&mut self.scratch_in, &mut self.spectrum).is_err() { return; }
+            for (power, bin) in self.power.iter_mut().zip(&self.spectrum) { *power += bin.norm_sqr() / channels as f32; }
         }
-        if self
-            .fft
-            .process(&mut self.scratch_in, &mut self.spectrum)
-            .is_err()
-        {
-            return;
-        }
+        // Consumers use magnitudes, including Siri's Parseval envelopes.
+        for (bin, power) in self.spectrum.iter_mut().zip(&self.power) { *bin = Complex32::new(power.sqrt(), 0.0); }
 
         let norm = 2.0 / self.fft_size as f32;
         let mut total = 0.0;
@@ -163,9 +215,34 @@ impl Analyzer {
     }
 }
 
+fn push_ring(ring: &mut [f32], samples: impl Iterator<Item=f32>, count: usize) {
+    let keep = ring.len().saturating_sub(count);
+    if keep > 0 { ring.copy_within(count.., 0); }
+    let skip = count.saturating_sub(ring.len());
+    for (out, sample) in ring[keep..].iter_mut().zip(samples.skip(skip)) {
+        *out = if sample.is_finite() { sample.clamp(-1.0,1.0) } else { 0.0 };
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn stereo_energy_survives_opposite_phase_and_one_sided_audio() {
+        let tone: Vec<f32> = (0..2048).map(|i| (std::f32::consts::TAU*440.0*i as f32/48000.0).sin()*0.5).collect();
+        let mut mono = Analyzer::new(48000.0,128,2048); mono.push(&tone); mono.analyze();
+        for polarity in [1.0_f32, -1.0, 0.0] {
+            let stereo: Vec<f32> = tone.iter().flat_map(|v| [*v,*v*polarity]).collect();
+            let mut a = Analyzer::new(48000.0,128,2048); a.push_interleaved(&stereo,2); a.analyze();
+            assert!(!a.is_silent());
+            assert!((a.rms_level()-mono.rms_level()*((1.0+polarity*polarity)/2.0).sqrt()).abs()<0.0001);
+            assert!(a.wave_snippet(128).iter().any(|v| v.abs()>0.4));
+            if polarity != 0.0 {
+                for (actual,expected) in a.bands.iter().zip(&mono.bands) { assert!((actual-expected).abs()<0.0001); }
+            }
+        }
+    }
 
     #[test]
     fn supported_fft_and_band_extremes_do_not_panic() {
@@ -258,6 +335,19 @@ mod tests {
     }
 
     #[test]
+    fn invalid_pcm_is_sanitized_before_fft_and_waveform() {
+        let mut a = Analyzer::new(48_000.0, 32, FFT_SIZE);
+        a.push(&[f32::NAN, f32::INFINITY, f32::NEG_INFINITY, 5.0, -5.0]);
+        a.analyze();
+        assert!(a.bands.iter().all(|v| v.is_finite()));
+        assert!(a.wave_snippet(FFT_SIZE).iter().all(|v| v.is_finite() && v.abs() <= 1.0));
+        assert!(a.energy.is_finite() && a.beat.is_finite());
+        a.push(&vec![0.0; FFT_SIZE]);
+        a.analyze();
+        assert!(a.is_silent());
+    }
+
+    #[test]
     fn fft_1024_analyzes_and_stays_finite() {
         let mut a = Analyzer::new(48_000.0, 16, 1024);
         let chunk: Vec<f32> = (0..512).map(|i| (i as f32 * 0.01).sin()).collect();
@@ -267,6 +357,50 @@ mod tests {
         for b in &a.bands {
             assert!(b.is_finite());
         }
+    }
+
+    #[test]
+    fn waveform_preserves_tones_at_the_old_display_sample_stride() {
+        let mut a = Analyzer::new(48_000.0, 32, FFT_SIZE);
+        for hz in [3000.0_f32, 6000.0, 12000.0] {
+            let samples: Vec<f32> = (0..FFT_SIZE).map(|i|
+                0.5 * (std::f32::consts::TAU * hz * i as f32 / 48_000.0).sin()).collect();
+            a.push(&samples);
+            let display = a.wave_snippet(128);
+            let aliased = (display.iter().map(|v| v*v).sum::<f32>() / 128.0).sqrt();
+            assert!(aliased > 0.3, "display envelope must retain audible tones");
+            assert!((a.rms_level() - 0.5/std::f32::consts::SQRT_2).abs() < 0.001);
+        }
+    }
+
+    #[test]
+    fn siri_layers_separate_equal_loudness_tones_and_conserve_power() {
+        for rate in [44100.0, 48000.0] {
+            let mut a = Analyzer::new(rate, 32, FFT_SIZE);
+            for (band, hz) in [93.75, 300.0, 703.125, 1500.0, 3750.0, 9000.0].iter().enumerate() {
+                let samples: Vec<f32> = (0..FFT_SIZE).map(|i|
+                    0.2 * (std::f32::consts::TAU * hz * i as f32 / rate).sin()).collect();
+                a.push(&samples); a.analyze();
+                let levels = a.siri_levels();
+                let rms = a.rms_level();
+                assert!((levels[band] - rms).abs() < 0.004, "dominant band {band}: {levels:?}");
+                assert!(levels.iter().enumerate().all(|(i,v)| i == band || *v < 0.004));
+                assert!((levels.iter().map(|v|v*v).sum::<f32>().sqrt() - rms).abs() < 0.004);
+            }
+            a.push(&vec![0.0; FFT_SIZE]); a.analyze();
+            assert_eq!(a.siri_levels(), [0.0; 6]);
+        }
+    }
+
+    #[test]
+    fn siri_loudness_preserves_quiet_levels_and_silence() {
+        let mut a = Analyzer::new(48_000.0, 32, FFT_SIZE);
+        for level in [0.0_f32, 0.0001, 0.002, 0.07, 1.0] {
+            a.push(&vec![level; FFT_SIZE]);
+            assert!((a.rms_level()-level).abs() < 0.00001);
+        }
+        a.push(&vec![f32::NAN; FFT_SIZE]);
+        assert_eq!(a.rms_level(), 0.0);
     }
 
     #[test]

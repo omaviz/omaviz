@@ -14,11 +14,11 @@
 
 use crate::source::SourceEvent;
 use anyhow::{bail, Result};
-use std::sync::mpsc::Sender;
+use std::sync::mpsc::SyncSender;
 
 /// Spawn the file-replay thread. Returns once launched; errors only if the path
 /// is missing/empty or the file cannot be read or contains no valid frames.
-pub fn spawn(spec: &str, tx: Sender<SourceEvent>) -> Result<()> {
+pub fn spawn(spec: &str, tx: SyncSender<SourceEvent>) -> Result<()> {
     let spec = spec.strip_prefix('=').unwrap_or(spec);
     let mut parts = spec.split(':');
     let path = parts.next().unwrap_or("").to_string();
@@ -55,7 +55,7 @@ pub(crate) struct FrameData {
     pub silent: bool,
 }
 
-fn run(tx: Sender<SourceEvent>, frames: Vec<FrameData>, fps: f32, loop_file: bool) {
+fn run(tx: SyncSender<SourceEvent>, frames: Vec<FrameData>, fps: f32, loop_file: bool) {
     let delay = std::time::Duration::from_secs_f32(1.0 / fps.max(1.0));
     loop {
         for f in &frames {
@@ -119,7 +119,7 @@ mod tests {
     use super::*;
     use crate::source::SourceEvent;
     use std::io::Write;
-    use std::sync::mpsc::channel;
+    use std::sync::mpsc::sync_channel;
     use std::time::Duration;
 
     #[test]
@@ -149,7 +149,7 @@ mod tests {
 
     #[test]
     fn spawn_requires_path() {
-        let (tx, _rx) = channel();
+        let (tx, _rx) = sync_channel(8);
         assert!(spawn("", tx.clone()).is_err());
         assert!(spawn("=", tx).is_err());
     }
@@ -171,7 +171,7 @@ mod tests {
             )
             .unwrap();
         }
-        let (tx, rx) = channel();
+        let (tx, rx) = sync_channel(8);
         spawn(&format!("={}", path.display()), tx).unwrap();
         let f1 = rx.recv_timeout(Duration::from_secs(3)).unwrap();
         let f2 = rx.recv_timeout(Duration::from_secs(3)).unwrap();

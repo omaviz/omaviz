@@ -39,3 +39,29 @@ This is static Canvas-output parity, not an FPS benchmark, motion/latency test, 
 ## Promotion gate for a GPU renderer
 
 Measure CPU and frame timings at mini, preview and desktop sizes using identical input on at least one integrated GPU and one discrete GPU. Compare frozen frames at 1× and fractional scales across all modes, gradients, peaks, silence and reflections; then verify motion timing and input responsiveness. Require software fallback and hot-reload/close recovery. Adopt a native backend only with a measured benefit and approved visual parity. Until then the production renderer remains unchanged.
+
+## Review follow-up measurement (2026-10-14)
+
+Matched offscreen OpenGL/basic-loop runs at 754×405, 256 analysis bands,
+`gen=mixed`, stacks + reflection + wash + flame, order reference / retained /
+retained / reference, eight seconds each with a five-second steady-state sample:
+
+| Metric | Reference | Retained |
+| --- | --- | --- |
+| Renderer CPU (% of one core) | 5.20, 5.20 | 4.00, 4.20 |
+| GPU p95 (ms) | 0.104, 0.104 | 0.127, 0.127 |
+| Frame p95 (ms) | 18.53, 18.65 | 19.03, 18.55 |
+
+Keep retained Spectrum enabled: it saves approximately 21% renderer CPU in this
+workload for a roughly 0.024 ms GPU p95 increase. This does not meet the previous
+50% target or establish universal hardware superiority. Keep the explicit opt-out.
+For this controlled workload, use provisional acceptance budgets of <=20 ms
+frame p95, <=1 ms GPU p95 and <=10% renderer CPU (one core). These are profiling
+budgets, not portable CI assertions. Add representative hardware coverage before
+retiring reference paths; keep them as comparison oracles until then.
+
+The benchmark now rejects fewer than 120 rendered frames and software rendering.
+An occluded Wayland surface produced zero frames and an apparently cheap result;
+that run is invalid. GPU metrics absent from the driver are reported as unavailable,
+not zero. Use `QT_QPA_PLATFORM=offscreen QT_QUICK_BACKEND=rhi QSG_RHI_BACKEND=opengl
+QSG_RENDER_LOOP=basic` for the tested offscreen path.

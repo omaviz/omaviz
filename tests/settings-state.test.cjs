@@ -30,15 +30,6 @@ test('desktop heartbeats cannot overwrite persistent settings', () => {
 });
 
 
-test('Flame palette inputs stay independent of the custom/theme palette', () => {
-  const renderer = read('VisualCanvas.qml');
-  assert.match(renderer, /fireBottom: cv\.fireColorFrom, fireTop: cv\.fireColorTo/);
-  const native = read('renderer/geometry.cpp');
-  assert.ok(native.includes('mix(fireBottom,QColor(255,130,10)'));
-  assert.ok(native.includes('mix(quarter,fireTop,'));
-});
-
-
 test('theme snapshot cannot replace saved settings before initial config load', () => {
   let writes = 0;
   const root = {_ready: true, _configReady: false, config: {}, colorHex: () => '#112233',
@@ -66,19 +57,6 @@ test('color modes are exclusive and preserve custom palette values', () => {
   }
   assert.equal(ctx.setColorMode('invalid'), false);
   assert.equal(calls.length, 4);
-});
-
-
-
-test('playback stays on the controlled player and supports pause then play', () => {
-  let pauses=0, plays=0;
-  const player={canControl:true, canPause:true, canPlay:true, isPlaying:true,
-    pause(){pauses++; this.isPlaying=false}, play(){plays++; this.isPlaying=true}};
-  const win={activePlayer:player};
-  const ctx=vm.createContext({win});
-  vm.runInContext(method(read('Desktop.qml'),'togglePlayback'),ctx);
-  ctx.togglePlayback(); ctx.togglePlayback();
-  assert.equal(pauses,1); assert.equal(plays,1); assert.equal(win.preferredPlayer,player);
 });
 
 

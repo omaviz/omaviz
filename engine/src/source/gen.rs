@@ -17,7 +17,7 @@ use crate::dsp::AudioChunk;
 use crate::source::SourceEvent;
 use anyhow::{bail, Result};
 use std::f32::consts::PI;
-use std::sync::mpsc::Sender;
+use std::sync::mpsc::SyncSender;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum GenMode {
@@ -90,7 +90,7 @@ pub fn parse_spec(spec: &str) -> Result<(GenMode, GenParams)> {
 }
 
 /// Spawn the generator thread. Returns once the thread is launched.
-pub fn spawn(spec: &str, tx: Sender<SourceEvent>) -> Result<()> {
+pub fn spawn(spec: &str, tx: SyncSender<SourceEvent>) -> Result<()> {
     let (mode, params) = parse_spec(spec)?;
     std::thread::spawn(move || run(tx, mode, params));
     Ok(())
@@ -99,7 +99,7 @@ pub fn spawn(spec: &str, tx: Sender<SourceEvent>) -> Result<()> {
 const RATE: u32 = 48_000;
 const CHUNK: usize = 800; // ~16.6 ms at 48 kHz; loops at ~60 Hz
 
-fn run(tx: Sender<SourceEvent>, mode: GenMode, params: GenParams) {
+fn run(tx: SyncSender<SourceEvent>, mode: GenMode, params: GenParams) {
     let mut t = 0.0f32;
     let dt = 1.0 / RATE as f32;
     loop {
@@ -109,7 +109,7 @@ fn run(tx: Sender<SourceEvent>, mode: GenMode, params: GenParams) {
             t += dt;
         }
         if tx
-            .send(SourceEvent::Chunk(AudioChunk { samples, rate: RATE }))
+            .send(SourceEvent::Chunk(AudioChunk { samples, rate: RATE, channels: 1 }))
             .is_err()
         {
             break; // consumer gone
@@ -152,7 +152,7 @@ fn raw(mode: GenMode, t: f32, p: &GenParams) -> f32 {
 mod tests {
     use super::*;
     use crate::source::SourceEvent;
-    use std::sync::mpsc::channel;
+    use std::sync::mpsc::sync_channel;
     use std::time::Duration;
 
     #[test]
@@ -223,7 +223,7 @@ mod tests {
 
     #[test]
     fn spawn_emits_chunk_with_expected_rate_and_length() {
-        let (tx, rx) = channel();
+        let (tx, rx) = sync_channel(8);
         spawn("=tone", tx).unwrap();
         let ev = rx.recv_timeout(Duration::from_secs(3)).expect("should emit a chunk");
         match ev {
@@ -237,7 +237,7 @@ mod tests {
 
     #[test]
     fn spawn_unknown_mode_errors() {
-        let (tx, _rx) = channel();
+        let (tx, _rx) = sync_channel(8);
         assert!(spawn("=bogus", tx).is_err());
     }
 }

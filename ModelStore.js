@@ -229,11 +229,23 @@ function readConfigFromText(tomlText) {
   // turned the backdrop ON for every config that predates the key.
   d.artwork = readTomlValue(tomlText, "desktop", "artwork") === "true"
   if (_artModeRetired && readTomlValue(tomlText, "desktop", "artwork") === null) d.artwork = true
+  d.siriClassic = readTomlValue(tomlText, "desktop", "siri_classic") === "true"
+  d.siriTravel = readTomlValue(tomlText, "desktop", "siri_travel") === "true"
   d.scopeThickness = readTomlFloat(tomlText, "desktop", "scope_thickness") ?? 2
   if (d.scopeThickness !== d.scopeThickness || d.scopeThickness < 1) d.scopeThickness = 1
   if (d.scopeThickness > 5) d.scopeThickness = 5
   d.dots = readTomlValue(tomlText, "desktop", "dots") !== "false"
   d.reflect = readTomlValue(tomlText, "desktop", "reflect") !== "false"
+  var colorMode = readTomlValue(tomlText, "desktop", "color_mode")
+  d.colorMode = ["Theme", "Custom", "Artwork", "Flame"].indexOf(colorMode) >= 0 ? colorMode
+    : d.artworkColors ? "Artwork" : d.fire ? "Flame" : d.barColorCustom ? "Custom" : "Theme"
+  d.artworkColors = d.colorMode === "Artwork"
+  d.fire = d.colorMode === "Flame"
+  d.barColorCustom = d.colorMode === "Custom"
+  var geometry = readTomlValue(tomlText, "desktop", "geometry")
+  d.geometry = ["Bars", "Spikes", "Stacks"].indexOf(geometry) >= 0 ? geometry : d.spikes ? "Spikes" : d.stacks ? "Stacks" : "Bars"
+  d.spikes = d.geometry === "Spikes"
+  d.stacks = d.geometry === "Stacks"
   return d
 }
 
@@ -251,7 +263,7 @@ function defaultConfig() {
     themeTop: "#f59e0b",
     fire: false, fireColorFrom: "#be1400", fireColorTo: "#fde047",
     peaks: true, peakFalloff: 0.1, peakSustainMs: 100, spikes: false, stacks: false, mono: false,
-    linearFall: true, scope: false, visual: "Bars", artwork: false, scopeThickness: 2, dots: true, reflect: true,
+    linearFall: true, scope: false, visual: "Bars", artwork: false, scopeThickness: 2, siriTravel: false, siriClassic: false, dots: true, reflect: true,
     barColorCustom: false, barColorFrom: "#e68e0d", barColorTo: "#f59e0b",
     artworkColors: false,
     barColorMiddleEnabled: false,
@@ -259,6 +271,7 @@ function defaultConfig() {
     barGradientDir: "vertical",
     themeAccent: "#f59e0b",
     gpu: true,
+    colorMode: "Theme", geometry: "Bars",
   }
 }
 
@@ -328,6 +341,8 @@ var KEY_SPEC = [
   ["scope", "desktop", "scope", "bool"],
   ["visual", "desktop", "visual", "str"],
   ["scopeThickness", "desktop", "scope_thickness", "num"],
+  ["siriClassic", "desktop", "siri_classic", "bool"],
+  ["siriTravel", "desktop", "siri_travel", "bool"],
   ["dots", "desktop", "dots", "bool"],
   ["reflect", "desktop", "reflect", "bool"],
   ["artwork", "desktop", "artwork", "bool"],
@@ -383,9 +398,19 @@ function decodeFrame(line) {
     if (!Array.isArray(samples) || samples.length > 4096) return null
     for (var i = 0; i < samples.length; i++)
       if (typeof samples[i] !== "number" || !isFinite(samples[i])) return null
-    if (!Array.isArray(frame.bands)) return { wave: samples }
-    return { bands: samples, silent: frame.silent === true,
+    if (!Array.isArray(frame.bands)) {
+      var result = { wave: samples }
+      if (typeof frame.wave_rms === "number" && isFinite(frame.wave_rms) && frame.wave_rms >= 0 && frame.wave_rms <= 1)
+        result.waveRms = frame.wave_rms
+      if (Number.isInteger(frame.wave_serial) && frame.wave_serial >= 0 && frame.wave_serial <= 2147483647)
+        result.waveSerial = frame.wave_serial
+      return result
+    }
+    var spectrum = { bands: samples, silent: frame.silent === true,
       source: typeof frame.source === "string" ? frame.source : "" }
+    if (frame.band_layout === "strings" && samples.length === 16) spectrum.bandLayout = "strings"
+    if (frame.band_layout === "siri" && samples.length === 6) spectrum.bandLayout = "siri"
+    return spectrum
   } catch (e) { return null }
 }
 
@@ -409,9 +434,86 @@ function isDesktopActiveFromText(tomlText) {
   return readTomlValue(tomlText, "desktop", "active") === "true"
 }
 
+// Complete looks exclude global enable/theme/mini layout and the selected mode.
+var LOOK_KEYS = ["sensitivity", "mono", "peaks", "peakFalloff", "peakSustainMs", "linearFall", "scopeThickness", "siriTravel", "siriClassic", "dots", "reflect", "artwork", "fireColorFrom", "fireColorTo", "barColorFrom", "barColorTo", "barColorMiddle", "barColorMiddleEnabled", "barGradientDir"]
+var VISUAL_GROUPS = [
+  { id: "spectrum", label: "Spectrum", options: [{id:"Bars", label:"Spectrum"}] },
+  { id: "waveforms", label: "Waveforms", options: [{id:"Waves",label:"Waves"},{id:"Strings",label:"Strings"},{id:"Siri",label:"Siri"}] }
+]
+function visualGroup(mode) {
+  for (var g = 0; g < VISUAL_GROUPS.length; ++g)
+    if (VISUAL_GROUPS[g].options.some(function(option) { return option.id === mode })) return VISUAL_GROUPS[g].id
+  return ""
+}
+function groupOptions(group) {
+  for (var i = 0; i < VISUAL_GROUPS.length; ++i) if (VISUAL_GROUPS[i].id === group) return VISUAL_GROUPS[i].options
+  return []
+}
+function validVisual(mode) { return visualGroup(mode) !== "" }
+function lookSection(mode) { return "looks." + mode }
+function lookValues(config) {
+  var values = {color_mode: config.colorMode, geometry: config.geometry}
+  KEY_SPEC.forEach(function(spec) { if (LOOK_KEYS.indexOf(spec[0]) >= 0) values[spec[2]] = config[spec[0]] })
+  return values
+}
+function patchSettings(text, section, values) {
+  var merged = {}; for (var key in values) merged[key] = values[key]
+  if (section === "desktop") {
+    var cfg = readConfigFromText(text)
+    if (values.color_mode === undefined && (values.fire !== undefined || values.artwork_colors !== undefined || values.bar_color_custom !== undefined)) {
+      merged.color_mode = (values.artwork_colors ?? cfg.artworkColors) ? "Artwork"
+        : (values.fire ?? cfg.fire) ? "Flame" : (values.bar_color_custom ?? cfg.barColorCustom) ? "Custom" : "Theme"
+    }
+    if (values.geometry === undefined && (values.spikes !== undefined || values.stacks !== undefined))
+      merged.geometry = (values.spikes ?? cfg.spikes) ? "Spikes" : (values.stacks ?? cfg.stacks) ? "Stacks" : "Bars"
+  }
+  for (var k in merged) text = writeConfigKey(text, section, k, merged[k])
+  // Persist the active visualization with every edit, in the same queued write.
+  if (section === "desktop" || section === "audio") text = rememberLook(text)
+  return text
+}
+function rememberLook(text) {
+  var cfg = readConfigFromText(text)
+  return patchSettings(text, lookSection(cfg.visual), lookValues(cfg))
+}
+function applyLook(text, values) {
+  var desktop = {}; for (var key in values) if (key !== "sensitivity") desktop[key] = values[key]
+  text = patchSettings(text,"desktop",desktop)
+  return patchSettings(text,"audio",{sensitivity:values.sensitivity})
+}
+function restoreLook(text, mode) {
+  var section = lookSection(mode)
+  var defaults = lookValues(defaultConfig())
+  var values = {}
+  for (var key in defaults) {
+    var raw = readTomlValue(text,section,key)
+    values[key] = raw === null ? defaults[key] : typeof defaults[key] === "boolean" ? raw === "true"
+      : typeof defaults[key] === "number" ? Number(raw) : raw
+  }
+  return applyLook(text,values)
+}
+function selectVisual(text, mode) {
+  if (!validVisual(mode)) return text
+  var cfg = readConfigFromText(text)
+  if (cfg.visual === mode) return text
+  text = rememberLook(text)
+  text = patchSettings(text,"selection",{[visualGroup(mode)]:mode})
+  // Change identity without copying the previous mode over the target profile.
+  text = writeConfigKey(text,"desktop","visual",mode)
+  text = writeConfigKey(text,"desktop","scope",mode === "Waves")
+  return restoreLook(text,mode)
+}
+function selectGroup(text, group) {
+  var mode = readTomlValue(text,"selection",group)
+  var options = groupOptions(group)
+  if (!options.length) return text
+  if (!validVisual(mode) || visualGroup(mode) !== group) mode = options[0].id
+  return selectVisual(text,mode)
+}
 // ---- Module exports ----
 if (typeof module !== "undefined") {
   module.exports = {
+    VISUAL_GROUPS, visualGroup, groupOptions, selectVisual, selectGroup, patchSettings,
     configPath: configPath,
     decodeFrame: decodeFrame,
     engineBin: engineBin,

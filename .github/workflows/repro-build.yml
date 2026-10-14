@@ -4,9 +4,9 @@ name: Reproducible engine build
 # is byte-identically reproducible from the reviewed source in engine/ using
 # a fully pinned toolchain and dependency set. See docs/BUILD_ATTESTATION.md.
 #
-# The build environment is pinned three ways:
+# The build inputs are constrained three ways:
 #   1. rustc/cargo 1.98.1 via the digest-pinned container image
-#   2. system libs via apt from the same frozen Debian release (trixie)
+#   2. system libs via apt from Debian trixie (updates are not snapshot-pinned)
 #   3. crate versions + SHA256 checksums via the committed engine/Cargo.lock
 #      (cargo verifies every download against it; --locked forbids drift)
 #
@@ -55,7 +55,7 @@ jobs:
               rustc --version
               cargo --version
 
-              echo "== install pinned system libs =="
+              echo "== install distribution system libs =="
               export DEBIAN_FRONTEND=noninteractive
               apt-get update -qq
               apt-get install -y -qq --no-install-recommends \

@@ -1,7 +1,7 @@
-# omaviz — Application Specification (v8.6.1)
+# omaviz — Application Specification (v8.8.0)
 
 > **Plugin id:** `org.omaviz.visualizer`
-> **Version:** 8.6.1 (spec + manifest, git tag)
+> **Version:** 8.8.0 (spec + manifest, git tag)
 > **Status:** Single-package Omarchy QML plugin. Audio analysis is bundled as
 > one native binary (`bin/omaviz-engine`) shipped **inside** the plugin
 > directory. No systemd service, no Unix socket, no `~/.local/bin` binaries.
@@ -120,7 +120,7 @@ desktop resumes that feed.
 | `spikes` | `false` | Dense thin gapless flame spikes (~2px, width-derived count) |
 | `spikeBars` | `0` | Spike count cap (0=auto; mini passes 32) |
 | `fire` | `false` | Vertical red→tip flame gradient (container-shared) |
-| `stacks` | `false` | Winamp segments: 3px blocks + 1px gaps (preview/desktop; desktop doubles via stackScale) |
+| `stacks` | `false` | Winamp-style stack rows, touching vertically with no dark seams (desktop rows scale via stackScale) |
 | `sensitivity` | `1.0` | Input gain multiplier (also scales the oscilloscope amplitude) |
 | `themeBottom`/`themeTop` | amber | Theme-anchored colors; live shell accent when `colorSync` |
 
@@ -151,7 +151,7 @@ The bar floor is unconditional (1px) — there is no `minBarHeight` setting.
 ## 5. Settings Panel (redesign)
 
 The panel uses an opaque theme background and a top-level Spectrum / Waveforms dropdown. Waveforms has a second dropdown
-for Waves (the oscilloscope/audio trace), Strings, and Siri (luminous ribbons). Only relevant controls are shown.
+for Waves (the oscilloscope/audio trace), Strings, and Siri (luminous waves). Only relevant controls are shown.
 
 - **LOOK** appears for Spectrum: geometry, peaks, and reflection.
 - **COLOR** offers Theme / Custom / Artwork / Flame for Spectrum and
@@ -191,7 +191,7 @@ in the persistent footer. The header shows Omaviz and its installed manifest
 version beside the On/Off switch. When Off, content unloads and the panel
 shrinks to the header, helper, and footer. Capture pauses; an open desktop stays
 open with a paused label and media controls. On resumes visualization in place.
-**Exit** stops capture, releases the desktop lease to close its process, then
+**Disable plugin** stops capture, releases the desktop lease to close its process, then
 unloads the plugin via `omarchy plugin disable`. It does not depend on a settings
 save completing and never quits the shared Omarchy shell.
 
@@ -322,24 +322,75 @@ shared GPU drawing. The legacy `gpu` key does not switch rendering paths.
 When absent or invalid, legacy `scope = true` selects Waves, otherwise
 Bars. Explicit visual takes precedence. UI selection writes visual and the
 legacy scope flag atomically. All three waveform modes request the engine wave
-feed. Strings leaves the background transparent and drives individual strand
-amplitude from spectral bands. Each strand's carrier remains fixed in x;
-audio excites standing vibration and adds small local
-motion from waveform samples, without horizontal phase travel.
+feed. Strings leaves the background transparent. Independent strands rotate
+around a uniform virtual pipe at different pitches. Waveform energy expands
+the pipe height, spectral bands pulse individual strand radii, and waveform
+samples add local vibration. Selective strand defocus and broad soft foreground
+strands provide depth.
 The common waveform thickness control affects Waves and Strings. Legacy
 `Oscilloscope` values migrate to Waves; the former layered Waves renderer is retired.
-Siri uses audio-driven translucent sheets with antialiased glowing edges around
-a central axis, rendered by the same native mesh on all surfaces. Its noise-gated,
-perceptually compressed envelope makes quiet music visible without animating silence.
-Siri boosts vertical response below 48px so quiet playback remains legible in the mini.
+Siri keeps the existing cyan/blue/violet ribbon renderer as its default.
+The **Classic Siri** style selector persists `desktop.siri_classic`
+(default false). Both settings apply independently on mini, preview, and desktop.
+`renderer/siriribbonnode.cpp` preserves the existing ribbons, including their shared
+15% amplitude floor and original palette/glow. Switching styles replaces the scene
+graph node safely without restarting the audio engine. The optional classic style
+uses six independently appearing, vertically mirrored lobes on a fine neutral
+axis, visually referenced against Craig Dehner's classic Siri animation and iOS 9
+device footage. Red, green, blue, and cyan lobes add light toward white where they
+overlap. Monochrome uses normal alpha blending so black remains visible on light
+backgrounds; custom colors retain their configured alpha.
+`SiriResponse` uses a soft-knee loudness mapping, 18–38 ms attack, and 95–135 ms
+release. Six independent spectral RMS controls (<180, 180–450, 450–1000,
+1000–2500, 2500–6000, >6000 Hz) use the existing FFT with Hann power compensation.
+There is no shared amplitude floor. Each lobe has a smooth birth, growth, decay,
+and absent interval; deterministic variation changes its width, location, and
+prominence between births while keeping every surface consistent. Legacy
+unlabeled input falls back to global RMS. These are reference-informed visual
+parameters, not a claim about Apple's proprietary audio mapping.
+The default centered mode grows and contracts in place. **Left to right motion**
+persists `desktop.siri_travel` (default false) and moves lobes rightward during
+their lifetime. It applies to mini, preview, and desktop without restarting the
+engine. Silence removes all lobes and settles animation; mini amplification
+retains quiet detail without animating silence.
+`renderer/sirinode.cpp` retains the smooth lobe mesh and antialias fringe until
+size, scale, or style changes. Each frame updates only six position/scale/opacity
+uniforms. The vertex shader applies simple transforms without per-vertex sine,
+exponential, or normal calculations; no texture or blur pass is added.
+The engine's `--siri` feed preserves spectrum metadata and silence detection, emits
+six spectral RMS `bands` labeled `band_layout:"siri"`, and represents `wave` as one RMS sample calculated from the
+full PCM window. It no longer measures the decimated display snippet, which could
+miss tones at its sample-stride frequencies. Siri retains the original display-wave
+change identity via an optional `wave_serial` counter, so equal-RMS
+audio still wakes a settled visualizer. `OMAVIZ_SIRI_LEGACY=1` selects CPU deformation of the same lobe mesh
+for comparison; `tests/renderer-compare.py` runs bounded deterministic native checks.
 Strings uses eight strands below 48px height and sixteen elsewhere. Waves preserves
-the PCM trace with bounded, smoothed display gain for quiet signals. Native geometry
-nodes are created only once drawable data exists and recreated on mode changes
+the PCM trace with bounded, smoothed display gain for quiet signals. Strings retains
+its carrier/mode bases, ribbon vertices, colors, and index topology on the GPU;
+its shader deforms the mesh using the original smoothed excitation and filtered
+waveform. `--strings` aggregates the same five-band maxima for each of 16 strands
+before serialization, labels the frame with `band_layout: "strings"`, and retains
+the full 128-sample waveform and original spectrum metadata. Legacy full-band frames
+remain supported. `OMAVIZ_STRINGS_LEGACY=1` selects the original geometry path.
+The Spectrum experiment (enabled in this build) retains bar, stack,
+spike, wash, peak, and reflection geometry until style,
+size, scale, or band count changes. Its vertex shader consumes the existing QML
+physics heights and peaks; it preserves pixel snapping, palette splits, and QColor
+quantization. Stack tiles above the active height collapse without changing their
+spacing. Inputs above 1024 bars use the original geometry path to keep uniform
+buffers bounded. `OMAVIZ_SPECTRUM_RETAINED=0` restores the original path. Controlled
+desktop probes did not establish a 50% improvement, and retained stack tiles increased GPU work.
+`OMAVIZ_BARS_LEGACY=1` overrides the experiment for comparison.
+`tests/renderer-benchmark.py` and `tests/renderer-compare.py` accept `Siri`, `Strings`,
+or `Bars`; Bars benchmarks also accept `stacks`, `spikes`, or `combined`.
+Native geometry nodes are created only once drawable data exists and recreated on mode changes
 to reset envelopes and triangle/strip topology.
 
 Desktop config and lease paths resolve directly from Quickshell's XDG/HOME
 environment on both surfaces. Completed FileView loads apply fresh settings;
 250ms polling remains the fallback. Waveform-feed restarts wait for engine exit.
+Capture loss clears both waveform and spectrum output and preserves the selected
+compact band layout. Invalid PCM is sanitized before FFT and waveform serialization.
 A passive parent HoverHandler observes the whole desktop content tree, keeping
 controls visible over child buttons. Playback uses explicit pause/play capabilities
 and retains the controlled player after pausing.
@@ -357,6 +408,42 @@ stale waveform samples are cleared when changing capture flags. Desktop Tab
 reveals the action tray, keyboard focus prevents auto-hide, and a 320×160 minimum
 prevents the artwork/actions from overlapping in small windows.
 
-Desktop waveform resizing preserves a centered 3:1 drawing area for Waves, Strings,
-and Siri, fitting within wide or tall windows without stretching the shapes.
-Spectrum fills the available window with width-dependent bar density.
+Desktop Waves and Siri retain a centered 3:1 drawing area. Strings fills the
+desktop area to increase its motion and depth in taller/wider windows; its
+carrier frequency and waveform coupling yield broader, audio-responsive curves.
+Spectrum fills the available window and grows bar width from roughly 10 to 18px
+between 600 and 1200px. Stack tiles leave one physical pixel of separation.
+The artwork blur is unloaded whenever leaving Bars, avoiding stale cached art.
+
+
+### Review corrections (unreleased)
+
+- Ingest each queued PCM chunk before rate-limited FFT analysis; do not reinsert
+  old samples on heartbeat frames. Honor SPA valid-data offsets and stride.
+- Capture disconnects clear the active frame layout and exit for EngineFeed retry.
+- `{wave:[...]}` now carries a peak-preserving 128-point envelope and optional
+  `wave_rms` (finite 0–1 full-window RMS). Native submit accepts an optional RMS
+  argument; missing metadata retains legacy waveform-derived loudness.
+- Settings preview precedes tuning; numeric controls are unboxed, show values,
+  and Response exposes the persisted 0.1–4 range. Siri style is a selector.
+  Save errors and invalid hex input are visible. Exit is labeled Disable plugin.
+- Remote MPRIS artwork is intentionally fetched; audio is never uploaded.
+- Native offscreen verification requests OpenGL 3.3 and fails shader errors.
+
+
+## Review follow-up: density, recovery, controls, and looks
+
+- Preserve mini (128 analysis bands, normally 32 displayed) and desktop (256 analysis bands, size-adaptive display) resource/density differences. Retain the original FFT band mapping.
+- Capture retains interleaved channels. Spectrum and RMS average channel power; the audio trace uses the strongest channel window. PCM is sanitized before processing. PipeWire processing is outside the RT callback thread; a four-chunk mailbox evicts oldest audio and removes the forwarding thread. Synthetic sources use a bounded channel.
+- EngineFeed accepts quiet heartbeats as healthy. Missing valid spectrum for four seconds clears stale bands/waveforms, terminates the process (SIGKILL after 500 ms if necessary), and uses the existing retry backoff. UI exposes Connecting, Listening, Listening · quiet, Recovering and Stopped.
+- Categories and sub-options use buttons for fewer than five choices and dropdowns otherwise, with no search. Category selection restores its previous visualization. Appearance/motion are remembered per visualization in `looks.<mode>`. Color mode and geometry are exclusive enum choices with legacy flag migration. Active values remain in the existing desktop/audio sections for compatibility. Once explicit `color_mode`/`geometry` keys exist, edit these keys rather than legacy boolean flags.
+- Every appearance/motion edit automatically updates its per-visualization profile in one queued write. No Save / Restore / Reset or starting-look presets. Selection buttons have square corners. Global enable, mini sizing, and theme snapshots are not overwritten by look changes.
+- Desktop transport is a translucent bottom panel with poster, track text, capability-aware Previous / Play-Pause / Next, and Close at the right. A shared MediaSession owns selection and transport; palette extraction consumes that selected player. At narrow sizes track text gives way to the poster/actions.
+- F11 toggles fullscreen; Escape returns to windowed mode before closing; Ctrl+Left/Right switches visuals through the bar's IPC writer. Windowed size is persisted in desktop-window.ini, separate from config.toml and the runtime lease.
+- The settings panel uses bounded height and scrolling, without polling-based size locking.
+- Native tests exercise transport, selection thresholds, keyboard/mouse actions and full panel scrolling; real QML I/O tests exercise stalls, invalid frames, forced termination and recovery. Source-string layout/performance tests were removed. Benchmark results require an actual hardware-capable API and at least 120 rendered frames.
+- Native binaries embed a source/shader input fingerprint; CI checks it before rebuilding to catch stale bundles. This is not a reproducibility or security attestation.
+
+### Clipboard boundary
+
+Hex colors use bounded key-only entry, not Qt TextInput/TextEdit. Hidden or visible controls never read the system clipboard; paste and IME commit payloads are ignored. Type six hex digits, Enter to apply, Escape to cancel. MPRIS text remains PlainText.
