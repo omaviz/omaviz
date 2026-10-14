@@ -13,7 +13,7 @@ public:
     QVariantMap style() const { return m_style; }
     void setStyle(const QVariantMap &value);
     Q_INVOKABLE void submit(const QVariantList &bars, const QVariantList &peaks,
-                            const QVariantList &wave, double phase);
+                            const QVariantList &wave, double phase, double rms = -1);
 signals:
     void styleChanged();
 protected:
@@ -23,6 +23,7 @@ private:
     QVariantMap m_style;
     QVariantList m_bars, m_peaks, m_wave;
     double m_phase = 0;
+    float m_rms = -1;
     enum class NodeKind { Standard, Siri, SiriRibbon, Strings, Spectrum };
     NodeKind m_nodeKind = NodeKind::Standard; // Render-thread node type.
 };

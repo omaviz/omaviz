@@ -4,9 +4,9 @@ The spectrum analyzer you stared at for hours in 1999 — reborn as a
 native citizen of your Omarchy desktop. Live bars in your waybar, a full
 desktop visualizer window, and an oscilloscope that dances to whatever
 is playing. Same soul, zero nostalgia tax: native GPU rendering,
-theme-aware, and configured with two clicks.
+theme-aware, and configured from the bar.
 
-![version](https://img.shields.io/badge/version-8.7.0-amber) ![license](https://img.shields.io/badge/license-MIT-blue)
+![version](https://img.shields.io/badge/version-8.8.0-amber) ![license](https://img.shields.io/badge/license-MIT-blue)
 
 ## Why omaviz
 
@@ -28,24 +28,23 @@ theme-aware, and configured with two clicks.
 
 ## The tour
 
-![Omaviz v8.6.1: live fire spectrum with reflection and peaks, waveforms, and redesigned settings](preview.png)
+![Omaviz v8.8.0: live fire spectrum with reflection and peaks, waveforms, and redesigned settings](preview.png)
 
-The fire spectrum hero is captured from the native desktop renderer driven by live
-PipeWire audio, with reflection and peaks enabled and Response at 2.2×. Waveform
-examples use controlled audio to show their shapes; the settings screenshot is
-from the running Omarchy panel. Images retain their original proportions.
+Visualization examples are captured from the production native renderer using
+controlled sample data. The settings screenshot is from the installed v8.8.0
+Omarchy panel. Images retain their original proportions.
 
 | | |
 |---|---|
-| ![Siri translucent cyan, blue, and violet ribbons](docs/screenshots/Siri-v8.6.1.png) | ![Strings with warm strands and soft blue foreground curves](docs/screenshots/Strings-v8.6.1.png) |
+| ![Siri translucent cyan, blue, and violet ribbons](docs/screenshots/Siri-v8.8.0.png) | ![Strings with warm strands and soft blue foreground curves](docs/screenshots/Strings-v8.8.0.png) |
 | *Siri: luminous, layered ribbons* | *Strings: vibrating strands with depth* |
-| ![Waves showing a true time-domain waveform](docs/screenshots/Waves-v8.6.1.png) | ![Live fire spectrum with peak markers and floor reflection](docs/screenshots/Spectrum-v8.6.1.png) |
+| ![Waves showing the audio waveform](docs/screenshots/Waves-v8.8.0.png) | ![Spectrum with peak markers and floor reflection](docs/screenshots/Spectrum-v8.8.0.png) |
 | *Waves: the audio signal as an oscilloscope* | *Live fire spectrum: reflection and Winamp-style peaks* |
 
 <details>
-<summary>Settings panel (v8.6.1)</summary>
+<summary>Settings panel (v8.8.0)</summary>
 
-![Omaviz v8.6.1 settings with visualization dropdowns and black preview](docs/screenshots/Settings-v8.6.1.png)
+![Omaviz v8.8.0 settings with square visualization choices and automatic persistence](docs/screenshots/Settings-v8.8.0.png)
 
 </details>
 
@@ -57,22 +56,48 @@ from the running Omarchy panel. Images retain their original proportions.
   Winamp Stacks, floor-mirror Reflection, album-art backdrop.
   The experimental retained renderer is enabled in this build (`OMAVIZ_SPECTRUM_RETAINED=0` disables it);
   it preserves peak physics and 60 Hz animation, but has not met the 50% performance target.
-- **Waves** — true 128-point time-domain waveform, adjustable
+- **Waves** — 128-point peak-preserving waveform envelope, adjustable
   thickness, follows your colors
 - **Bar color** — theme-dominant by default (tracks Omarchy theme
   switches live), or custom From → To tones via presets or hex
 - **Strings** — gold and cream strands rotate around a uniform pipe that grows taller with music energy; some strands soften near the outer arcs, with broad blurred blue strands in front. Spectral bands pulse each strand's radius while waveform samples ripple the loops. Small surfaces use fewer strands to retain separation. The backdrop stays transparent.
   A retained GPU mesh preserves the existing curves and glow; the feed carries the 16 strand excitation values plus the full waveform.
-- **Siri** — the existing cyan/blue/violet ribbons remain the default. Enable **Classic Siri style**, beside **Left to right motion**, for independently appearing, mirrored color lobes on a fine neutral axis, based on the classic Siri reference. Red, green, blue, and cyan overlaps brighten toward white; custom palettes and monochrome remain supported.
+- **Siri** — the existing cyan/blue/violet ribbons remain the default. Select **Classic Siri** in the style selector, for independently appearing, mirrored color lobes on a fine neutral axis, based on the classic Siri reference. Red, green, blue, and cyan overlaps brighten toward white; custom palettes and monochrome remain supported.
   Six spectral envelopes control the response without a shared minimum height. Lobes have separate lifetimes, widths, and prominence, and disappear into the baseline during pauses. Their shape stays in GPU memory at 60 Hz. Enable **Left to right motion** under **Motion** to add sideways travel; default motion expands and contracts in place.
 - **Motion** — Winamp-style linear fall by default, optional exponential easing,
   adjustable sensitivity
 - **Robust** — desktop lease stored separately from settings (no heartbeat overwrites),
   engine auto-retry, one shared GPU renderer everywhere.
 
+## Controls and automatic settings
+
+Choose a category, then a visualization. Groups with fewer than five choices use
+selectable buttons; larger groups use a dropdown. There is no search field.
+Each category remembers its last selection, and each visualization restores its
+own palette, geometry and response. Every edit saves automatically and survives
+closing and reopening. There are no Save, Restore or Reset actions. Palette
+swatches change only the colors; selection buttons have square corners.
+
+The desktop has a subtle translucent panel with a poster thumbnail, track text,
+and the player's available Previous / Play or Pause / Next actions. Close stays
+at the far right. Artwork colors and transport follow the same selected player.
+Tab reveals the controls. F11 toggles fullscreen; Escape leaves fullscreen or
+closes the normal window. Ctrl+Left/Right changes visualization through the
+running Omarchy shell. Normal window dimensions are remembered separately from
+visual settings.
+
+The mini retains its original lower-density spectrum mapping and bar counts.
+Capture preserves channel power before combining spectra, so
+opposite-phase stereo does not cancel. Waveforms show the strongest channel's
+window. A bounded capture mailbox discards oldest audio under overload.
+
+A four-second valid-spectrum deadline clears stalled visuals and retries the
+engine; quiet audio is still healthy. The source status distinguishes connecting,
+listening, quiet and recovering states.
+
 ## Install
 
-Requires Omarchy (Quickshell), Qt 6.11 or newer, an accelerated Qt Quick backend, and PipeWire. The bundled native renderer targets Linux x86_64. **Nothing has to be built or run by
+Requires Omarchy (Quickshell), Qt 6.11 or newer, a modern accelerated Qt Quick backend (OpenGL 3.3+ or equivalent), and PipeWire. The bundled native renderer targets Linux x86_64. **Nothing has to be built or run by
 hand** — the engine binary ships committed, and Omarchy installs the plugin as
 a self-contained folder.
 
@@ -140,7 +165,7 @@ npm run verify        # JS, installer safety, and Rust
 | --- | --- |
 | `tests/modelstore.test.cjs` | config defaults/schema, TOML round-trips, the store funnel (get/set/onChanged) |
 | `tests/physics.test.cjs` | the shared motion model: instant attack, rate-limited release, peak sustain + accelerating fall |
-| `tests/qml.test.cjs` | real `qmllint` syntax check, duplicate-property guard, cross-surface invariants |
+| `tests/qml.test.cjs` | Qt 6 syntax check; real components/native controls cover runtime behavior |
 | `tests/engine.test.cjs` | drives the committed binary and asserts its frame contract (60 Hz, raw bands, faint-signal handling) |
 | `engine/` (cargo) | DSP + frame + source unit tests |
 
@@ -160,7 +185,7 @@ with a dotted-skin backdrop and a B&W Mono mode for tiny sizes.
 Single-click the mini for the settings panel below; single-click the live
 preview inside it to detach the desktop window:
 
-![settings panel with mini in the bar](docs/screenshots/Mini.png)
+![Current settings panel opened from the mini](docs/screenshots/Settings-v8.8.0.png)
 
 ## Engine
 
@@ -209,9 +234,10 @@ Installs to `~/.config/omarchy/plugins/org.omaviz.visualizer/`.
 
 ## Open source
 
-> **Private by design.** No trackers, no analytics, no network calls —
-> the engine reads your local audio, the panel reads local players, and
-> nothing ever leaves your machine.
+> **Audio stays local.** No trackers or analytics. The engine analyzes local
+> audio without uploading it. Player-provided HTTP/HTTPS cover URLs are fetched
+> to display artwork or extract its colors; those requests contact the artwork
+> host. Local file artwork stays local.
 
 MIT-licensed and hackable end to end: QML surfaces, shared GPU
 renderer and the Rust PipeWire engine all live in this repo, with
@@ -240,7 +266,7 @@ fallback when artwork is unavailable. The desktop hover card shows artwork and t
 play/pause when the active media player supports it.
 
 Off pauses visualization and capture while keeping the plugin and desktop controls
-available. On resumes in place. Exit closes the desktop, stops Omaviz capture,
+available. On resumes in place. Disable plugin closes the desktop, stops Omaviz capture,
 and unloads the plugin from the shared shell. Desktop settings apply on completed
 file loads, with a 250ms polling fallback. Hover controls remain stable while
 pointing at buttons, and the controlled media player stays selected after Pause.
@@ -263,3 +289,23 @@ shell theme decoration and the media player are isolated fixtures.
 Desktop Waves and Siri preserve a centered 3:1 silhouette. Strings fills the
 window with broader, more responsive curves. Spectrum fills the window with
 bars that grow wider as the desktop grows instead of staying tiny.
+
+### Settings and capture reliability
+
+The preview sits beside visualization selection. Response spans 0.1–4×; numeric
+controls display their current values without an enclosing card. Save failures
+and invalid hex colors show inline feedback. “Disable plugin” removes the widget
+from the active shell; the ON/OFF switch only pauses visualization.
+
+Capture preserves all queued PCM buffers and honors SPA offsets/strides. A lost
+PipeWire connection exits the engine so the host can retry. Waveform samples are
+ordered bucket minima/maxima; full-window RMS travels separately for consistent
+Strings expansion and waveform normalization. Older waveform frames still work.
+
+`npm run test:render` builds the native module and runs bounded offscreen OpenGL
+captures, checking visible output and shader failures. It requires OpenGL 3.3.
+Local builds installed during development are not CI-attested release binaries.
+
+Hex colors accept six typed digits (Enter applies, Escape cancels). Clipboard paste
+is deliberately unavailable: no Qt text editor is instantiated or clipboard read
+performed, including while the settings panel is hidden.

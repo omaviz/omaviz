@@ -32,3 +32,9 @@ test('Siri spectral layout requires six independent layer drives', () => {
   assert.equal(decodeFrame(JSON.stringify(frame)).bandLayout, 'siri');
   assert.equal(decodeFrame(JSON.stringify({...frame, bands:[]})).bandLayout, undefined);
 });
+
+ test('optional waveform RMS is bounded and legacy frames remain compatible', () => {
+  assert.deepEqual(decodeFrame('{"wave":[0],"wave_rms":0.25}'), {wave:[0],waveRms:0.25});
+  for (const wave_rms of [-1, 2, 'bad', null])
+    assert.deepEqual(decodeFrame(JSON.stringify({wave:[0],wave_rms})), {wave:[0]});
+ });

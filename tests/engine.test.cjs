@@ -7,9 +7,9 @@ const BIN = path.join(__dirname, "..", "bin", "omaviz-engine");
 
 // Collect an observable result, not a frame-rate threshold on a shared CI host.
 // Every path waits for process close; errors and deadline expiry fail explicitly.
-function run(args, count = 0) {
+function run(args, count = 0, env = process.env) {
   return new Promise((resolve, reject) => {
-    const child = spawn(BIN, args, {stdio: ["ignore", "pipe", "pipe"]});
+    const child = spawn(BIN, args, {stdio: ["ignore", "pipe", "pipe"], env});
     let buffer = "", stderr = "", failure = null, complete = false;
     const frames = [];
     const timeout = setTimeout(() => {
@@ -127,4 +127,21 @@ test("Siri measures high tones that the display waveform undersamples", async ()
   const values = frames.filter(frame => frame.wave).map(frame => frame.wave[0]);
   assert.ok(values.length > 0);
   assert.ok(values.slice(-5).every(v => Math.abs(v - 0.5 / Math.sqrt(2)) < 0.01));
+});
+
+test("capture connection failure exits for host retry and clears the selected feed", async () => {
+  const {frames, code, stderr} = await run(["--source", "pipewire", "--strings"], 0,
+    {...process.env, PIPEWIRE_REMOTE: "omaviz-test-missing-" + process.pid});
+  assert.notEqual(code, 0);
+  assert.match(stderr, /audio source disconnected/);
+  assert.ok(frames.some(f => f.band_layout === "strings" && f.silent));
+  assert.ok(frames.some(f => f.wave && f.wave.every(v => v === 0) && f.wave_rms === 0));
+});
+test("Waves and Strings retain high tones and report full-window loudness", async () => {
+  for (const flag of ["--wave", "--strings"]) {
+    const {frames} = await run(["--source", "gen=tone:freq=3000;amp=1", flag], 24);
+    const waves = frames.filter(f => f.wave);
+    assert.ok(waves.some(f => Math.max(...f.wave) > 0.4 && Math.min(...f.wave) < -0.4));
+    assert.ok(waves.some(f => Math.abs(f.wave_rms - 0.5 / Math.sqrt(2)) < 0.01));
+  }
 });

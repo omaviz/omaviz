@@ -7,6 +7,7 @@ Usage: python3 tests/renderer-benchmark.py /path/to/omaviz-render-probe output-d
 Four automatically closing 8-second runs; samples seconds 2–7 after startup.
 """
 import json
+import re
 import os
 from pathlib import Path
 import subprocess
@@ -105,10 +106,19 @@ for trial, backend in enumerate(("legacy", "shader", "shader", "legacy")):
             if process.poll() is None:
                 process.wait(timeout=15)
     cpu = (after["cpu"] - before["cpu"]) / elapsed * 100
+    log_text = (output / f"{trial}-{backend}.log").read_text()
+    frame_stats = re.search(r"frames (\d+) p50_ms ([\d.]+) p95_ms ([\d.]+)", log_text)
+    if not frame_stats or int(frame_stats[1]) < 120:
+        raise RuntimeError("Insufficient rendered frames; an occluded/unexposed window is not a performance result. " + str(output))
+    if not re.search(r"graphics_api (3|4|5|6|8)\b", log_text):
+        raise RuntimeError("Renderer did not use a hardware-capable graphics API: " + str(output))
+    gpu_match = re.search(r"gpu_p95_ms ([-\d.]+)", log_text)
     engine_cpu = (engine_after["cpu"] - engine_before["cpu"]) / elapsed * 100
     row = {"backend": backend, "renderer_cpu_pct": round(cpu, 3),
            "engine_cpu_pct": round(engine_cpu, 3), "total_cpu_pct": round(cpu + engine_cpu, 3),
-           "gpu_gfx_busy_pct": round((after["gfx"] - before["gfx"]) / elapsed * 100, 3)}
+           "frame_p95_ms": float(frame_stats[3]),
+           "gpu_p95_ms": float(gpu_match[1]) if gpu_match and float(gpu_match[1]) >= 0 else None,
+           "gpu_gfx_busy_pct": round((after["gfx"] - before["gfx"]) / elapsed * 100, 3) if after["gfx"] > before["gfx"] else None}
     rows.append(row)
     print(json.dumps(row), flush=True)
 (output / "report.json").write_text(json.dumps(rows, indent=2) + "\n")

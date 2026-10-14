@@ -6,3 +6,6 @@ target_link_libraries(controls-test PRIVATE Qt6::Quick Qt6::Test)
 
 add_executable(desktop-controls-test desktop.cpp)
 target_link_libraries(desktop-controls-test PRIVATE Qt6::Quick Qt6::Test)
+
+add_executable(panel-test panel.cpp)
+target_link_libraries(panel-test PRIVATE Qt6::Quick Qt6::Test)

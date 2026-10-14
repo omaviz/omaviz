@@ -8,7 +8,7 @@ rule below cost a debugging session.
 - **NEVER launch the wgpu/Desktop GPU surface or `quickshell -p` windows
   from long-lived agent sessions** — use `timeout N quickshell -p ...`
   for launch smoke tests, then kill. Verify through:
-  - `qmllint *.qml` (must be exit 0 before install)
+  - `npm run lint:qml` (Qt 6 explicitly; must be exit 0 before install)
   - `cargo test` in `engine/` (acceptance gate — writing tests ≠ done)
   - `./install.sh` + `journalctl --user` greps for omaviz errors
   - `grim` + vision screenshots of the bar (region `[2900,0,3840,140]`
@@ -70,7 +70,9 @@ rule below cost a debugging session.
 13. Keep performance claims separate from image parity. The retained Spectrum experiment has not demonstrated its 50% target, and stacks can increase GPU work.
 14. For cheaper delegated verification, specify exact paths/commands, expected evidence, success checks, short output, and hard stop conditions; personally verify decisive results. Do not delegate open-ended diagnosis or visual judgment.
 15. Qt's cached FastBlur can retain artwork across mode changes; unload its entire Loader when the artwork backdrop is inactive, and test Bars → Strings with a real QML Loader.
-16. Stack rows should meet without a vertical gap. Keep their pitch and drawn height equal in both shader and CPU paths, then inspect a screenshot as well as comparing renderer parity.
+16. Stack rows must remain visibly distinct from continuous Bars. Keep a one-scale-unit gap within each four-scale-unit pitch in both shader and CPU paths; inspect a screenshot as well as comparing renderer parity.
 17. Strings can use a full desktop surface without changing Siri/Waves' 3:1 silhouette; test viewport bounds at normal, wide, tall, and minimum sizes.
 18. Check `journalctl --user` after a live reinstall: static QML lint did not catch `Style.spacing.small`, which was undefined at runtime. Use the host's valid `Style.space(...)` API for that control.
 19. For Strings, use the user-provided Plexamp frame as the visual target: independent high-frequency warm loops wrap a pipe of uniform radius along its length, its height expands with music, some outer strands are softly defocused, and a few broad blue strands sit in front. A mirrored, center-pinched almond looked unlike the reference; inspect playback frames and measure rotation, audio response, and height expansion.
+
+20. The unqualified `/usr/bin/qmllint` on this host is Qt 5. Use the Qt 6-aware `npm run lint:qml` gate. Syntax checks do not prove runtime property resolution; `tests/desktop.cjs` instantiates the production Window with isolated settings and disabled capture to verify fullscreen, Escape, closing, and saved dimensions.

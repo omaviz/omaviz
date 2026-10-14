@@ -329,11 +329,19 @@ mv "$(PD)/assets" "$HOME/assets-real"
 ln -s "$HOME/user-assets" "$(PD)/assets"
 run_install
 check "managed re-install refuses"             "[ $? -ne 0 ]"
-check "nothing was written outside"            "[ -z \"$(ls -A \"$HOME/user-assets\")\" ]"
+if entries=$(ls -A "$HOME/user-assets"); then
+  [ -z "$entries" ] && ok "nothing was written outside" || no "nothing was written outside"
+else
+  no "nothing was written outside" "cannot inspect directory"
+fi
 run_install --force
 check "--force still exits 0"                  "[ $? -eq 0 ]"
 check "the link was moved aside, not followed" "ls -d \"$(PD).bak-\"* >/dev/null 2>&1"
-check "the user dir is still empty"            "[ -z \"$(ls -A \"$HOME/user-assets\")\" ]"
+if entries=$(ls -A "$HOME/user-assets"); then
+  [ -z "$entries" ] && ok "the user dir is still empty" || no "the user dir is still empty"
+else
+  no "the user dir is still empty" "cannot inspect directory"
+fi
 check "a clean plugin dir was installed"       "[ -f \"$(PD)/manifest.json\" ] && [ ! -L \"$(PD)/assets\" ]"
 
 # A symlink at the LEAF is unlinked, never followed: the file it points at lives
@@ -341,7 +349,9 @@ check "a clean plugin dir was installed"       "[ -f \"$(PD)/manifest.json\" ] &
 new_home 26
 run_install
 printf 'outside\n' >"$HOME/target"
-ln -s "$HOME/target" "$(PD)/manifest.json"
+rm "$(PD)/manifest.json"
+ln -s "$HOME/target" "$(PD)/manifest.json" || exit 1
+check "leaf fixture is a symlink" "[ -L \"$(PD)/manifest.json\" ]"
 run_uninstall
 check "uninstall exits 0"                      "[ $? -eq 0 ]"
 check "the symlink target survived"            "[ -f \"$HOME/target\" ]"

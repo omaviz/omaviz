@@ -62,6 +62,8 @@ Item {
   property bool colorSync: true
   // Oscilloscope feed: 128-point time-domain samples (-1..1, newest last).
   property var wave: []
+  property real waveRms: -1
+  onWaveRmsChanged: { _waveDirty = true; wake() }
   // Compact Siri frames retain change identity even when their RMS is equal.
   property int waveSerial: 0
   onWaveSerialChanged: if (visual === "Siri") { _waveDirty = true; wake() }
@@ -203,7 +205,7 @@ Item {
         cv._accumulator -= 1000 / 60
       }
       mesh.submit((cv.visual === "Strings" || cv.visual === "Siri") ? cv.bands : cv._barArr,
-                  cv._peakArr, cv.wave, cv._phase)
+                  cv._peakArr, cv.wave, cv._phase, cv.waveRms)
       var flowing = !cv.silent || ((cv.visual === "Siri" || cv.visual === "Strings") && cv._waveTail > 0)
       cv._awake = flowing || (!cv._scopeMode && !Physics.settled(cv._barArr, cv._peakArr, cv._targets, 0.002))
       cv._waveDirty = false

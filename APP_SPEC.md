@@ -1,7 +1,7 @@
-# omaviz — Application Specification (v8.7.0)
+# omaviz — Application Specification (v8.8.0)
 
 > **Plugin id:** `org.omaviz.visualizer`
-> **Version:** 8.7.0 (spec + manifest, git tag)
+> **Version:** 8.8.0 (spec + manifest, git tag)
 > **Status:** Single-package Omarchy QML plugin. Audio analysis is bundled as
 > one native binary (`bin/omaviz-engine`) shipped **inside** the plugin
 > directory. No systemd service, no Unix socket, no `~/.local/bin` binaries.
@@ -191,7 +191,7 @@ in the persistent footer. The header shows Omaviz and its installed manifest
 version beside the On/Off switch. When Off, content unloads and the panel
 shrinks to the header, helper, and footer. Capture pauses; an open desktop stays
 open with a paused label and media controls. On resumes visualization in place.
-**Exit** stops capture, releases the desktop lease to close its process, then
+**Disable plugin** stops capture, releases the desktop lease to close its process, then
 unloads the plugin via `omarchy plugin disable`. It does not depend on a settings
 save completing and never quits the shared Omarchy shell.
 
@@ -330,7 +330,7 @@ strands provide depth.
 The common waveform thickness control affects Waves and Strings. Legacy
 `Oscilloscope` values migrate to Waves; the former layered Waves renderer is retired.
 Siri keeps the existing cyan/blue/violet ribbon renderer as its default.
-**Classic Siri style**, beside **Left to right motion**, persists `desktop.siri_classic`
+The **Classic Siri** style selector persists `desktop.siri_classic`
 (default false). Both settings apply independently on mini, preview, and desktop.
 `renderer/siriribbonnode.cpp` preserves the existing ribbons, including their shared
 15% amplitude floor and original palette/glow. Switching styles replaces the scene
@@ -414,3 +414,36 @@ carrier frequency and waveform coupling yield broader, audio-responsive curves.
 Spectrum fills the available window and grows bar width from roughly 10 to 18px
 between 600 and 1200px. Stack tiles leave one physical pixel of separation.
 The artwork blur is unloaded whenever leaving Bars, avoiding stale cached art.
+
+
+### Review corrections (unreleased)
+
+- Ingest each queued PCM chunk before rate-limited FFT analysis; do not reinsert
+  old samples on heartbeat frames. Honor SPA valid-data offsets and stride.
+- Capture disconnects clear the active frame layout and exit for EngineFeed retry.
+- `{wave:[...]}` now carries a peak-preserving 128-point envelope and optional
+  `wave_rms` (finite 0–1 full-window RMS). Native submit accepts an optional RMS
+  argument; missing metadata retains legacy waveform-derived loudness.
+- Settings preview precedes tuning; numeric controls are unboxed, show values,
+  and Response exposes the persisted 0.1–4 range. Siri style is a selector.
+  Save errors and invalid hex input are visible. Exit is labeled Disable plugin.
+- Remote MPRIS artwork is intentionally fetched; audio is never uploaded.
+- Native offscreen verification requests OpenGL 3.3 and fails shader errors.
+
+
+## Review follow-up: density, recovery, controls, and looks
+
+- Preserve mini (128 analysis bands, normally 32 displayed) and desktop (256 analysis bands, size-adaptive display) resource/density differences. Retain the original FFT band mapping.
+- Capture retains interleaved channels. Spectrum and RMS average channel power; the audio trace uses the strongest channel window. PCM is sanitized before processing. PipeWire processing is outside the RT callback thread; a four-chunk mailbox evicts oldest audio and removes the forwarding thread. Synthetic sources use a bounded channel.
+- EngineFeed accepts quiet heartbeats as healthy. Missing valid spectrum for four seconds clears stale bands/waveforms, terminates the process (SIGKILL after 500 ms if necessary), and uses the existing retry backoff. UI exposes Connecting, Listening, Listening · quiet, Recovering and Stopped.
+- Categories and sub-options use buttons for fewer than five choices and dropdowns otherwise, with no search. Category selection restores its previous visualization. Appearance/motion are remembered per visualization in `looks.<mode>`. Color mode and geometry are exclusive enum choices with legacy flag migration. Active values remain in the existing desktop/audio sections for compatibility. Once explicit `color_mode`/`geometry` keys exist, edit these keys rather than legacy boolean flags.
+- Every appearance/motion edit automatically updates its per-visualization profile in one queued write. No Save / Restore / Reset or starting-look presets. Selection buttons have square corners. Global enable, mini sizing, and theme snapshots are not overwritten by look changes.
+- Desktop transport is a translucent bottom panel with poster, track text, capability-aware Previous / Play-Pause / Next, and Close at the right. A shared MediaSession owns selection and transport; palette extraction consumes that selected player. At narrow sizes track text gives way to the poster/actions.
+- F11 toggles fullscreen; Escape returns to windowed mode before closing; Ctrl+Left/Right switches visuals through the bar's IPC writer. Windowed size is persisted in desktop-window.ini, separate from config.toml and the runtime lease.
+- The settings panel uses bounded height and scrolling, without polling-based size locking.
+- Native tests exercise transport, selection thresholds, keyboard/mouse actions and full panel scrolling; real QML I/O tests exercise stalls, invalid frames, forced termination and recovery. Source-string layout/performance tests were removed. Benchmark results require an actual hardware-capable API and at least 120 rendered frames.
+- Native binaries embed a source/shader input fingerprint; CI checks it before rebuilding to catch stale bundles. This is not a reproducibility or security attestation.
+
+### Clipboard boundary
+
+Hex colors use bounded key-only entry, not Qt TextInput/TextEdit. Hidden or visible controls never read the system clipboard; paste and IME commit payloads are ignored. Type six hex digits, Enter to apply, Escape to cancel. MPRIS text remains PlainText.

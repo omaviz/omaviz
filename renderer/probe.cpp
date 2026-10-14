@@ -1,4 +1,5 @@
 #include <QGuiApplication>
+#include <QSurfaceFormat>
 #include <QQuickView>
 #include <QQmlContext>
 #include <QTimer>
@@ -17,7 +18,17 @@
 #include <vector>
 #include <sys/resource.h>
 int main(int argc,char **argv) {
-    qInstallMessageHandler([](QtMsgType,const QMessageLogContext &,const QString &s){ fprintf(stderr,"%s\n",qPrintable(s)); });
+    static bool renderError=false;
+    qInstallMessageHandler([](QtMsgType,const QMessageLogContext &,const QString &s){
+        fprintf(stderr,"%s\n",qPrintable(s));
+        if(s.contains("Failed to compile shader") || s.contains("Failed to build graphics pipeline")) renderError=true;
+    });
+    // Retained shaders require modern GLSL; offscreen Qt otherwise chooses GL 2.
+    QSurfaceFormat format;
+    format.setVersion(3,3);
+    format.setProfile(QSurfaceFormat::CoreProfile);
+    QSurfaceFormat::setDefaultFormat(format);
+    QQuickWindow::setGraphicsApi(QSGRendererInterface::OpenGL);
     QGuiApplication app(argc,argv);
     if(argc<3) { qCritical()<<"usage: probe scene.qml output.png [seconds]"; return 2; }
     QQuickView view;
@@ -112,7 +123,7 @@ int main(int argc,char **argv) {
                <<"cpu_pct_including_startup"<<cpu/(clock.elapsed()/1000.)*100
                <<"graphics_api"<<view.rendererInterface()->graphicsApi()
                <<"size"<<view.size()<<"dpr"<<view.devicePixelRatio();
-        app.quit();
+        app.exit(renderError ? 6 : 0);
     });
     return app.exec();
 }

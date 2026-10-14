@@ -102,3 +102,10 @@ When updating Rust or the container image, in one commit:
 3. Commit the new `bin/omaviz-engine` + workflow + lockfile together.
 
 CI's binary match gate goes green only when all three agree.
+
+The native bundle now embeds a SHA-256 identity of its renderer source/shader
+inputs. `python tools/render/check-bundle.py` runs before the native CI rebuild
+and fails if the shipped library has an old/missing source stamp. This catches
+accidental stale packaging; a self-reported build stamp is not proof of provenance
+or bit-for-bit reproducibility. The locally rebuilt engine and Qt library must
+still pass the release pipeline before publication.

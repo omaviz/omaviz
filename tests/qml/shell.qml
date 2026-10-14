@@ -1,6 +1,7 @@
 import QtQuick
 import Quickshell
 import "." as App
+import "ModelStore.js" as Store
 
 ShellRoot {
   id: test
@@ -22,10 +23,14 @@ ShellRoot {
       if (test.stage === 0 && settings.ready && observer.ready) {
         settings.patch("desktop", {peaks: false})
         settings.patch("desktop", {reflect: false, bar_color_to: "#123456"})
+        settings.patch("desktop", {stacks: true, spikes: false, mono: true})
+        settings.replace(Store.selectVisual(settings.text,"Siri"))
+        settings.patch("desktop", {siri_classic: true, siri_travel: true})
+        settings.replace(Store.selectVisual(settings.text,"Bars"))
         feed.active = true
         test.stage = 1
       } else if (test.stage === 1 && observer.config.barColorTo === "#123456" && feed.bands.length === 16) {
-        if (observer.config.peaks || observer.config.reflect || settings.error !== "") {
+        if (observer.config.peaks || observer.config.reflect || !observer.config.stacks || !observer.config.mono || settings.error !== "") {
           console.error("COMPONENT_TEST_FAILED persistence"); Qt.quit(); return
         }
         feed.waveEnabled = true
@@ -61,6 +66,32 @@ ShellRoot {
         feed.active = false
         test.stage = 10
       } else if (test.stage === 10 && !feed.started) {
+        feed.executable = Quickshell.env("OMAVIZ_TEST_STALLED")
+        feed.sourceSpec = "fixture=stall"
+        feed.frameTimeout = 300
+        feed.active = true
+        test.stage = 11
+      } else if (test.stage === 11 && feed.bands.length === 2 && feed.wave.length === 2) {
+        test.stage = 12
+      } else if (test.stage === 12 && feed.failures > 0 && !feed.started) {
+        if (feed.bands.length || feed.wave.length || !feed.silent || feed.status !== "Recovering") {
+          console.error("COMPONENT_TEST_FAILED stale data"); Qt.quit(); return
+        }
+        feed.active = false
+        feed.sourceSpec = "fixture=empty"
+        feed.active = true
+        test.stage = 13
+      } else if (test.stage === 13 && feed.failures > 1 && !feed.started) {
+        feed.active = false
+        feed.executable = Quickshell.env("OMAVIZ_TEST_ENGINE")
+        feed.sourceSpec = "gen=tone:amp=0"
+        feed.frameTimeout = 4000
+        feed.active = true
+        test.stage = 14
+      } else if (test.stage === 14 && feed.bands.length === 32 && feed.status === "Listening · quiet") {
+        feed.active = false
+        test.stage = 15
+      } else if (test.stage === 15 && !feed.started && feed.status === "Stopped") {
         console.log("COMPONENT_TEST_PASS")
         Qt.quit()
       }

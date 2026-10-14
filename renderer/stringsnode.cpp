@@ -169,12 +169,12 @@ struct StringsNode : QSGGeometryNode {
         shader.dimensions[2]=std::clamp(finite(style.value("gain",1).toFloat(),1),.1f,4.f);
         shader.dimensions[3]=float(count);
     }
-    void update(const QVariantList &bands,const QVariantList &wave,double phase) {
+    void update(const QVariantList &bands,const QVariantList &wave,double phase,float inputRms) {
         const int n=int(wave.size());
         waveSamples.resize(n); filtered.resize(n);
         float rms=0;
         for(int i=0;i<n;++i) { float v=finite(wave[i].toFloat());waveSamples[i]=v;rms+=v*v; }
-        rms=std::sqrt(rms/std::max(1,n));
+        rms=inputRms>=0?inputRms:std::sqrt(rms/std::max(1,n));
         const float dt=std::clamp(phase-lastPhase,0.,.1);
         energy+=(rms-energy)*(1-std::exp(-dt*5));lastPhase=phase;
         const float amplitude=std::pow(unit((energy-.001f)*3.5f),.7f);
@@ -216,13 +216,13 @@ struct StringsNode : QSGGeometryNode {
 };
 }
 QSGNode *updateStringsNode(QSGNode *old,const QVariantMap &style,const QVariantList &bands,
-                          const QVariantList &wave,double phase,float width,float height,float dpr) {
+                          const QVariantList &wave,double phase,float width,float height,float dpr,float rms) {
     if(width<=0 || height<=0) { delete old;return nullptr; }
     auto *node=static_cast<StringsNode *>(old);
     if(!node) node=new StringsNode;
     QElapsedTimer timer;timer.start();
     if(node->style!=style || node->width!=width || node->height!=height || node->dpr!=dpr)
         node->rebuild(style,width,height,dpr);
-    node->update(bands,wave,phase);node->cpuNs+=timer.nsecsElapsed();++node->frames;
+    node->update(bands,wave,phase,rms);node->cpuNs+=timer.nsecsElapsed();++node->frames;
     return node;
 }

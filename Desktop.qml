@@ -1,5 +1,6 @@
 import QtQuick
 import QtQuick.Controls
+import QtCore
 import Quickshell
 import Quickshell.Io
 import Quickshell.Services.Mpris
@@ -34,26 +35,10 @@ Window {
       win.setDesktopActive(true)
     }
   }
-  ArtworkColors { id: coverPalette; active: win.vizConfig.artworkColors === true && win.vizConfig.visual === "Bars" }
+  ArtworkColors { id: coverPalette; player: media.player; active: win.vizConfig.artworkColors === true && win.vizConfig.visual === "Bars" }
   readonly property bool immersiveArt: win.vizConfig.visual === "Bars" && win.vizConfig.artworkColors === true && coverPalette.colors.length >= 3
-  // ---- Now-playing (MPRIS, zero deps — Quickshell built-in) ----
-  // Player pick mirrors the shell media service: prefer a playing source
-  // with track metadata, else the first source that has any.
-  readonly property var mprisPlayers: Mpris.players ? Mpris.players.values : []
-  property var preferredPlayer: null
-  function pickPlayer() {
-    if (win.preferredPlayer && win.mprisPlayers.indexOf(win.preferredPlayer) >= 0) return win.preferredPlayer
-    var fallback = null
-    for (var i = 0; i < win.mprisPlayers.length; i++) {
-      var p = win.mprisPlayers[i]
-      if (!p) continue
-      var hasTrack = !!(p.trackTitle || p.trackArtist)
-      if (p.isPlaying && hasTrack) return p
-      if (!fallback && (hasTrack || p.identity || p.desktopEntry)) fallback = p
-    }
-    return fallback
-  }
-  readonly property var activePlayer: win.pickPlayer()
+  MediaSession { id: media }
+  readonly property var activePlayer: media.player
   readonly property string trackTitle: win.activePlayer ? (win.activePlayer.trackTitle || "") : ""
   readonly property string trackArtist: win.activePlayer ? (win.activePlayer.trackArtist || "") : ""
   readonly property string trackArt: win.activePlayer ? (win.activePlayer.trackArtUrl || "") : ""
@@ -79,10 +64,7 @@ Window {
     enabled: !trayBox.shown
     onActivated: {
       trayBox.shown = true
-      Qt.callLater(function() {
-        if (playAction.visible && playAction.enabled) playAction.forceActiveFocus()
-        else closeAction.forceActiveFocus()
-      })
+      Qt.callLater(trayBox.focusPlayback)
     }
   }
   HoverHandler {
@@ -98,7 +80,7 @@ Window {
     id: fadeTimer
     interval: 350
     repeat: false
-    onTriggered: if (!windowHover.hovered && !playAction.activeFocus && !closeAction.activeFocus) trayBox.shown = false
+    onTriggered: if (!windowHover.hovered && !trayBox.controlsFocused) trayBox.shown = false
   }
 
   Column {
@@ -206,6 +188,7 @@ Window {
 
         bands: win.spectrumBands
         silent: win.spectrumSilent
+        waveRms: bridge.waveRms
         wave: win.spectrumWave
         waveSerial: bridge.waveSerial
         bandLayout: bridge.bandLayout
@@ -263,141 +246,60 @@ Window {
     font.pixelSize: 14
   }
 
-  function togglePlayback() {
-    var player = win.activePlayer
-    if (!player || !player.canControl) return
-    // Keep the controlled source selected after it pauses.
-    win.preferredPlayer = player
-    if (player.isPlaying && player.canPause) player.pause()
-    else if (!player.isPlaying && player.canPlay) player.play()
-    else if (player.canTogglePlaying) player.togglePlaying()
-  }
-
-  // Compact now-playing card; playback follows the selected player's capabilities.
-  Rectangle {
+  TransportPanel {
     id: trayBox
-    anchors.top: parent.top
-    anchors.left: parent.left
-    anchors.right: parent.right
+    anchors.left: parent.left; anchors.right: parent.right; anchors.bottom: parent.bottom
     anchors.margins: 12
-    height: 88
-    radius: 14
-    color: "#ed151820"
-    border.color: "#32ffffff"
-    border.width: 1
-    property bool shown: false
-    readonly property bool canToggle: !!win.activePlayer && win.activePlayer.canControl && (win.activePlayer.canTogglePlaying || (win.activePlayer.isPlaying ? win.activePlayer.canPause : win.activePlayer.canPlay))
-    opacity: shown ? 1.0 : 0.0
-    visible: shown || opacity > 0.01
-    enabled: shown
-    Behavior on opacity { NumberAnimation { duration: 180; easing.type: Easing.OutCubic } }
-
-    Row {
-      anchors.fill: parent
-      anchors.margins: 12
-      spacing: 12
-      Rectangle {
-        width: 64; height: 64
-        radius: 8
-        color: "#272d39"
-        clip: true
-        Text {
-          anchors.centerIn: parent
-          text: "♪"
-          color: "#aeb6c6"
-          font.pixelSize: 26
-        }
-        Image {
-          anchors.fill: parent
-          source: win.trackArt
-          sourceSize.width: 128
-          sourceSize.height: 128
-          fillMode: Image.PreserveAspectCrop
-          asynchronous: true
-          visible: status === Image.Ready
-        }
-      }
-      Column {
-        width: Math.max(0, parent.width - 64 - actions.width - 24)
-        spacing: 4
-        anchors.verticalCenter: parent.verticalCenter
-        Text {
-          width: parent.width
-          textFormat: Text.PlainText
-          text: win.playerSource || "OMAVIZ"
-          color: "#aeb6c6"
-          font.pixelSize: 10
-          font.letterSpacing: 1
-          elide: Text.ElideRight
-        }
-        Text {
-          width: parent.width
-          textFormat: Text.PlainText
-          text: win.trackTitle || win.modeName
-          color: "#f5f6fa"
-          font.pixelSize: 15
-          font.bold: true
-          elide: Text.ElideRight
-        }
-        Text {
-          width: parent.width
-          textFormat: Text.PlainText
-          text: win.trackArtist || (win.activePlayer ? (win.activePlayer.isPlaying ? "Playing" : "Paused") : "Listening to system audio")
-          color: "#aeb6c6"
-          font.pixelSize: 12
-          elide: Text.ElideRight
-        }
-      }
-      Row {
-        id: actions
-        spacing: 8
-        anchors.verticalCenter: parent.verticalCenter
-        TrayAction {
-          id: playAction
-          visible: !!win.activePlayer && win.activePlayer.canControl
-          enabled: trayBox.canToggle
-          opacity: enabled ? 1 : 0.4
-          label: win.activePlayer && win.activePlayer.isPlaying ? "Ⅱ" : "▶"
-          accessibleLabel: win.activePlayer && win.activePlayer.isPlaying ? "Pause" : "Play"
-          onTriggered: win.togglePlayback()
-        }
-        TrayAction {
-          id: closeAction
-          label: "×"
-          accessibleLabel: "Close desktop visualizer"
-          onTriggered: { win.setDesktopActive(false); closeTimer.restart() }
-        }
-      }
-    }
+    player: media.player
+    fallbackTitle: win.modeName
+    status: bridge.status
+    onToggleRequested: media.toggle()
+    onPreviousRequested: media.previous()
+    onNextRequested: media.next()
+    onCloseRequested: { win.setDesktopActive(false); closeTimer.restart() }
   }
 
-  component TrayAction: Rectangle {
-    id: action
-    property string label: ""
-    property string accessibleLabel: ""
-    signal triggered()
-    width: 36; height: 36; radius: 18
-    color: pointer.containsMouse || activeFocus ? "#485268" : "#2c3341"
-    activeFocusOnTab: true
-    Accessible.role: Accessible.Button
-    Accessible.name: accessibleLabel
-    Accessible.onPressAction: triggered()
-    Keys.onSpacePressed: triggered()
-    Keys.onReturnPressed: triggered()
-    Text {
-      anchors.centerIn: parent
-      text: action.label
-      color: "#f5f6fa"
-      font.pixelSize: 18
-    }
-    MouseArea {
-      id: pointer
-      anchors.fill: parent
-      hoverEnabled: true
-      cursorShape: Qt.PointingHandCursor
-      onClicked: action.triggered()
+  Settings {
+    id: windowState
+    location: "file://" + win.settingsPath.replace(/config\.toml$/, "desktop-window.ini")
+    property int normalWidth: 600
+    property int normalHeight: 200
+  }
+  Component.onCompleted: {
+    width = Math.max(minimumWidth, Math.min(windowState.normalWidth, Screen.width))
+    height = Math.max(minimumHeight, Math.min(windowState.normalHeight, Screen.height))
+  }
+  Timer {
+    id: saveSize; interval: 500
+    onTriggered: if (win.visibility === Window.Windowed) {
+      windowState.normalWidth = win.width
+      windowState.normalHeight = win.height
     }
   }
+  onWidthChanged: saveSize.restart()
+  onHeightChanged: saveSize.restart()
+  function toggleFullscreen() {
+    win.visibility = win.visibility === Window.FullScreen ? Window.Windowed : Window.FullScreen
+  }
+  function handleEscape() {
+    if (win.visibility === Window.FullScreen) win.visibility = Window.Windowed
+    else { win.setDesktopActive(false); closeTimer.restart() }
+  }
+  Shortcut { sequence: "F11"; onActivated: win.toggleFullscreen() }
+  Shortcut { sequence: "Escape"; onActivated: win.handleEscape() }
+  Process { id: visualCommand }
+  function cycleVisual(direction) {
+    if (visualCommand.running) return
+    var modes = []
+    Store.VISUAL_GROUPS.forEach(function(group) { group.options.forEach(function(option) { modes.push(option.id) }) })
+    var index = modes.indexOf(win.vizConfig.visual)
+    var next = modes[(index + direction + modes.length) % modes.length]
+    // Keep the bar as the sole settings writer, including desktop shortcuts.
+    visualCommand.command = ["omarchy-shell", "org.omaviz.visualizer", "selectVisual", next]
+    visualCommand.running = true
+  }
+  Shortcut { sequence: "Ctrl+Right"; onActivated: win.cycleVisual(1) }
+  Shortcut { sequence: "Ctrl+Left"; onActivated: win.cycleVisual(-1) }
 
   // Heartbeats have their own file: this window only READS settings.
   FileView {

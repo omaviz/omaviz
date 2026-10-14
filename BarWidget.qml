@@ -9,6 +9,7 @@ BarWidget {
   id: root
   moduleName: "org.omaviz.visualizer"
 
+  readonly property string settingsError: settingsDocument.error ? settingsDocument.error + ". Check that your config folder is writable, then try again." : ""
   readonly property var config: settingsDocument.config
   SettingsDocument {
     id: settingsDocument
@@ -82,6 +83,7 @@ BarWidget {
     root.writeVizOptions3("theme_bottom", bottom, "theme_top", top, "theme_accent", top)
   }
   readonly property var spectrumBands: spectrumFeed.bands
+  readonly property real spectrumWaveRms: spectrumFeed.waveRms
   readonly property var spectrumWave: spectrumFeed.wave
   readonly property int spectrumWaveSerial: spectrumFeed.waveSerial
   readonly property string spectrumBandLayout: spectrumFeed.bandLayout
@@ -137,7 +139,7 @@ BarWidget {
     siriEnabled: root.config.visual === "Siri"
     stringsEnabled: root.config.visual === "Strings"
   }
-  readonly property string sourceLabel: Store.sourceLabel(spectrumFeed.source)
+  readonly property string sourceLabel: Store.sourceLabel(spectrumFeed.source) + " · " + spectrumFeed.status
 
   Process {
     id: detachProc
@@ -204,6 +206,9 @@ BarWidget {
     if (key5) values[key5] = value5
     settingsDocument.patch("desktop", values)
   }
+
+  function selectVisual(mode) { settingsDocument.replace(Store.selectVisual(settingsDocument.text,mode)) }
+  function selectGroup(group) { settingsDocument.replace(Store.selectGroup(settingsDocument.text,group)) }
 
   function setColorMode(mode) {
     if (["Theme", "Custom", "Artwork", "Flame"].indexOf(mode) < 0) return false
@@ -297,6 +302,7 @@ BarWidget {
         gradientDir: root.config.barGradientDir || "vertical"
         themeBottom: Qt.darker(Color.accent, 1.3)
         themeTop: Color.accent
+        waveRms: root.spectrumWaveRms
         wave: root.desktopLive ? [] : root.spectrumWave
         waveSerial: root.spectrumWaveSerial
         bandLayout: root.spectrumBandLayout
@@ -325,7 +331,7 @@ BarWidget {
     function hide() { root.close() }
     function selectVisual(mode: string): bool {
       if (["Bars", "Oscilloscope", "Waves", "Strings", "Siri"].indexOf(mode) < 0) return false
-      root.writeVizOptions("visual", mode === "Oscilloscope" ? "Waves" : mode, "scope", mode === "Waves" || mode === "Oscilloscope")
+      root.selectVisual(mode === "Oscilloscope" ? "Waves" : mode)
       return true
     }
     function setEnabled(enabled: bool) { root.writeEnabled(enabled) }

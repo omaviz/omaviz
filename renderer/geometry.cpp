@@ -172,8 +172,8 @@ void VisualGeometry::setStyle(const QVariantMap &v) {
     m_style=v; emit styleChanged(); update();
 }
 void VisualGeometry::submit(const QVariantList &bars,const QVariantList &peaks,
-                            const QVariantList &wave,double phase) {
-    m_bars=bars; m_peaks=peaks; m_wave=wave; m_phase=phase; update();
+                            const QVariantList &wave,double phase,double rms) {
+    m_bars=bars; m_peaks=peaks; m_wave=wave; m_phase=phase; m_rms=std::isfinite(rms) && rms>=0 ? std::clamp(float(rms),0.f,1.f) : -1; update();
 }
 void VisualGeometry::geometryChange(const QRectF &n,const QRectF &o) {
     QQuickItem::geometryChange(n,o); if(n.size()!=o.size()) update();
@@ -195,7 +195,7 @@ QSGNode *VisualGeometry::updatePaintNode(QSGNode *old,UpdatePaintNodeData *) {
     if (kind == NodeKind::Siri) return updateSiriNode(old, m_style, m_bars, m_wave, m_phase, width(), height(),
                                   window() ? window()->effectiveDevicePixelRatio() : 1);
     if (kind == NodeKind::Strings) return updateStringsNode(old, m_style, m_bars, m_wave, m_phase,
-                                  width(), height(), window() ? window()->effectiveDevicePixelRatio() : 1);
+                                  width(), height(), window() ? window()->effectiveDevicePixelRatio() : 1, m_rms);
     if (kind == NodeKind::Spectrum) return updateSpectrumNode(old, m_style, m_bars, m_peaks,
                                   width(), height(), window() ? window()->effectiveDevicePixelRatio() : 1);
     auto *node=static_cast<MeshNode *>(old);
@@ -233,7 +233,7 @@ QSGNode *VisualGeometry::updatePaintNode(QSGNode *old,UpdatePaintNodeData *) {
         // The containing surface owns the backdrop; preserve alpha here.
         float energy=0;
         for(const auto &sample:m_wave) { float v=finite(sample.toFloat()); energy+=v*v; }
-        energy=std::sqrt(energy/std::max(1,int(m_wave.size())));
+        energy=m_rms>=0?m_rms:std::sqrt(energy/std::max(1,int(m_wave.size())));
         if(m.waveEnvelope.size()!=1) m.waveEnvelope.assign(1,0);
         float dt=std::clamp(m_phase-m.lastPhase,0.,.1);
         m.waveEnvelope[0]+=(energy-m.waveEnvelope[0])*(1-std::exp(-dt*5));
@@ -333,7 +333,7 @@ QSGNode *VisualGeometry::updatePaintNode(QSGNode *old,UpdatePaintNodeData *) {
         const float gain=std::clamp(number("gain",1),.1f,4.f);
         float rms=0;
         for(const auto &sample:m_wave) { const float v=finite(sample.toFloat()); rms+=v*v; }
-        rms=std::sqrt(rms/std::max(1,int(m_wave.size())));
+        rms=m_rms>=0?m_rms:std::sqrt(rms/std::max(1,int(m_wave.size())));
         if(m.waveEnvelope.size()!=1) m.waveEnvelope.assign(1,0);
         const float dt=std::clamp(float(m_phase-m.lastPhase),0.f,.1f);
         m.waveEnvelope[0]+=(rms-m.waveEnvelope[0])*(1-std::exp(-dt*8));
@@ -385,7 +385,7 @@ QSGNode *VisualGeometry::updatePaintNode(QSGNode *old,UpdatePaintNodeData *) {
             if(stacks) {
                 float scale=std::max(1.f,number("stackScale",1));
                 for(float sy=base;sy>y;sy-=4*scale) {
-                    float sh=std::min(4*scale,sy-y); rect(x,sy-sh,right-x,sh);
+                    float sh=std::min(4*scale,sy-y); rect(x,sy-sh,right-x,std::max(0.f,sh-scale));
                 }
             } else if(spikes) {
                 float tip=std::min(bh,std::min(bw*.8f,6.f));

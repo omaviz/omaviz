@@ -4,6 +4,20 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_AUTOMOC ON)
 find_package(Qt6 6.11 REQUIRED COMPONENTS Quick Qml Network ShaderTools)
 add_library(omavizrenderer SHARED plugin.cpp geometry.cpp sirinode.cpp siriribbonnode.cpp stringsnode.cpp spectrumnode.cpp artworkpalette.cpp)
+# Embed the complete source input identity to detect stale bundled libraries.
+# This is a rebuild guard, not a reproducibility/provenance attestation.
+file(GLOB_RECURSE source_inputs CONFIGURE_DEPENDS RELATIVE "${CMAKE_CURRENT_SOURCE_DIR}" "*.cpp" "*.h" "shaders/*")
+list(FILTER source_inputs EXCLUDE REGEX "^build/")
+list(APPEND source_inputs "CMakeLists.txt")
+list(SORT source_inputs)
+set(source_identity "")
+foreach(input IN LISTS source_inputs)
+  file(SHA256 "${CMAKE_CURRENT_SOURCE_DIR}/${input}" digest)
+  string(APPEND source_identity "${input}:${digest}\n")
+  set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/${input}")
+endforeach()
+string(SHA256 source_digest "${source_identity}")
+target_compile_definitions(omavizrenderer PRIVATE OMAVIZ_SOURCE_DIGEST="${source_digest}")
 qt_add_shaders(omavizrenderer siri_shaders
   PREFIX "/omaviz" FILES shaders/siri.vert shaders/siri.frag shaders/siri-ribbon.vert)
 qt_add_shaders(omavizrenderer strings_shaders

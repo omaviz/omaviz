@@ -16,6 +16,7 @@ Item {
   property var bands: []
   property string bandLayout: ""
   property var wave: []
+  property real waveRms: -1
   property int waveSerial: 0
   property bool silent: true
   property string source: ""
@@ -23,39 +24,51 @@ Item {
   property bool restarting: false
   property bool started: false
   property bool ready: false
+  property int frameTimeout: 4000
+  property string status: "Stopped"
   readonly property var desiredCommand: [executable, "--source", sourceSpec, "--bands", String(bandCount)].concat(siriEnabled ? ["--siri"] : stringsEnabled ? ["--strings"] : waveEnabled ? ["--wave"] : [])
 
+  function stopProcess() {
+    process.running = false
+    if (process.processId > 0) stopDeadline.restart()
+  }
   function reconcile() {
     if (!ready) return
     retry.stop()
     startupDeadline.stop()
+    frameDeadline.stop()
     if (!active) {
       restarting = false
-      process.running = false
+      status = "Stopped"
+      stopProcess()
       if (process.processId === 0) started = false
-      bands = []; wave = []; bandLayout = ""; silent = true
+      bands = []; wave = []; waveRms = -1; bandLayout = ""; silent = true
       return
     }
     if (started) {
       // Compact and full feeds have different sample layouts. Never expose
       // the old layout to the newly selected visualization during restart.
-      bands = []; wave = []; bandLayout = ""; silent = true
+      bands = []; wave = []; waveRms = -1; bandLayout = ""; silent = true
       restarting = true
-      process.running = false
+      stopProcess()
     } else if (!restarting) start()
   }
   function start() {
     if (!active) return
     restarting = false
+    stopDeadline.stop()
     started = true
+    status = failures ? "Recovering" : "Connecting"
     process.command = desiredCommand
     process.running = true
     startupDeadline.restart()
+    frameDeadline.restart()
   }
   function retryLater() {
     if (!active) return
-    bands = []; wave = []; bandLayout = ""; silent = true
+    bands = []; wave = []; waveRms = -1; bandLayout = ""; silent = true
     failures = Math.min(failures + 1, 20)
+    status = "Recovering"
     retry.interval = Math.min(30000, 1500 * failures)
     retry.restart()
   }
@@ -71,10 +84,13 @@ Item {
         if (!frame) return
         feed.failures = 0
         if (frame.wave) {
+          feed.waveRms = frame.waveRms === undefined ? -1 : frame.waveRms
           feed.wave = frame.wave
           if (frame.waveSerial !== undefined) feed.waveSerial = frame.waveSerial
         }
         else {
+          frameDeadline.restart()
+          feed.status = frame.silent ? "Listening · quiet" : "Listening"
           feed.bandLayout = frame.bandLayout || ""
           feed.bands = frame.bands
           feed.silent = frame.silent
@@ -85,6 +101,8 @@ Item {
     onStarted: startupDeadline.stop()
     onExited: {
       startupDeadline.stop()
+      frameDeadline.stop()
+      stopDeadline.stop()
       feed.started = false
       if (!feed.active) return
       if (feed.restarting) { feed.start(); return }
@@ -96,11 +114,28 @@ Item {
     id: startupDeadline
     interval: 1500
     onTriggered: {
-      process.running = false
+      stopProcess()
       feed.started = false
       feed.restarting = false
+      frameDeadline.stop()
       feed.retryLater()
     }
   }
   Timer { id: retry; onTriggered: feed.start() }
+  Timer {
+    id: frameDeadline
+    interval: feed.frameTimeout
+    onTriggered: {
+      // Terminate the stale owner; onExited schedules the normal backoff.
+      feed.bands = []; feed.wave = []; feed.waveRms = -1
+      feed.bandLayout = ""; feed.silent = true
+      feed.status = "Recovering"
+      stopProcess()
+    }
+  }
+  Timer {
+    id: stopDeadline
+    interval: 500
+    onTriggered: if (process.processId > 0) process.signal(9)
+  }
 }

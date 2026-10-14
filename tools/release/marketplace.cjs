@@ -16,7 +16,7 @@ function request({id, repository, commit}) {
   };
   const url = new URL(`https://github.com/${target}/issues/new`);
   url.search = new URLSearchParams({template: 'verify-plugin.yml', title, ...fields}).toString();
-  const body = `${marker}\n\n### Verification action\n\n${fields['verification-action']}\n\n### Plugin ID\n\n${id}\n\n### Repository URL\n\n${fields.repository}\n\n### Target commit\n\n${commit}\n\n### Verification acknowledgment\n\n- [x] I understand that only the exact target commit can become a verified marketplace snapshot and that verification is not a security audit.\n\n### Standard installation acknowledgment\n\n- [ ] I confirm that this listed root plugin supports the standard Omarchy installation path and does not require manual setup.\n`;
+  const body = `${marker}\n\n### Verification action\n\n${fields['verification-action']}\n\n### Plugin ID\n\n${id}\n\n### Repository URL\n\n${fields.repository}\n\n### Target commit\n\n${commit}\n\n### Verification acknowledgment\n\n- [x] I understand that only the exact target commit can become a verified marketplace snapshot and that verification is not a security audit.\n\n### Standard installation acknowledgment\n\n- [x] I confirm that this listed root plugin supports the standard Omarchy installation path and does not require manual setup.\n`;
   return {title, body, url: url.href, marker};
 }
 function submit({id, repository, commit}, gh) {

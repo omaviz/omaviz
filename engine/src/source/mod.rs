@@ -9,6 +9,7 @@
 //! later WITHOUT touching the plugin.
 
 pub mod pipewire;
+mod latest;
 pub mod gen;
 pub mod file;
 
@@ -31,7 +32,18 @@ pub enum SourceEvent {
     Exit,
 }
 
-pub type SourceEventReceiver = std::sync::mpsc::Receiver<SourceEvent>;
+pub enum SourceEventReceiver {
+    Capture(latest::Receiver<AudioChunk>),
+    Synthetic(std::sync::mpsc::Receiver<SourceEvent>),
+}
+impl SourceEventReceiver {
+    pub fn try_recv(&self) -> Result<SourceEvent, std::sync::mpsc::TryRecvError> {
+        match self {
+            Self::Capture(rx) => rx.try_recv().map(SourceEvent::Chunk),
+            Self::Synthetic(rx) => rx.try_recv(),
+        }
+    }
+}
 
 /// Resolve a requested source flag to a concrete backend name.
 /// `auto`/`""` fall through to the default (PipeWire). `gen*`, `file*` keep
@@ -51,19 +63,11 @@ pub fn resolve(requested: &str) -> anyhow::Result<String> {
 /// The plugin always passes `auto`. Synthetic backends (gen/file) run without
 /// any audio server; pipewire runs the capture thread.
 pub fn spawn(requested: &str) -> anyhow::Result<SourceEventReceiver> {
-    let (tx, rx) = std::sync::mpsc::channel::<SourceEvent>();
     if requested.is_empty() || requested == "auto" || requested == "pipewire" {
-        // Forward PipeWire's raw chunks as Chunk events. (PipeWire never signals
-        // Exit — capture runs until the process exits.)
-        let prx = pipewire::spawn()?;
-        std::thread::spawn(move || {
-            for chunk in prx {
-                if tx.send(SourceEvent::Chunk(chunk)).is_err() {
-                    return;
-                }
-            }
-        });
-    } else if let Some(spec) = requested.strip_prefix("gen") {
+        return Ok(SourceEventReceiver::Capture(pipewire::spawn()?));
+    }
+    let (tx, rx) = std::sync::mpsc::sync_channel::<SourceEvent>(8);
+    if let Some(spec) = requested.strip_prefix("gen") {
         gen::spawn(spec, tx)?;
     } else if let Some(spec) = requested.strip_prefix("file") {
         file::spawn(spec, tx)?;
@@ -72,7 +76,7 @@ pub fn spawn(requested: &str) -> anyhow::Result<SourceEventReceiver> {
             "unsupported audio source: {requested} (available: auto, pipewire, gen, file)"
         );
     }
-    Ok(rx)
+    Ok(SourceEventReceiver::Synthetic(rx))
 }
 
 #[cfg(test)]
@@ -131,13 +135,13 @@ mod tests {
 
     #[test]
     fn spawn_gen_unknown_mode_errors_at_spawn() {
-        let (tx, _rx) = std::sync::mpsc::channel();
+        let (tx, _rx) = std::sync::mpsc::sync_channel(8);
         assert!(gen::spawn("=bogus", tx).is_err());
     }
 
     #[test]
     fn spawn_file_without_path_errors() {
-        let (tx, _rx) = std::sync::mpsc::channel();
+        let (tx, _rx) = std::sync::mpsc::sync_channel(8);
         assert!(file::spawn("", tx.clone()).is_err());
         assert!(file::spawn("=", tx).is_err());
     }

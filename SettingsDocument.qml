@@ -27,11 +27,10 @@ Item {
   }
   function patch(section, values) {
     if (!writable || !ready) return false
-    var updated = Queue.current(queue)
-    for (var key in values) {
-      if (Object.prototype.hasOwnProperty.call(values, key))
-        updated = Store.writeConfigKey(updated, section, key, values[key])
-    }
+    return replace(Store.patchSettings(Queue.current(queue), section, values))
+  }
+  function replace(updated) {
+    if (!writable || !ready) return false
     if (!Queue.edit(queue, updated)) return false
     document.text = updated
     flush()

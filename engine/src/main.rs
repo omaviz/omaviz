@@ -87,7 +87,6 @@ fn main() -> anyhow::Result<()> {
 
     // Sample rate is discovered from the first audio chunk (pipewire/gen).
     let mut analyzer: Option<Analyzer> = None;
-    let mut last: Option<Vec<f32>> = None;
     let mut last_arrival = std::time::Instant::now();
     let stale_after = Duration::from_secs(2);
     let tick = Duration::from_millis(16); // ~60 Hz frame rate
@@ -105,13 +104,25 @@ fn main() -> anyhow::Result<()> {
     let mut silent_since: Option<std::time::Instant> = None;
     let fall_grace = Duration::from_millis(2000);
     loop {
-        // Drain all pending events, keeping the most recent per kind.
-        let mut pending_chunk: Option<dsp::AudioChunk> = None;
+        // Ingest every PCM chunk in order; only analysis/display is rate limited.
         let mut pending_frame: Option<(Vec<f32>, f32, f32, bool, String)> = None;
         let mut exit = false;
-        while let Ok(ev) = rx.try_recv() {
+        loop {
+            let ev = match rx.try_recv() {
+                Ok(ev) => ev,
+                Err(std::sync::mpsc::TryRecvError::Empty) => break,
+                Err(std::sync::mpsc::TryRecvError::Disconnected) => {
+                    write_stale_frame(&mut out, &cli, &backend)?;
+                    out.flush()?;
+                    anyhow::bail!("audio source disconnected");
+                }
+            };
             match ev {
-                SourceEvent::Chunk(c) => pending_chunk = Some(c),
+                SourceEvent::Chunk(c) => {
+                    ingest_chunk(&mut analyzer, &c, cli.bands, cli.fft_size);
+                    fresh_chunk = true;
+                    last_arrival = std::time::Instant::now();
+                },
                 SourceEvent::Frame {
                     bands,
                     energy,
@@ -143,27 +154,7 @@ fn main() -> anyhow::Result<()> {
             writeln!(out, "{line}")?;
             out.flush()?;
         } else {
-            // Raw audio (pipewire / gen): update the analyzer on new chunks, then
-            // emit every tick so frames keep flowing at ~60 Hz.
-            if let Some(c) = pending_chunk {
-                match &mut analyzer {
-                    None => analyzer = Some(Analyzer::new(c.rate as f32, cli.bands, cli.fft_size)),
-                    Some(a) if (a.sample_rate() as u32) != c.rate => {
-                        *a = Analyzer::new(c.rate as f32, cli.bands, cli.fft_size);
-                    }
-                    _ => {}
-                }
-                last = Some(c.samples.clone());
-                fresh_chunk = true;
-                last_arrival = std::time::Instant::now();
-            }
-            // Capture death: no chunks for 2s (server restart, suspend,
-            // thread error) — drop the stale frame and report silence
-            // instead of freezing mid-motion bars on screen.
             let stale = last_arrival.elapsed() >= stale_after;
-            if stale {
-                last = None;
-            }
             // Emit on fresh audio only; otherwise a 5 Hz heartbeat so the
             // UI stays alive without 60 identical frames/sec of parse+paint.
             // Steady silence also drops to heartbeat: identical silent
@@ -182,13 +173,12 @@ fn main() -> anyhow::Result<()> {
                 }
                 continue;
             }
-            if let (Some(a), Some(samples)) = (&mut analyzer, &last) {
+            if let Some(a) = &mut analyzer {
                 if !(fresh_chunk || due) {
                     std::thread::sleep(tick);
                     continue;
                 }
                 fresh_chunk = false;
-                a.push(samples);
                 a.analyze();
                 let silent_now = a.is_silent();
                 if silent_now {
@@ -244,7 +234,7 @@ fn main() -> anyhow::Result<()> {
                         writeln!(out, "{{\"wave\":[{:.9}],\"wave_serial\":{}}}",
                                  a.rms_level(), siri_serial)?;
                     } else {
-                        writeln!(out, "{{\"wave\":[{}]}}", w_json.join(","))?;
+                        writeln!(out, "{{\"wave\":[{}],\"wave_rms\":{:.9}}}", w_json.join(","), a.rms_level())?;
                     }
                 }
                 out.flush()?;
@@ -255,6 +245,14 @@ fn main() -> anyhow::Result<()> {
     }
 
     Ok(())
+}
+
+// Preserve a continuous FFT window even when several capture buffers arrive per tick.
+fn ingest_chunk(analyzer: &mut Option<Analyzer>, chunk: &dsp::AudioChunk, bands: usize, fft_size: usize) {
+    if analyzer.as_ref().map(|a| a.sample_rate() as u32) != Some(chunk.rate) {
+        *analyzer = Some(Analyzer::new(chunk.rate as f32, bands, fft_size));
+    }
+    analyzer.as_mut().unwrap().push_interleaved(&chunk.samples, chunk.channels);
 }
 
 // Capture loss must clear every consumer, preserving the selected wire layout.
@@ -272,7 +270,7 @@ fn write_stale_frame(out: &mut impl Write, cli: &Cli, backend: &str) -> std::io:
     if cli.siri {
         writeln!(out, "{{\"wave\":[0],\"wave_serial\":0}}")?;
     } else if cli.wave || cli.strings {
-        writeln!(out, "{{\"wave\":[{}]}}", vec!["0"; 128].join(","))?;
+        writeln!(out, "{{\"wave\":[{}],\"wave_rms\":0}}", vec!["0"; 128].join(","))?;
     }
     Ok(())
 }
@@ -336,5 +334,23 @@ mod strings_tests {
             }
         }
         assert_eq!(strings_drives(&[]), [0.0; 16]);
+    }
+}
+
+#[cfg(test)]
+mod capture_tests {
+    use super::*;
+    #[test]
+    fn queued_small_chunks_match_contiguous_audio() {
+        let samples: Vec<f32> = (0..2048).map(|i| (i as f32 * 0.17).sin() * 0.4).collect();
+        let mut actual = None;
+        for part in samples.chunks(128) {
+            ingest_chunk(&mut actual, &dsp::AudioChunk {samples:part.to_vec(),rate:48000,channels:1}, 32, 2048);
+        }
+        let mut expected = Analyzer::new(48000.0, 32, 2048);
+        expected.push(&samples); expected.analyze();
+        let actual = actual.as_mut().unwrap(); actual.analyze();
+        assert_eq!(actual.bands, expected.bands);
+        assert_eq!(actual.wave_snippet(128), expected.wave_snippet(128));
     }
 }
