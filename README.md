@@ -185,7 +185,7 @@ with a dotted-skin backdrop and a B&W Mono mode for tiny sizes.
 Single-click the mini for the settings panel below; single-click the live
 preview inside it to detach the desktop window:
 
-![settings panel with mini in the bar](docs/screenshots/Mini.png)
+![Current settings panel opened from the mini](docs/screenshots/Settings-v8.8.0.png)
 
 ## Engine
 
