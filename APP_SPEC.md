@@ -1,7 +1,7 @@
-# omaviz — Application Specification (v8.8.0)
+# omaviz — Application Specification (v8.9.1)
 
 > **Plugin id:** `org.omaviz.visualizer`
-> **Version:** 8.8.0 (spec + manifest, git tag)
+> **Version:** 8.9.1 (spec + manifest, git tag)
 > **Status:** Single-package Omarchy QML plugin. Audio analysis is bundled as
 > one native binary (`bin/omaviz-engine`) shipped **inside** the plugin
 > directory. No systemd service, no Unix socket, no `~/.local/bin` binaries.
@@ -150,13 +150,13 @@ The bar floor is unconditional (1px) — there is no `minBarHeight` setting.
 
 ## 5. Settings Panel (redesign)
 
-The panel uses an opaque theme background and a top-level Spectrum / Waveforms dropdown. Waveforms has a second dropdown
-for Waves (the oscilloscope/audio trace), Strings, and Siri (luminous waves). Only relevant controls are shown.
+The panel uses an opaque theme background and Spectrum / Waveforms / Particles / Radial category choices. Waveforms contains Waves, Strings, and Siri; Particles contains Bokeh and Pixel Wave; Radial contains Orbit. Groups with fewer than five choices use direct buttons. Only relevant controls are shown.
 
 - **LOOK** appears for Spectrum: geometry, peaks, and reflection.
 - **COLOR** offers Theme / Custom / Artwork / Flame for Spectrum and
   Theme / Custom / Flame for Waves,
-  Prism / Custom for Siri, and Original / Custom for Strings. Color editors
+  Prism / Custom for Siri, Original / Custom for Strings, and Theme / Custom / Artwork
+  for Bokeh, Pixel Wave, and Orbit, which also offer Original reference colors. Color editors
   and presets appear only for Custom or Flame. Custom gradients accept any
   start/end hex colors and an optional removable middle color. Two-color presets reset to two stops; Peacock supplies editable
   teal, violet, and gold stops, including for Strings. Flame retains its independent pair. Gradient direction is
@@ -318,7 +318,7 @@ binary targets Linux x86_64 and Qt 6.11+ public APIs. VisualCanvas.qml remains
 the only surface-facing rendering API; renderer/geometry.cpp implements its
 shared GPU drawing. The legacy `gpu` key does not switch rendering paths.
 
-`[desktop] visual = "Bars" | "Waves" | "Strings" | "Siri"` selects the mode.
+`[desktop] visual = "Bars" | "Waves" | "Strings" | "Siri" | "Orbit" | "PixelWave" | "Bokeh"` selects the mode.
 When absent or invalid, legacy `scope = true` selects Waves, otherwise
 Bars. Explicit visual takes precedence. UI selection writes visual and the
 legacy scope flag atomically. All three waveform modes request the engine wave
@@ -447,3 +447,71 @@ The artwork blur is unloaded whenever leaving Bars, avoiding stale cached art.
 ### Clipboard boundary
 
 Hex colors use bounded key-only entry, not Qt TextInput/TextEdit. Hidden or visible controls never read the system clipboard; paste and IME commit payloads are ignored. Type six hex digits, Enter to apply, Escape to cancel. MPRIS text remains PlainText.
+
+
+## 8.9.0 — Particle and radial catalog additions
+
+The category selector includes Spectrum, Waveforms, Particles, and Radial.
+Particles offers Bokeh and Pixel Wave (`PixelWave` in configuration); Radial offers Orbit.
+Each uses the existing category memory, per-visual look persistence, automatic saving,
+and Response control. Their color choices are Original, Theme, Custom, and Artwork; the mini
+also supports monochrome. Spectrum-only geometry, peak, flame, and dot-grid controls
+are hidden. Waveform thickness remains exclusive to Waves and Strings.
+
+All three draw through VisualCanvas and the shared native geometry backend, using
+the existing full spectrum protocol without new capture modes. Orbit draws independent
+rounded concentric arcs whose lengths and brightness follow smoothed frequency ranges.
+Pixel Wave draws a perspective field of squares with eight delayed spectral rows (four
+in the mini). Bokeh draws drifting discs with changing focus, audio-driven brightness,
+and energy-driven cloud spread. Desktop modes use the full available drawing area;
+Orbit and Bokeh keep their circular proportions centered within it. Below 48px height,
+element counts decrease. Audio releases fade and the animation clock settles after
+1.6 seconds of silence; hidden surfaces retain the existing sleep behavior.
+
+
+Verification: `tests/catalog-visual.py` captures production VisualCanvas instances
+for motion, generated audio, mini size, artwork colors, monochrome, resize, and
+silence with final sleep/empty-image assertions. `tests/catalog-feed.cjs` checks
+real EngineFeed transitions from Siri through Orbit, Strings, Pixel Wave, and
+Bokeh, including settling after capture stops. Native controls verify the new
+palette choices and viewport bounds across normal, wide, tall, and minimum sizes.
+
+
+## 8.9.1 — Retained particle/radial shaders and reference refinement
+
+Orbit, Pixel Wave, and Bokeh use one shared retained Ambient scene-graph node,
+a vertex shader for position/shape and a fragment shader for anti-aliased arcs,
+squares, and lens-like soft discs. Geometry rebuilds only when mode, dimensions,
+or pixel scale change. Frame updates upload a bounded uniform buffer containing
+24 smoothed frequency envelopes, time, palette, and a 20-column / 8-row history;
+the CPU performs audio smoothing/history, not per-frame geometry construction.
+The previous CPU mesh implementations of these modes are removed.
+
+Original is a separately persisted palette choice, alongside Theme, Custom, and
+Artwork. Fresh particle/radial looks default to Original with the existing cached
+artwork backdrop enabled; saved explicit looks remain intact. Original uses
+neutral silver for Pixel Wave, white/cool lens discs for Bokeh, and silver arcs
+with a warm inner accent for Orbit. Optional artwork backdrops reuse the existing
+cached blur Loader and unload completely when disabled or unsupported.
+
+Orbit groups outer arcs, articulates their lengths independently, and rotates
+faster with music. Bokeh distributes 64 discs through a rotating volume, mixing
+crisp and defocused discs with highlights rather than a sparse orbiting ring.
+Pixel Wave displays broad travelling contours with waveform modulation and
+closely receding delayed square rows, rather than isolated spectral lanes.
+Mini geometry uses 4 arcs, 16 discs, or 12 columns / 4 rows.
+
+`ambientresponse-test` covers audio dynamics, frame batching, history clearing,
+nonfinite inputs, and settling. `tests/ambient-benchmark.py` compares matched
+inputs against a saved runtime in alternating trials and asserts one retained
+mesh build during steady animation. Its CPU/frame results are measurements for
+the tested backend and workload; visual refinement is not an image-parity claim.
+
+
+Local profiling (AMD Radeon Pro 580X / OpenGL, 960×540, two alternating trials
+per version, identical synthesized full-spectrum inputs) reduced average CPU
+submission from 0.1651→0.0209 ms for Orbit, 0.0602→0.0228 ms for Pixel Wave, and
+0.5715→0.0218 ms for Bokeh. Each new steady-state run built its mesh once.
+Average GPU p95 was 0.1522→0.1434 ms, 0.1959→0.2135 ms, and 0.2006→0.2169 ms,
+respectively. Pixel Wave and Bokeh spend slightly more GPU time on the refined effects;
+these measurements do not promise identical gains on other hardware or inputs.

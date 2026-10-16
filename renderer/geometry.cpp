@@ -3,6 +3,7 @@
 #include "siriribbonnode.h"
 #include "stringsnode.h"
 #include "spectrumnode.h"
+#include "ambientnode.h"
 #include <QSGGeometryNode>
 #include <QSGVertexColorMaterial>
 #include <QQuickWindow>
@@ -186,10 +187,13 @@ QSGNode *VisualGeometry::updatePaintNode(QSGNode *old,UpdatePaintNodeData *) {
     static const bool retainedSpectrum = !qEnvironmentVariableIsSet("OMAVIZ_SPECTRUM_RETAINED")
         || qEnvironmentVariableIntValue("OMAVIZ_SPECTRUM_RETAINED") != 0;
     static const bool legacySpectrum = qEnvironmentVariableIsSet("OMAVIZ_BARS_LEGACY");
-    const auto kind = mode == "Siri" ? (m_style.value("siriClassic",false).toBool()?NodeKind::Siri:NodeKind::SiriRibbon)
+    const auto kind = (mode == "Orbit" || mode == "PixelWave" || mode == "Bokeh") ? NodeKind::Ambient
+                    : mode == "Siri" ? (m_style.value("siriClassic",false).toBool()?NodeKind::Siri:NodeKind::SiriRibbon)
                     : mode == "Strings" && !legacyStrings ? NodeKind::Strings
                     : mode == "Bars" && retainedSpectrum && !legacySpectrum && m_bars.size()<=1024 ? NodeKind::Spectrum : NodeKind::Standard;
     if (kind != m_nodeKind) { delete old; old = nullptr; m_nodeKind = kind; }
+    if (kind == NodeKind::Ambient) return updateAmbientNode(old,m_style,m_bars,m_wave,m_phase,width(),height(),
+                                  window()?window()->effectiveDevicePixelRatio():1);
     if (kind == NodeKind::SiriRibbon) return updateSiriRibbonNode(old,m_style,m_bars,m_wave,m_phase,width(),height(),
                                   window()?window()->effectiveDevicePixelRatio():1);
     if (kind == NodeKind::Siri) return updateSiriNode(old, m_style, m_bars, m_wave, m_phase, width(), height(),

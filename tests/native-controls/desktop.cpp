@@ -58,19 +58,20 @@ int main(int argc,char **argv) {
  auto viewport=root->findChild<QQuickItem*>("viewport");
  auto artwork=root->findChild<QQuickItem*>("artworkBackdrop");
  if(!viewport || !artwork) return 12;
- for(const auto &mode: {"Waves","Strings","Siri","Bars"}) {
+ for(const auto &mode: {"Waves","Strings","Siri","Bars","Orbit","PixelWave","Bokeh"}) {
   root->setProperty("vizConfig",QVariantMap{{"visual",mode},{"enabled",true}});
   for(const auto &size: {QSize(600,200),QSize(1200,180),QSize(360,600),QSize(320,160)}) {
    view.resize(size); QTest::qWait(25);
    if(viewport->x()<0 || viewport->y()<0 || viewport->x()+viewport->width()>view.width() || viewport->y()+viewport->height()>view.height()) return 13;
-   if(QString(mode)!="Bars" && QString(mode)!="Strings" && std::abs(viewport->width()/viewport->height()-3)>0.001) return 14;
-   if((QString(mode)=="Bars" || QString(mode)=="Strings") &&
+   const bool fitted=QString(mode)=="Waves" || QString(mode)=="Siri";
+   if(fitted && std::abs(viewport->width()/viewport->height()-3)>0.001) return 14;
+   if(!fitted &&
       (std::abs(viewport->width()-(view.width()-8))>0.001 ||
        std::abs(viewport->height()-(view.height()-8))>0.001)) return 15;
-   if(artwork->property("active").toBool() != (QString(mode)=="Bars")) return 16;
+   if(artwork->property("active").toBool() != (QString(mode)=="Bars" || QString(mode)=="Orbit" || QString(mode)=="PixelWave" || QString(mode)=="Bokeh")) return 16;
   }
  }
- puts("PASS: Siri/Waves preserve 3:1 and Strings/Bars fill the desktop at normal, wide, tall, and minimum sizes");
+ puts("PASS: Siri/Waves preserve 3:1 and Strings/Bars/particle/radial modes fill the desktop at normal, wide, tall, and minimum sizes");
  root->setProperty("vizConfig",QVariantMap{{"visual","Bars"},{"enabled",true}});
  view.resize(600,200); QTest::qWait(50);
  const double smallSlot=viewport->width()/viewport->property("spectrumBarCount").toInt();
@@ -85,4 +86,11 @@ int main(int argc,char **argv) {
  QTest::qWait(100);
  if(artwork->property("active").toBool() || artwork->property("item").value<QObject*>()!=nullptr) return 18;
  puts("PASS: leaving artwork spectrum unloads the cached backdrop");
+ for(const auto &mode: {"Orbit","PixelWave","Bokeh"}) {
+  root->setProperty("vizConfig",QVariantMap{{"visual",mode},{"artwork",true},{"enabled",true}}); QTest::qWait(50);
+  if(!artwork->property("active").toBool() || artwork->property("item").value<QObject*>()==nullptr) return 21;
+  root->setProperty("vizConfig",QVariantMap{{"visual",mode},{"artwork",false},{"enabled",true}}); QTest::qWait(50);
+  if(artwork->property("active").toBool() || artwork->property("item").value<QObject*>()!=nullptr) return 22;
+ }
+ puts("PASS: particle/radial artwork backdrops load and fully unload on demand");
 }

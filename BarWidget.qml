@@ -46,7 +46,7 @@ BarWidget {
     }
   }
   readonly property var artworkPalette: artworkColors.colors
-  ArtworkColors { id: artworkColors; active: root.config.artworkColors === true && root.config.visual === "Bars" }
+  ArtworkColors { id: artworkColors; active: root.config.artworkColors === true && Store.supportsArtwork(root.config.visual) }
   // Live theme snapshot: persists the current Omarchy accent triple to
   // config whenever the theme changes, so the standalone desktop window
   // (no qs.* context) follows theme switches within its 250ms poll.
@@ -211,8 +211,8 @@ BarWidget {
   function selectGroup(group) { settingsDocument.replace(Store.selectGroup(settingsDocument.text,group)) }
 
   function setColorMode(mode) {
-    if (["Theme", "Custom", "Artwork", "Flame"].indexOf(mode) < 0) return false
-    var options = { fire: mode === "Flame", bar_color_custom: mode === "Custom", artwork_colors: mode === "Artwork" }
+    if (["Theme", "Custom", "Artwork", "Flame", "Original"].indexOf(mode) < 0) return false
+    var options = { color_mode: mode, fire: mode === "Flame", bar_color_custom: mode === "Custom", artwork_colors: mode === "Artwork" }
     if (mode === "Artwork") options.artwork = true
     root.writeVizMap(options)
     return true
@@ -260,11 +260,11 @@ BarWidget {
       DotsCanvas {
         anchors.fill: parent
         anchors.margins: root.config.spikes === true ? 0 : 4
-        visible: root.config.dots !== false && root.config.visual !== "Siri" && root.config.visual !== "Strings" && !root.desktopLive
+        visible: root.config.dots !== false && root.config.visual !== "Siri" && root.config.visual !== "Strings" && !Store.isAmbient(root.config.visual) && !root.desktopLive
       }
       VisualCanvas {
         anchors.fill: parent
-        anchors.margins: root.config.spikes === true ? 0 : (root.config.visual === "Siri" || root.config.visual === "Strings" ? 1 : 4)
+        anchors.margins: root.config.spikes === true ? 0 : (root.config.visual === "Siri" || root.config.visual === "Strings" || Store.isAmbient(root.config.visual) ? 1 : 4)
         dots: false   // static underlay above (per-frame dots = 34K rects)
         bands: root.desktopLive ? [] : root.spectrumBands
         silent: root.desktopLive ? true : root.spectrumSilent
@@ -292,6 +292,7 @@ BarWidget {
         siriTravel: root.config.siriTravel === true
         // Bar color: custom From→To wins; otherwise LIVE theme accent
         // (Theme mode always follows the Omarchy theme — no stale snapshot).
+        originalColors: root.config.colorMode === "Original"
         artworkColors: root.config.artworkColors === true
         artworkPalette: root.artworkPalette
         barColorCustom: root.config.barColorCustom === true
@@ -330,7 +331,7 @@ BarWidget {
     function show() { root.open() }
     function hide() { root.close() }
     function selectVisual(mode: string): bool {
-      if (["Bars", "Oscilloscope", "Waves", "Strings", "Siri"].indexOf(mode) < 0) return false
+      if (Store.visualGroup(mode === "Oscilloscope" ? "Waves" : mode) === "") return false
       root.selectVisual(mode === "Oscilloscope" ? "Waves" : mode)
       return true
     }
@@ -340,7 +341,7 @@ BarWidget {
     function setSiriTravel(enabled: bool) { root.writeVizOption("siri_travel", enabled) }
     function setFlame(enabled: bool) { root.writeVizOption("fire", enabled) }
     function status(): string {
-      return JSON.stringify({visual: root.config.visual, siriTravel: root.config.siriTravel, siriClassic: root.config.siriClassic, enabled: root.vizEnabled,
+      return JSON.stringify({visual: root.config.visual, colorMode: root.config.colorMode, categories: Store.VISUAL_GROUPS.map(function(group) { return group.id }), siriTravel: root.config.siriTravel, siriClassic: root.config.siriClassic, enabled: root.vizEnabled,
         silent: root.spectrumSilent, bands: root.spectrumBands.length, preview: root.opened,
         waveSamples: root.spectrumWave.length, engineRunning: spectrumFeed.started, restarting: spectrumFeed.restarting})
     }

@@ -8,7 +8,7 @@ commons=out/'qs'/'Commons'; commons.mkdir(parents=True,exist_ok=True)
 (commons/'qmldir').write_text('module qs.Commons\nsingleton Style 1.0 Style.qml\nsingleton Color 1.0 Color.qml\nsingleton Border 1.0 Border.qml\n')
 (commons/'Style.qml').write_text('pragma Singleton\nimport QtQuick\nQtObject { property int cornerRadius: 6; property var font: ({family:"Sans Serif",body:14,bodySmall:12}); property var spacing: ({controlHeight:36,md:6}); function space(n) { return n } }')
 (commons/'Color.qml').write_text('pragma Singleton\nimport QtQuick\nQtObject { property color accent: "#55aaff"; property color foreground:"white"; property color background:"black"; property var popups: ({background:"#202020"}) }')
-(commons/'Border.qml').write_text('pragma Singleton\nimport QtQuick\nQtObject { function flat(c,n) { return {} } }')
+(commons/'Border.qml').write_text('pragma Singleton\nimport QtQuick\nQtObject { function flat(c,n) { return {} } function controlSpec() { return {} } }')
 shutil.copy2('/usr/share/omarchy/shell/Ui/PanelSlider.qml',out/'PanelSlider.qml')
 (out/'BorderSurface.qml').write_text('import QtQuick\nRectangle { property var borderSpec: ({}) }')
 controls=(repo/'Panel.qml').read_text().split('// ---- Reusable components ----',1)[1]
@@ -46,6 +46,7 @@ backdrop_start=desktop.index('      Loader {',desktop.index('// FastBlur caches:
 backdrop=desktop[backdrop_start:desktop.index('      // Cover-derived',backdrop_start)]
 backdrop=backdrop.replace('id: artBackdrop','id: artBackdrop; objectName: "artworkBackdrop"')
 (out/'desktop.qml').write_text("""import QtQuick
+import "ModelStore.js" as Store
 import QtQuick.Controls
 import Qt5Compat.GraphicalEffects
 Rectangle {

@@ -39,13 +39,16 @@ Panel {
   readonly property bool isWaves: root.hcfg.visual === "Waves"
   readonly property bool isStrings: root.hcfg.visual === "Strings"
   readonly property bool isSiri: root.hcfg.visual === "Siri"
-  readonly property bool isDecorative: isSiri || isStrings
+  readonly property bool isAmbient: Store.isAmbient(root.hcfg.visual)
+  readonly property bool hasArtwork: Store.supportsArtwork(root.hcfg.visual)
+  readonly property int colorChoices: hasArtwork ? 4 : isDecorative ? 2 : 3
+  readonly property bool isDecorative: isSiri || isStrings || isAmbient
 
   // ---- Derived option state (one concept each) ----
   readonly property bool peaksOn: root.hcfg.peaks !== false
   readonly property bool spikesOn: root.hcfg.spikes === true
   readonly property bool stacksOn: root.hcfg.stacks === true
-  readonly property bool artworkOn: root.isSpectrum && root.hcfg.artworkColors === true
+  readonly property bool artworkOn: root.hasArtwork && root.hcfg.artworkColors === true
   readonly property bool fireOn: !root.artworkOn && !root.isDecorative && root.hcfg.fire === true
   readonly property bool customOn: !root.artworkOn && root.hcfg.barColorCustom === true
   // Geometry is a single choice: Bars (default) / Spikes / Stacks.
@@ -324,6 +327,7 @@ Panel {
           fireColorTo: root.hcfg.fireColorTo || "#fde047"
           stacks: root.stacksOn
           sensitivity: (root.hcfg.sensitivity ?? 1.0)
+          originalColors: root.hcfg.colorMode === "Original"
           artworkColors: root.artworkOn
           artworkPalette: root.hostWidget ? root.hostWidget.artworkPalette : []
           barColorCustom: root.customOn
@@ -470,26 +474,33 @@ Panel {
           width: parent.width
           spacing: Style.space(6)
           Chip {
-            width: (modeRow.width - Style.space(6) * (root.isSpectrum ? 3 : root.isDecorative ? 1 : 2)) / (root.isSpectrum ? 4 : root.isDecorative ? 2 : 3)
+            width: (modeRow.width - Style.space(6) * (root.colorChoices - 1)) / root.colorChoices
+            visible: root.isAmbient
+            chipLabel: "Original"
+            selected: root.hcfg.colorMode === "Original"
+            onChipClicked: if (root.hostWidget) root.hostWidget.setColorMode("Original")
+          }
+          Chip {
+            width: (modeRow.width - Style.space(6) * (root.colorChoices - 1)) / root.colorChoices
             chipLabel: root.isStrings ? "Original" : root.isSiri ? "Prism" : "Theme"
-            selected: !root.artworkOn && !root.fireOn && !root.customOn
+            selected: root.hcfg.colorMode !== "Original" && !root.artworkOn && !root.fireOn && !root.customOn
             onChipClicked: if (root.hostWidget) root.hostWidget.setColorMode("Theme")
           }
           Chip {
-            width: (modeRow.width - Style.space(6) * (root.isSpectrum ? 3 : root.isDecorative ? 1 : 2)) / (root.isSpectrum ? 4 : root.isDecorative ? 2 : 3)
+            width: (modeRow.width - Style.space(6) * (root.colorChoices - 1)) / root.colorChoices
             chipLabel: "Custom"
             selected: !root.fireOn && root.customOn
             onChipClicked: if (root.hostWidget) root.hostWidget.setColorMode("Custom")
           }
           Chip {
-            width: (modeRow.width - Style.space(18)) / 4
-            visible: root.isSpectrum
+            width: (modeRow.width - Style.space(6) * (root.colorChoices - 1)) / root.colorChoices
+            visible: root.hasArtwork
             chipLabel: "Artwork"
             selected: root.artworkOn
             onChipClicked: if (root.hostWidget) root.hostWidget.setColorMode("Artwork")
           }
           Chip {
-            width: (modeRow.width - Style.space(6) * (root.isSpectrum ? 3 : root.isDecorative ? 1 : 2)) / (root.isSpectrum ? 4 : root.isDecorative ? 2 : 3)
+            width: (modeRow.width - Style.space(6) * (root.colorChoices - 1)) / root.colorChoices
             visible: !root.isDecorative
             chipLabel: "Flame"
             selected: root.fireOn
@@ -502,7 +513,7 @@ Panel {
         width: parent.width
         visible: root.artworkOn
         text: root.hostWidget && root.hostWidget.artworkPalette.length >= 3
-          ? "Colors follow the current cover. Desktop adds a tinted atmosphere."
+          ? root.isSpectrum ? "Colors follow the current cover. Desktop adds a tinted atmosphere." : "Colors follow the current cover."
           : "Waiting for cover artwork — using theme colors."
         color: root.fgMuted
         font.family: Style.font.family
@@ -834,7 +845,7 @@ Panel {
         Column {
           width: parent.width
           spacing: Style.space(4)
-          visible: !root.isSpectrum && !root.isSiri
+          visible: root.isWaves || root.isStrings
 
           PanelSeparator { }
           PanelSectionHeader { text: "WAVEFORM" }
@@ -879,7 +890,7 @@ Panel {
           width: parent.width
 
           label: "Mono (mini only)"
-          description: "B&W mini bars"
+          description: "B&W mini visualization"
           checked: root.hcfg.mono === true
           onClicked: if (root.hostWidget) root.hostWidget.writeVizOption("mono", !checked)
         }
@@ -919,7 +930,7 @@ Panel {
         }
 
         Row {
-          visible: root.isSpectrum
+          visible: root.hasArtwork
           width: parent.width
           spacing: Style.space(14)
 

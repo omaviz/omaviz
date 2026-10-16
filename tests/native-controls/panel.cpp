@@ -25,6 +25,13 @@ int main(int argc,char **argv) {
  QMetaObject::invokeMethod(host,"selectVisual",Q_ARG(QVariant,QVariant("Strings")));
  QTest::qWait(100); scroll->setProperty("contentY",0);
  view.grabWindow().save(QString::fromLocal8Bit(argv[1])+"/panel.png");
+ for(const auto &mode: {"Orbit","PixelWave","Bokeh"}) {
+  QMetaObject::invokeMethod(host,"selectVisual",Q_ARG(QVariant,QVariant(mode))); QTest::qWait(100);
+  if(!panel->property("isAmbient").toBool() || !panel->property("hasArtwork").toBool() ||
+     !panel->property("isDecorative").toBool() || panel->property("colorChoices").toInt()!=4) return 7;
+  view.grabWindow().save(QString::fromLocal8Bit(argv[1])+"/panel-"+mode+".png");
+ }
+ puts("PASS: particle/radial modes expose four palette choices and hide unrelated controls");
  QMetaObject::invokeMethod(host,"writeVizOption",Q_ARG(QVariant,QVariant("enabled")),Q_ARG(QVariant,QVariant(false)));
  QTest::qWait(100);
  if(scroll->property("contentHeight").toDouble()>scroll->height()+1) return 6;

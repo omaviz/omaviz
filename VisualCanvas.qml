@@ -44,9 +44,11 @@ Item {
   // Bar color override (new): when barColorCustom is true the From→To pair
   // replaces the theme gradient on every surface (mini unless mono,
   // preview, desktop, wave). Off = theme dominant colors (default).
+  property bool originalColors: false
   property bool artworkColors: false
   property var artworkPalette: []
-  readonly property bool artMode: artworkColors && visual === "Bars"
+  readonly property bool ambientMode: ["Orbit", "PixelWave", "Bokeh"].includes(visual)
+  readonly property bool artMode: artworkColors && (visual === "Bars" || ambientMode)
   readonly property bool artReady: artMode && artworkPalette.length >= 3
   readonly property bool customMode: !artMode && barColorCustom
   property bool barColorCustom: false
@@ -135,7 +137,8 @@ Item {
   property real _phase: 0
   property real _waveTail: 0
   property var _lastWave: []
-  readonly property bool _scopeMode: visual === "Wave" || visual === "Oscilloscope" || visual === "Waves" || visual === "Strings" || visual === "Siri"
+  property var _lastAmbientBands: []
+  readonly property bool _scopeMode: visual === "Wave" || visual === "Oscilloscope" || visual === "Waves" || visual === "Strings" || visual === "Siri" || ambientMode
 
   function wake() {
     if (visible) _awake = true
@@ -162,6 +165,11 @@ Item {
     _peakSpeed = speeds; _targets = targets
   }
   onBandsChanged: {
+    if (ambientMode) {
+      var changed = bands.length !== _lastAmbientBands.length
+      for (var i = 0; !changed && i < bands.length; ++i) changed = bands[i] !== _lastAmbientBands[i]
+      if (changed) { _lastAmbientBands = bands; wake() }
+    }
     if (visual === "Siri" && bandLayout === "siri") { _waveDirty = true; wake() }
     if (_scopeMode) return
     if (!silent || !Physics.settled(_barArr, _peakArr, _targets, 0.002)) { wake(); return }
@@ -181,6 +189,7 @@ Item {
   }
   onVisibleChanged: { if (visible) { _accumulator = 0; wake() } }
   onVisualChanged: { _waveDirty = true; wake() }
+  onSilentChanged: if (ambientMode && (!silent || _waveTail > 0)) wake()
   onWidthChanged: wake()
   onBarCountChanged: wake()
   onSpikesChanged: wake()
@@ -201,12 +210,12 @@ Item {
       while (cv._accumulator + 0.01 >= 1000 / 60) {
         if (!cv._scopeMode) cv.advance(1000 / 60)
         cv._phase += 1 / 60
-        cv._waveTail = cv.silent ? Math.max(0, cv._waveTail - 1 / 60) : 0.8
+        cv._waveTail = cv.silent ? Math.max(0, cv._waveTail - 1 / 60) : (cv.ambientMode ? 1.6 : 0.8)
         cv._accumulator -= 1000 / 60
       }
-      mesh.submit((cv.visual === "Strings" || cv.visual === "Siri") ? cv.bands : cv._barArr,
+      mesh.submit((cv.visual === "Strings" || cv.visual === "Siri" || cv.ambientMode) ? cv.bands : cv._barArr,
                   cv._peakArr, cv.wave, cv._phase, cv.waveRms)
-      var flowing = !cv.silent || ((cv.visual === "Siri" || cv.visual === "Strings") && cv._waveTail > 0)
+      var flowing = !cv.silent || ((cv.visual === "Siri" || cv.visual === "Strings" || cv.ambientMode) && cv._waveTail > 0)
       cv._awake = flowing || (!cv._scopeMode && !Physics.settled(cv._barArr, cv._peakArr, cv._targets, 0.002))
       cv._waveDirty = false
     }
@@ -216,6 +225,7 @@ Item {
     id: mesh
     anchors.fill: parent
     style: ({
+      original: cv.originalColors,
       siriTravel: cv.siriTravel,
       siriClassic: cv.siriClassic,
       compactSiri: cv.visual === "Siri" && cv.bandLayout === "siri",
@@ -223,7 +233,7 @@ Item {
       mode: cv.visual, bottom: Qt.darker(cv.artReady ? cv.artworkPalette[0] : cv.customMode ? cv.barColorFrom : cv.themeBottom, 1.25),
       top: Qt.lighter(cv.artReady ? cv.artworkPalette[2] : cv.customMode ? cv.barColorTo : (cv.colorSync ? cv.themeTop : "#ffffff"), 1.2),
       middle: cv.artReady ? cv.artworkPalette[1] : cv.barColorMiddle, middleEnabled: cv.artReady || (cv.customMode && cv.barColorMiddleEnabled),
-      custom: cv.customMode || cv.artReady, mono: cv.mono, monoLight: cv.monoLight, fire: !cv.artMode && cv.fire && cv.visual !== "Siri" && cv.visual !== "Strings",
+      custom: cv.customMode || cv.artReady, mono: cv.mono, monoLight: cv.monoLight, fire: !cv.artMode && cv.fire && !cv.ambientMode && cv.visual !== "Siri" && cv.visual !== "Strings",
       fireBottom: cv.fireColorFrom, fireTop: cv.fireColorTo,
       horizontal: cv.gradientDir === "horizontal", gap: cv.gapPx,
       extraWidth: cv.barWidthExtra, peaks: cv.peaks, reflect: cv.reflect,
