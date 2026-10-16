@@ -1,0 +1,76 @@
+{
+  "version": "8.9.1",
+  "captures": [
+    {
+      "file": "Spectrum.png",
+      "dimensions": [
+        1600,
+        340
+      ],
+      "audible_frames": 187,
+      "source": "Production VisualCanvas and native renderer; live PipeWire auto source; no synthetic audio"
+    },
+    {
+      "file": "Siri.png",
+      "dimensions": [
+        760,
+        300
+      ],
+      "audible_frames": 192,
+      "source": "Production VisualCanvas and native renderer; live PipeWire auto source; no synthetic audio"
+    },
+    {
+      "file": "Strings.png",
+      "dimensions": [
+        760,
+        300
+      ],
+      "audible_frames": 175,
+      "source": "Production VisualCanvas and native renderer; live PipeWire auto source; no synthetic audio"
+    },
+    {
+      "file": "Waves.png",
+      "dimensions": [
+        760,
+        300
+      ],
+      "audible_frames": 173,
+      "source": "Production VisualCanvas and native renderer; live PipeWire auto source; no synthetic audio"
+    },
+    {
+      "file": "Bokeh.png",
+      "dimensions": [
+        720,
+        440
+      ],
+      "audible_frames": 176,
+      "source": "Production VisualCanvas and native renderer; live PipeWire auto source; no synthetic audio"
+    },
+    {
+      "file": "PixelWave.png",
+      "dimensions": [
+        720,
+        440
+      ],
+      "audible_frames": 187,
+      "source": "Production VisualCanvas and native renderer; live PipeWire auto source; no synthetic audio"
+    },
+    {
+      "file": "Orbit.png",
+      "dimensions": [
+        720,
+        440
+      ],
+      "audible_frames": 176,
+      "source": "Production VisualCanvas and native renderer; live PipeWire auto source; no synthetic audio"
+    },
+    {
+      "file": "Mini.png",
+      "source": "Actual v8.9.1 Omarchy bar screenshot captured earlier during live playback; cropped to bar only"
+    },
+    {
+      "file": "Settings.png",
+      "source": "Actual v8.9.1 native settings screenshot captured after desktop unlock"
+    }
+  ]
+}

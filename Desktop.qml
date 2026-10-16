@@ -35,7 +35,7 @@ Window {
       win.setDesktopActive(true)
     }
   }
-  ArtworkColors { id: coverPalette; player: media.player; active: win.vizConfig.artworkColors === true && win.vizConfig.visual === "Bars" }
+  ArtworkColors { id: coverPalette; player: media.player; active: win.vizConfig.artworkColors === true && Store.supportsArtwork(win.vizConfig.visual) }
   readonly property bool immersiveArt: win.vizConfig.visual === "Bars" && win.vizConfig.artworkColors === true && coverPalette.colors.length >= 3
   MediaSession { id: media }
   readonly property var activePlayer: media.player
@@ -99,9 +99,9 @@ Window {
       Loader {
         id: artBackdrop
         anchors.fill: parent
-        // Destroy the cached blur when leaving Bars, so it cannot retain a
-        // frozen image over another visualization.
-        active: win.hasArt && win.vizConfig.visual === "Bars"
+        // Unload the entire cached blur whenever the selected mode does not
+        // support artwork; no frozen image can survive a mode transition.
+        active: win.hasArt && Store.supportsArtwork(win.vizConfig.visual)
         sourceComponent: Component {
           Item {
             Image {
@@ -133,7 +133,7 @@ Window {
             // while making background darker for bar readability.
             Rectangle {
               anchors.fill: parent
-              color: Qt.rgba(0, 0, 0, win.immersiveArt ? 0.35 : 0.70)
+              color: Qt.rgba(0, 0, 0, win.immersiveArt || Store.isAmbient(win.vizConfig.visual) ? 0.35 : 0.70)
             }
           }
         }
@@ -159,7 +159,7 @@ Window {
         anchors.bottom: parent.bottom
         anchors.bottomMargin: 4
         height: parent.height - 4
-        visible: win.vizConfig.dots !== false && win.vizConfig.visual !== "Siri" && win.vizConfig.visual !== "Strings"
+        visible: win.vizConfig.dots !== false && win.vizConfig.visual !== "Siri" && win.vizConfig.visual !== "Strings" && !Store.isAmbient(win.vizConfig.visual)
       }
       // One active instance of the shared GPU renderer.
       Loader {
@@ -222,6 +222,7 @@ Window {
         stacks: win.vizConfig.stacks === true
         stackScale: 2
         sensitivity: win.vizConfig.sensitivity ?? 1.0
+        originalColors: win.vizConfig.colorMode === "Original"
         artworkColors: win.vizConfig.artworkColors === true
         artworkPalette: coverPalette.colors
         barColorCustom: win.vizConfig.barColorCustom === true
@@ -343,7 +344,7 @@ Window {
   IpcHandler {
     target: "omaviz-desktop"
     function status(): string {
-      return JSON.stringify({visual: win.vizConfig.visual, siriTravel: win.vizConfig.siriTravel, siriClassic: win.vizConfig.siriClassic, enabled: win.vizConfig.enabled,
+      return JSON.stringify({visual: win.vizConfig.visual, colorMode: win.vizConfig.colorMode, siriTravel: win.vizConfig.siriTravel, siriClassic: win.vizConfig.siriClassic, enabled: win.vizConfig.enabled,
         waveSamples: win.spectrumWave.length, configPath: win.settingsPath, engineRunning: bridge.started, closing: win._closing,
         trayVisible: trayBox.shown, playbackVisible: !!win.activePlayer && win.activePlayer.canControl})
     }

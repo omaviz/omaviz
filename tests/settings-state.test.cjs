@@ -64,7 +64,7 @@ test('color modes are exclusive and preserve custom palette values', () => {
 // SettingsQueue and the bounded real-QML component harness cover asynchronous
 // writes and capture transitions shared by both surfaces.
 test('waveform selections and multi-stop palettes survive settings round trips', () => {
-  for (const visual of ['Bars','Waves','Strings','Siri']) {
+  for (const visual of ['Bars','Waves','Strings','Siri','Orbit','PixelWave','Bokeh']) {
     const config = {...Store.defaultConfig(), visual, barColorMiddleEnabled:true,
       barColorMiddle:'#12abcd', artworkColors:true};
     const saved = Store.readConfigFromText(Store.toTOML(config));

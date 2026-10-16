@@ -6,7 +6,7 @@ desktop visualizer window, and an oscilloscope that dances to whatever
 is playing. Same soul, zero nostalgia tax: native GPU rendering,
 theme-aware, and configured from the bar.
 
-![version](https://img.shields.io/badge/version-8.8.0-amber) ![license](https://img.shields.io/badge/license-MIT-blue)
+![version](https://img.shields.io/badge/version-8.9.1-amber) ![license](https://img.shields.io/badge/license-MIT-blue)
 
 ## Why omaviz
 
@@ -28,11 +28,12 @@ theme-aware, and configured from the bar.
 
 ## The tour
 
-![Omaviz v8.8.0: live fire spectrum with reflection and peaks, waveforms, and redesigned settings](preview.png)
+![Omaviz: seven live visualizations, the real bar widget, and native settings](preview.png)
 
-Visualization examples are captured from the production native renderer using
-controlled sample data. The settings screenshot is from the installed v8.8.0
-Omarchy panel. Images retain their original proportions.
+The marketplace preview shows all seven production visualizations captured with
+live system audio, plus the actual v8.9.1 Omarchy bar and settings panel. Source
+captures and provenance are in `docs/screenshots/marketing/`; images retain their
+original proportions. Other examples below use controlled sample data.
 
 | | |
 |---|---|
@@ -62,6 +63,9 @@ Omarchy panel. Images retain their original proportions.
   switches live), or custom From → To tones via presets or hex
 - **Strings** — gold and cream strands rotate around a uniform pipe that grows taller with music energy; some strands soften near the outer arcs, with broad blurred blue strands in front. Spectral bands pulse each strand's radius while waveform samples ripple the loops. Small surfaces use fewer strands to retain separation. The backdrop stays transparent.
   A retained GPU mesh preserves the existing curves and glow; the feed carries the 16 strand excitation values plus the full waveform.
+- **Particles** — **Bokeh** floats soft luminous discs through a cloud with changing focus; **Pixel Wave** sends spectral motion through receding rows of squares. Both simplify at mini sizes.
+- **Radial** — **Orbit** layers independently moving rounded arcs, with audio-driven length and brightness.
+  These three modes use retained GPU meshes and custom shaders, with Original, Theme, Custom, and Artwork colors, per-visual settings, Response, mini monochrome, and optional blurred artwork backdrops. Original matches the reference silver/white particles and warm-accented arcs. They fade and settle during silence.
 - **Siri** — the existing cyan/blue/violet ribbons remain the default. Select **Classic Siri** in the style selector, for independently appearing, mirrored color lobes on a fine neutral axis, based on the classic Siri reference. Red, green, blue, and cyan overlaps brighten toward white; custom palettes and monochrome remain supported.
   Six spectral envelopes control the response without a shared minimum height. Lobes have separate lifetimes, widths, and prominence, and disappear into the baseline during pauses. Their shape stays in GPU memory at 60 Hz. Enable **Left to right motion** under **Motion** to add sideways travel; default motion expands and contracts in place.
 - **Motion** — Winamp-style linear fall by default, optional exponential easing,
@@ -159,6 +163,8 @@ Requires: Omarchy (quickshell), Qt 6.11+, PipeWire. Maintainer builds use Cargo,
 npm test              # all JS/QML suites (node >= 24)
 npm run test:rust     # engine unit tests (cargo)
 npm run verify        # JS, installer safety, and Rust
+npm run test:qml      # real settings, desktop, and catalog feed transitions
+python tests/catalog-visual.py renderer/build/omaviz-render-probe /tmp/omaviz-catalog # bounded native captures
 ```
 
 | Suite | What it proves |
@@ -185,7 +191,7 @@ with a dotted-skin backdrop and a B&W Mono mode for tiny sizes.
 Single-click the mini for the settings panel below; single-click the live
 preview inside it to detach the desktop window:
 
-![Current settings panel opened from the mini](docs/screenshots/Settings-v8.8.0.png)
+![Current native settings panel](docs/screenshots/marketing/Settings.png)
 
 ## Engine
 

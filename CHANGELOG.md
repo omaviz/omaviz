@@ -1,3 +1,12 @@
+## 8.9.1 — GPU particle and radial visualizations
+
+- Add Bokeh, Pixel Wave, and Orbit under Particles and Radial, available in the bar, settings preview, and desktop window.
+- Use one shared retained GPU node and vertex/fragment shaders for all three; the CPU maintains bounded audio envelopes and history. Simplify geometry at mini sizes and settle after silence.
+- Refine Bokeh focus and highlights, Pixel Wave travelling contours, and Orbit grouped arcs against the supplied references.
+- Add Original, Theme, Custom, and Artwork palettes, automatic per-visual look persistence, sensitivity, mini monochrome, and optional cached artwork backdrops.
+- Replace the marketplace preview with seven real live-audio captures and native UI screenshots; retain regeneration sources and capture provenance.
+- Preserve the clipboard-safe hex controls and PlainText player metadata from v8.8.0. Keep the engine source and verified upstream binary unchanged.
+
 ## 8.8.0 — Automatic settings, transport controls, and clipboard safety
 
 - Remove clipboard-reading Qt color inputs; use bounded key-only hex entry, including while controls are hidden. Preserve PlainText player metadata.

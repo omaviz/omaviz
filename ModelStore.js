@@ -202,7 +202,7 @@ function readConfigFromText(tomlText) {
   d.scope = readTomlValue(tomlText, "desktop", "scope") === "true"
   var visual = readTomlValue(tomlText, "desktop", "visual")
   d.visual = visual === "Oscilloscope" || visual === "Wave" ? "Waves"
-    : ["Bars", "Waves", "Strings", "Siri"].indexOf(visual) >= 0
+    : validVisual(visual)
     ? visual : (d.scope ? "Waves" : "Bars")
   // artwork_mode RETIRED (merged into Spectrum + Artwork-backdrop toggle): an
   // old artwork_mode=true means "spectrum bars with the backdrop on". The key
@@ -237,7 +237,7 @@ function readConfigFromText(tomlText) {
   d.dots = readTomlValue(tomlText, "desktop", "dots") !== "false"
   d.reflect = readTomlValue(tomlText, "desktop", "reflect") !== "false"
   var colorMode = readTomlValue(tomlText, "desktop", "color_mode")
-  d.colorMode = ["Theme", "Custom", "Artwork", "Flame"].indexOf(colorMode) >= 0 ? colorMode
+  d.colorMode = ["Theme", "Custom", "Artwork", "Flame", "Original"].indexOf(colorMode) >= 0 ? colorMode
     : d.artworkColors ? "Artwork" : d.fire ? "Flame" : d.barColorCustom ? "Custom" : "Theme"
   d.artworkColors = d.colorMode === "Artwork"
   d.fire = d.colorMode === "Flame"
@@ -383,6 +383,9 @@ function toTOML(cfg) {
       if (spec[0] === "desktopActive" || spec[0] === "desktopHeartbeat") continue // runtime, not settings
       out += spec[2] + " = " + _tomlValue(src[spec[0]], spec[3]) + "\n"
     }
+    // Other palettes remain derivable from legacy flags. Original has no
+    // legacy equivalent, so preserve its explicit identity on full export.
+    if (sec === "desktop" && src.colorMode === "Original") out += 'color_mode = "Original"\n'
     out += "\n"
   }
   return out
@@ -438,8 +441,12 @@ function isDesktopActiveFromText(tomlText) {
 var LOOK_KEYS = ["sensitivity", "mono", "peaks", "peakFalloff", "peakSustainMs", "linearFall", "scopeThickness", "siriTravel", "siriClassic", "dots", "reflect", "artwork", "fireColorFrom", "fireColorTo", "barColorFrom", "barColorTo", "barColorMiddle", "barColorMiddleEnabled", "barGradientDir"]
 var VISUAL_GROUPS = [
   { id: "spectrum", label: "Spectrum", options: [{id:"Bars", label:"Spectrum"}] },
-  { id: "waveforms", label: "Waveforms", options: [{id:"Waves",label:"Waves"},{id:"Strings",label:"Strings"},{id:"Siri",label:"Siri"}] }
+  { id: "waveforms", label: "Waveforms", options: [{id:"Waves",label:"Waves"},{id:"Strings",label:"Strings"},{id:"Siri",label:"Siri"}] },
+  { id: "particles", label: "Particles", options: [{id:"Bokeh",label:"Bokeh"},{id:"PixelWave",label:"Pixel Wave"}] },
+  { id: "radial", label: "Radial", options: [{id:"Orbit",label:"Orbit"}] }
 ]
+function isAmbient(mode) { return ["Orbit", "PixelWave", "Bokeh"].indexOf(mode) >= 0 }
+function supportsArtwork(mode) { return mode === "Bars" || isAmbient(mode) }
 function visualGroup(mode) {
   for (var g = 0; g < VISUAL_GROUPS.length; ++g)
     if (VISUAL_GROUPS[g].options.some(function(option) { return option.id === mode })) return VISUAL_GROUPS[g].id
@@ -484,6 +491,7 @@ function applyLook(text, values) {
 function restoreLook(text, mode) {
   var section = lookSection(mode)
   var defaults = lookValues(defaultConfig())
+  if (isAmbient(mode)) { defaults.color_mode = "Original"; defaults.artwork = true }
   var values = {}
   for (var key in defaults) {
     var raw = readTomlValue(text,section,key)
@@ -513,7 +521,7 @@ function selectGroup(text, group) {
 // ---- Module exports ----
 if (typeof module !== "undefined") {
   module.exports = {
-    VISUAL_GROUPS, visualGroup, groupOptions, selectVisual, selectGroup, patchSettings,
+    VISUAL_GROUPS, isAmbient, supportsArtwork, visualGroup, groupOptions, selectVisual, selectGroup, patchSettings,
     configPath: configPath,
     decodeFrame: decodeFrame,
     engineBin: engineBin,

@@ -6,7 +6,7 @@ repo=$(cd "$(dirname "$0")/.." && pwd)
 runtime=${OMAVIZ_RENDER_ROOT:-$repo}
 probe=${1:?Pass the built omaviz-render-probe executable}
 artifacts=$(mktemp -d /tmp/omaviz-render-test.XXXXXX)
-for mode in Bars Spikes Stacks FlameReflection Waves Strings Siri ClassicSiri Siri-to-Strings Strings-to-Bars Bars-to-Siri Siri-to-Bars; do
+for mode in Bars Spikes Stacks FlameReflection Waves Strings Siri Orbit PixelWave Bokeh ClassicSiri Siri-to-Strings Strings-to-Bars Bars-to-Siri Siri-to-Bars Siri-to-Orbit Orbit-to-PixelWave PixelWave-to-Bokeh Bokeh-to-Strings; do
   initial=${mode%%-to-*}
   target=${mode##*-to-}
   options=""

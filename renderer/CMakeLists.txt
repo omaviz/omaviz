@@ -3,7 +3,7 @@ project(omaviz_renderer LANGUAGES CXX)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_AUTOMOC ON)
 find_package(Qt6 6.11 REQUIRED COMPONENTS Quick Qml Network ShaderTools)
-add_library(omavizrenderer SHARED plugin.cpp geometry.cpp sirinode.cpp siriribbonnode.cpp stringsnode.cpp spectrumnode.cpp artworkpalette.cpp)
+add_library(omavizrenderer SHARED plugin.cpp geometry.cpp sirinode.cpp siriribbonnode.cpp stringsnode.cpp spectrumnode.cpp ambientnode.cpp artworkpalette.cpp)
 # Embed the complete source input identity to detect stale bundled libraries.
 # This is a rebuild guard, not a reproducibility/provenance attestation.
 file(GLOB_RECURSE source_inputs CONFIGURE_DEPENDS RELATIVE "${CMAKE_CURRENT_SOURCE_DIR}" "*.cpp" "*.h" "shaders/*")
@@ -24,6 +24,8 @@ qt_add_shaders(omavizrenderer strings_shaders
   PREFIX "/omaviz" FILES shaders/strings.vert)
 qt_add_shaders(omavizrenderer spectrum_shaders
   PREFIX "/omaviz" FILES shaders/spectrum.vert)
+qt_add_shaders(omavizrenderer ambient_shaders
+  PREFIX "/omaviz" FILES shaders/ambient.vert shaders/ambient.frag)
 target_link_libraries(omavizrenderer PRIVATE Qt6::Quick Qt6::Qml Qt6::Network)
 set_target_properties(omavizrenderer PROPERTIES LIBRARY_OUTPUT_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/../native")
 option(OMAVIZ_RENDER_PROBE "Build bounded native rendering probe" OFF)
@@ -34,6 +36,8 @@ if(OMAVIZ_RENDER_PROBE)
 endif()
 include(CTest)
 if(BUILD_TESTING)
+  add_executable(ambientresponse-test ambientresponse_test.cpp)
+  add_test(NAME ambientresponse COMMAND ambientresponse-test)
   add_executable(siriresponse-test siriresponse_test.cpp)
   add_test(NAME siriresponse COMMAND siriresponse-test)
   add_executable(artworkpalette-test artworkpalette_test.cpp artworkpalette.cpp)

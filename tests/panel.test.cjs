@@ -43,3 +43,52 @@ test('geometry buttons replace the previous choice and retain it across categori
  assert.ok(text.includes('# keep me')); assert.equal(Store.readTomlValue(text,'custom','untouched'),'42');
  assert.equal(Store.selectVisual(text,'invalid'),text);
 });
+
+test('particle and radial categories remember independent palettes and response', () => {
+ let text=Store.toTOML(Store.defaultConfig());
+ for (const [mode,color,response] of [['Orbit','Custom',.4],['PixelWave','Artwork',2.1],['Bokeh','Theme',1.5]]) {
+   text=Store.selectVisual(text,mode);
+   text=Store.patchSettings(text,'desktop',{color_mode:color,bar_color_from:'#123abc'});
+   text=Store.patchSettings(text,'audio',{sensitivity:response});
+ }
+ for (const [mode,color,response] of [['Orbit','Custom',.4],['PixelWave','Artwork',2.1],['Bokeh','Theme',1.5]]) {
+   text=Store.selectVisual(text,mode);
+   const cfg=Store.readConfigFromText(text);
+   assert.equal(cfg.visual,mode); assert.equal(cfg.colorMode,color); assert.equal(cfg.sensitivity,response);
+   assert.equal(cfg.barColorFrom,'#123abc'); assert.equal(Store.supportsArtwork(mode),true);
+ }
+ text=Store.selectGroup(text,'radial'); assert.equal(Store.readConfigFromText(text).visual,'Orbit');
+ text=Store.selectGroup(text,'particles'); assert.equal(Store.readConfigFromText(text).visual,'Bokeh');
+});
+
+test('new particle and radial looks default to Original and preserve explicit theme choices', () => {
+ let text=Store.toTOML(Store.defaultConfig());
+ for (const mode of ['Orbit','PixelWave','Bokeh']) {
+   text=Store.selectVisual(text,mode);
+   assert.equal(Store.readConfigFromText(text).colorMode,'Original');
+   text=Store.patchSettings(text,'desktop',{color_mode:'Theme'});
+ }
+ for (const mode of ['Orbit','PixelWave','Bokeh']) {
+   text=Store.selectVisual(text,mode);
+   assert.equal(Store.readConfigFromText(text).colorMode,'Theme');
+ }
+ text=Store.patchSettings(text,'desktop',{color_mode:'Original'});
+ text=Store.selectVisual(text,'Bars');text=Store.selectVisual(text,'Bokeh');
+ assert.equal(Store.readConfigFromText(text).colorMode,'Original');
+ assert.equal(Store.readConfigFromText(Store.toTOML(Store.readConfigFromText(text))).colorMode,'Original');
+});
+
+test('production palette handler persists Original explicitly through the settings funnel', () => {
+ const fs=require('node:fs');
+ const source=fs.readFileSync(require('node:path').join(__dirname,'../BarWidget.qml'),'utf8');
+ const method=source.match(/  function setColorMode\(mode\) \{[\s\S]*?\n  \}/)[0];
+ let text=Store.selectVisual(Store.toTOML(Store.defaultConfig()),'Bokeh');
+ const select=Function('root',method+'; return setColorMode')({
+   writeVizMap: values => { text=Store.patchSettings(text,'desktop',values); }
+ });
+ for(const mode of ['Original','Theme','Custom','Artwork','Original']) {
+   assert.equal(select(mode),true);
+   assert.equal(Store.readConfigFromText(text).colorMode,mode);
+ }
+ assert.equal(select('unknown'),false);
+});
