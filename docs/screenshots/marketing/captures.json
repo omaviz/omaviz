@@ -1,76 +1,211 @@
 {
-  "version": "8.9.1",
+  "version": "8.10.1",
   "captures": [
     {
-      "file": "Spectrum.png",
-      "dimensions": [
-        1600,
-        340
-      ],
-      "audible_frames": 187,
-      "source": "Production VisualCanvas and native renderer; live PipeWire auto source; no synthetic audio"
-    },
-    {
-      "file": "Siri.png",
-      "dimensions": [
-        760,
-        300
-      ],
-      "audible_frames": 192,
-      "source": "Production VisualCanvas and native renderer; live PipeWire auto source; no synthetic audio"
-    },
-    {
-      "file": "Strings.png",
-      "dimensions": [
-        760,
-        300
-      ],
-      "audible_frames": 175,
-      "source": "Production VisualCanvas and native renderer; live PipeWire auto source; no synthetic audio"
-    },
-    {
-      "file": "Waves.png",
-      "dimensions": [
-        760,
-        300
-      ],
-      "audible_frames": 173,
-      "source": "Production VisualCanvas and native renderer; live PipeWire auto source; no synthetic audio"
-    },
-    {
-      "file": "Bokeh.png",
-      "dimensions": [
-        720,
-        440
-      ],
-      "audible_frames": 176,
-      "source": "Production VisualCanvas and native renderer; live PipeWire auto source; no synthetic audio"
-    },
-    {
-      "file": "PixelWave.png",
-      "dimensions": [
-        720,
-        440
-      ],
-      "audible_frames": 187,
-      "source": "Production VisualCanvas and native renderer; live PipeWire auto source; no synthetic audio"
-    },
-    {
-      "file": "Orbit.png",
-      "dimensions": [
-        720,
-        440
-      ],
-      "audible_frames": 176,
-      "source": "Production VisualCanvas and native renderer; live PipeWire auto source; no synthetic audio"
-    },
-    {
       "file": "Mini.png",
-      "source": "Actual v8.9.1 Omarchy bar screenshot captured earlier during live playback; cropped to bar only"
+      "dimensions": [
+        184,
+        39
+      ],
+      "source": "Actual installed v8.10.1 Omarchy bar, captured with grim during live PipeWire playback; cropped to the visualization only",
+      "captured_at": "2026-10-17T08:58:32.762495+00:00"
     },
     {
       "file": "Settings.png",
-      "source": "Actual v8.9.1 native settings screenshot captured after desktop unlock"
+      "dimensions": [
+        817,
+        905
+      ],
+      "source": "Actual installed v8.10.1 settings panel, captured with grim during live PipeWire playback; tightly cropped to the panel border",
+      "captured_at": "2026-10-17T08:58:32.780299+00:00"
+    },
+    {
+      "file": "Cosmos.png",
+      "mode": "Cosmos",
+      "dimensions": [
+        1720,
+        360
+      ],
+      "audible_frames": 283,
+      "source": "Live PipeWire system audio; production VisualCanvas/native renderer; no synthetic input",
+      "captured_at": "2026-10-17T09:10:10.454242+00:00",
+      "duration_seconds": 6,
+      "options": "originalColors:true;",
+      "sensitivity": 1.0
+    },
+    {
+      "file": "Spectrum.png",
+      "mode": "Bars",
+      "dimensions": [
+        1280,
+        480
+      ],
+      "audible_frames": 265,
+      "source": "Live PipeWire system audio; production VisualCanvas/native renderer; no synthetic input",
+      "captured_at": "2026-10-17T09:10:16.314929+00:00",
+      "duration_seconds": 6,
+      "options": "peaks:true;reflect:true;",
+      "sensitivity": 1.0
+    },
+    {
+      "file": "Stacks.png",
+      "mode": "Bars",
+      "dimensions": [
+        1280,
+        480
+      ],
+      "audible_frames": 272,
+      "source": "Live PipeWire system audio; production VisualCanvas/native renderer; no synthetic input",
+      "captured_at": "2026-10-17T09:10:28.226843+00:00",
+      "duration_seconds": 6,
+      "options": "stacks:true;peaks:true;reflect:true;stackScale:2;",
+      "sensitivity": 1.0
+    },
+    {
+      "file": "Siri.png",
+      "mode": "Siri",
+      "dimensions": [
+        960,
+        320
+      ],
+      "audible_frames": 274,
+      "source": "Live PipeWire system audio; production VisualCanvas/native renderer; no synthetic input",
+      "captured_at": "2026-10-17T09:10:34.222655+00:00",
+      "duration_seconds": 6,
+      "options": "",
+      "sensitivity": 1.0
+    },
+    {
+      "file": "ClassicSiri.png",
+      "mode": "Siri",
+      "dimensions": [
+        960,
+        320
+      ],
+      "audible_frames": 273,
+      "source": "Live PipeWire system audio; production VisualCanvas/native renderer; no synthetic input",
+      "captured_at": "2026-10-17T09:10:40.210217+00:00",
+      "duration_seconds": 6,
+      "options": "siriClassic:true;",
+      "sensitivity": 1.0
+    },
+    {
+      "file": "Strings.png",
+      "mode": "Strings",
+      "dimensions": [
+        960,
+        540
+      ],
+      "audible_frames": 274,
+      "source": "Live PipeWire system audio; production VisualCanvas/native renderer; no synthetic input",
+      "captured_at": "2026-10-17T09:10:46.357657+00:00",
+      "duration_seconds": 6,
+      "options": "",
+      "sensitivity": 1.0
+    },
+    {
+      "file": "Waves.png",
+      "mode": "Waves",
+      "dimensions": [
+        960,
+        320
+      ],
+      "audible_frames": 267,
+      "source": "Live PipeWire system audio; production VisualCanvas/native renderer; no synthetic input",
+      "captured_at": "2026-10-17T09:10:52.206269+00:00",
+      "duration_seconds": 6,
+      "options": "",
+      "sensitivity": 1.0
+    },
+    {
+      "file": "Bokeh.png",
+      "mode": "Bokeh",
+      "dimensions": [
+        960,
+        600
+      ],
+      "audible_frames": 274,
+      "source": "Live PipeWire system audio; production VisualCanvas/native renderer; no synthetic input",
+      "captured_at": "2026-10-17T09:10:58.273876+00:00",
+      "duration_seconds": 6,
+      "options": "originalColors:true;",
+      "sensitivity": 1.0
+    },
+    {
+      "file": "Spiral.png",
+      "mode": "Tunnel",
+      "dimensions": [
+        960,
+        600
+      ],
+      "audible_frames": 273,
+      "source": "Live PipeWire system audio; production VisualCanvas/native renderer; no synthetic input",
+      "captured_at": "2026-10-17T09:11:16.228459+00:00",
+      "duration_seconds": 6,
+      "options": "originalColors:true;",
+      "sensitivity": 1.0
+    },
+    {
+      "file": "Tunnel.png",
+      "mode": "SolidTunnel",
+      "dimensions": [
+        960,
+        600
+      ],
+      "audible_frames": 273,
+      "source": "Live PipeWire system audio; production VisualCanvas/native renderer; no synthetic input",
+      "captured_at": "2026-10-17T09:11:22.341683+00:00",
+      "duration_seconds": 6,
+      "options": "originalColors:true;",
+      "sensitivity": 1.0
+    },
+    {
+      "file": "Spikes.png",
+      "mode": "Bars",
+      "dimensions": [
+        1280,
+        480
+      ],
+      "audible_frames": 445,
+      "source": "Live PipeWire system audio; production VisualCanvas/native renderer; no synthetic input",
+      "captured_at": "2026-10-17T09:13:20.260894+00:00",
+      "duration_seconds": 10,
+      "options": "spikes:true;fire:true;peaks:false;reflect:false;",
+      "sensitivity": 2.2
+    },
+    {
+      "file": "PixelWave.png",
+      "mode": "PixelWave",
+      "dimensions": [
+        960,
+        600
+      ],
+      "audible_frames": 458,
+      "source": "Live PipeWire system audio; production VisualCanvas/native renderer; no synthetic input",
+      "captured_at": "2026-10-17T09:13:30.223431+00:00",
+      "duration_seconds": 10,
+      "options": "originalColors:true;",
+      "sensitivity": 2.2
+    },
+    {
+      "file": "Orbit.png",
+      "mode": "Orbit",
+      "dimensions": [
+        960,
+        600
+      ],
+      "audible_frames": 293,
+      "source": "Live PipeWire system audio; production VisualCanvas/native renderer; no synthetic input",
+      "captured_at": "2026-10-17T09:15:20.298684+00:00",
+      "duration_seconds": 6,
+      "options": "originalColors:true;",
+      "sensitivity": 2.2,
+      "selected_frame_seconds": 2.25
     }
+  ],
+  "renderer": "e3185c533632ec338e496b09a1867f8be0d298a7f207f929eb5a2ec7a9a736a3",
+  "layout_references": [
+    "https://plugins.omarchy.org/plugin.html?id=glasschan.oma-swiss",
+    "https://plugins.omarchy.org/plugin.html?id=io.github.jeocrypto.glass-dock"
   ]
 }

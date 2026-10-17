@@ -1,7 +1,7 @@
-# omaviz — Application Specification (v8.10.0)
+# omaviz — Application Specification (v8.10.1)
 
 > **Plugin id:** `org.omaviz.visualizer`
-> **Version:** 8.10.0 (spec + manifest; release tag follows merge)
+> **Version:** 8.10.1 (spec + manifest; release tag follows merge)
 > **Status:** Single-package Omarchy QML plugin. Audio analysis is bundled as
 > one native binary (`bin/omaviz-engine`) shipped **inside** the plugin
 > directory. No systemd service, no Unix socket, no `~/.local/bin` binaries.
@@ -642,3 +642,37 @@ reflection. Silence extinguishes the field; flame geometry has no rigid peak cap
 CPU bar/peak physics, other Spectrum geometries, and the v8.9.1 engine are unchanged.
 Research: NVIDIA GPU Gems, Chapter 6, Fire in the Vulcan Demo, section 6.1
 (https://developer.nvidia.com/gpugems/gpugems/part-i-natural-effects/chapter-6-fire-vulcan-demo).
+
+### v8.10.1 — Marketplace artwork bounds and live preview evidence
+
+ArtworkPalette accepts bounded PNG/JPEG/WebP input: at most 12 MiB, 4,194,304
+source pixels, and 8,192 pixels in either dimension. PNG framing is validated
+before Qt: only IHDR, PLTE, IDAT, IEND, and bounded tRNS chunks reach the decoder.
+Text, compressed ICC profiles, and all other ancillary chunks are discarded
+without decompression, including after IDAT. Unknown critical chunks, truncated
+frames, invalid dimensions, and excessive chunk counts are rejected. Format
+autodetection and unrelated image plugins are disabled. No global Qt image
+allocation setting is changed. Fetches have both transfer and absolute ten-second
+deadlines and a bounded reply buffer.
+
+The decoded raster is reduced to at most 192×192 and copied into a fresh image
+containing pixels only. This image supplies the palette and a generated PNG data
+URL for both the poster and cached backdrop. QML never decodes an original MPRIS
+artwork URL. Clearing/changing artwork cancels the request and clears both outputs.
+A standalone Text content item forces metadata tooltips to PlainText; static
+credits remain the only styled markup in the transport card.
+
+The artwork CTest exercises repeated compressed PNG chunks before and after IDAT
+whose total expansion exceeds 1 GiB, in a subprocess with a 256 MiB address-space
+limit and a five-second deadline. It also verifies ordinary PNG/JPEG decoding,
+metadata-free thumbnails, oversized/malformed/unsupported input, cancellation,
+and unchanged host allocation limits. The GPU backdrop regression uses the real
+sanitized-thumbnail path and verifies complete pixel removal on deselection.
+
+The refreshed marketplace preview contains all ten visualizations plus Bars,
+Stacks, and Classic Siri styles, using live PipeWire audio. Mini and Settings
+are actual installed screenshots. tools/capture-preview.py creates bounded native
+source captures, records audible frames/source and renderer digest, and leaves
+user settings untouched. tools/render-preview.py composes the 2400×1800 image
+without stretching or repainting screenshots. Provenance and layout references
+are in docs/screenshots/marketing/captures.json.

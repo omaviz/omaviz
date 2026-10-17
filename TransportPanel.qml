@@ -5,6 +5,7 @@ import QtQuick.Shapes
 Rectangle {
   id: panel
   property var player: null
+  property url artworkSource: ""
   property string fallbackTitle: "Omaviz"
   property string status: "Listening to system audio"
   property string creditText: ""
@@ -44,7 +45,7 @@ Rectangle {
       Text { anchors.centerIn: parent; text: "♪"; color: "#b9c2d2"; font.pixelSize: 24 }
       Image {
         anchors.fill: parent
-        source: panel.player ? panel.player.trackArtUrl || "" : ""
+        source: panel.artworkSource
         sourceSize: Qt.size(96, 96)
         fillMode: Image.PreserveAspectCrop
         asynchronous: true
@@ -76,9 +77,18 @@ Rectangle {
       }
     }
     HoverHandler { id: metadataHover; blocking: false }
-    ToolTip.visible: metadataHover.hovered
-    ToolTip.delay: 500
-    ToolTip.text: panel.player ? [panel.player.trackTitle, panel.player.trackAlbum, panel.player.trackArtist].filter(Boolean).join("\n") : panel.fallbackTitle
+    ToolTip {
+      id: metadataTip
+      visible: metadataHover.hovered && panel.shown
+      delay: 500
+      width: Math.min(480, implicitWidth)
+      text: panel.player ? [panel.player.trackTitle, panel.player.trackAlbum, panel.player.trackArtist].filter(Boolean).join("\n") : panel.fallbackTitle
+      contentItem: Text {
+        objectName: "transportMetadataTooltip"
+        text: metadataTip.text; font: metadataTip.font; color: metadataTip.palette.toolTipText
+        textFormat: Text.PlainText; wrapMode: Text.Wrap
+      }
+    }
   }
   Item {
     id: controls; objectName: "transportControls"

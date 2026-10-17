@@ -89,6 +89,7 @@ Rectangle {
  MediaSession { id:media; players:[win.firstPlayer,win.secondPlayer] }
  readonly property var activePlayer: media.player
  QtObject { id:bridge; property string status:"Listening" }
+ QtObject { id:coverPalette; objectName:"coverPaletteFixture"; property url imageSource:win.trackArt }
  property string trackArt:"""+repr((repo/'preview.png').as_uri())+"""
  readonly property bool hasArt: trackArt !== "" && vizConfig.artwork !== false
  readonly property bool immersiveArt: false

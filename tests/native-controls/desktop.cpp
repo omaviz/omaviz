@@ -51,6 +51,8 @@ int main(int argc,char **argv) {
  auto metadata=root->findChild<QQuickItem*>("transportMetadata");
  auto title=root->findChild<QQuickItem*>("transportTitle");
  auto album=root->findChild<QQuickItem*>("transportAlbum");
+ auto metadataTooltip=root->findChild<QQuickItem*>("transportMetadataTooltip");
+ if(!metadataTooltip || metadataTooltip->property("textFormat").toInt()!=0) return 46;
  if(!credit || !actions || !details || !controls || !title || !album || !poster || !metadata) return 34;
  root->setProperty("vizConfig",QVariantMap{{"visual","Cosmos"},{"enabled",true}});
  for(const auto &size: {QSize(320,160),QSize(600,200),QSize(1200,700)}) {
@@ -130,6 +132,14 @@ int main(int argc,char **argv) {
  root->setProperty("vizConfig",QVariantMap{{"visual","Bars"},{"artwork",true},{"enabled",true}});
  QTest::qWait(100);
  if(!artwork->property("active").toBool() || artwork->property("item").value<QObject*>()==nullptr) return 17;
+ auto cover=root->findChild<QObject*>("coverPaletteFixture");
+ if(!cover) return 47;
+ const auto safeSource=cover->property("imageSource");
+ cover->setProperty("imageSource",QUrl()); QTest::qWait(50);
+ if(!root->property("hasArt").toBool() || artwork->property("active").toBool() || artwork->property("item").value<QObject*>()) return 48;
+ cover->setProperty("imageSource",safeSource); QTest::qWait(50);
+ if(!artwork->property("active").toBool()) return 49;
+ puts("PASS: missing or rejected safe thumbnails unload cached artwork while the original media URL remains present");
  root->setProperty("vizConfig",QVariantMap{{"visual","Strings"},{"artwork",true},{"enabled",true}});
  QTest::qWait(100);
  if(artwork->property("active").toBool() || artwork->property("item").value<QObject*>()!=nullptr) return 18;

@@ -23,12 +23,14 @@ const scene = path.join(dir, 'scene.qml');
 const image = path.join(dir, 'result.png');
 fs.writeFileSync(scene, `import QtQuick
 import Qt5Compat.GraphicalEffects
+import "file:${path.join(runtime,'native')}" as Native
 import "ModelStore.js" as Store
 Rectangle {
  id:win; width:640; height:360; color:"#0c0c12"
  property var vizConfig: ({visual:"Bars",artwork:false})
  property string configText: ${JSON.stringify('[desktop]\nvisual = "Bars"\n')}
- property string trackArt: ${JSON.stringify(pathToFileURL(path.join(repo, 'preview.png')).href)}
+ property string trackArt: ${JSON.stringify(pathToFileURL(path.join(repo, 'docs/screenshots/marketing/Spectrum.png')).href)}
+ Native.ArtworkPalette { id:coverPalette; source:win.trackArt }
  readonly property bool hasArt: trackArt!=="" && vizConfig.artwork!==false
  readonly property bool immersiveArt:false
  function writeVizMap(options) {

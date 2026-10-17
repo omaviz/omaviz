@@ -49,6 +49,7 @@ int main(int argc,char **argv) {
                 auto obj=QJsonDocument::fromJson(pending.left(end)).object();
                 pending.remove(0,end+1);
                 if(obj.contains("bands")) {
+                    view.rootObject()->setProperty("inputSource",obj["source"].toString());
                     view.rootObject()->setProperty("inputBandLayout",obj["band_layout"].toString());
                     view.rootObject()->setProperty("inputBands",obj["bands"].toArray().toVariantList());
                     view.rootObject()->setProperty("inputSilent",obj["silent"].toBool());
@@ -109,6 +110,8 @@ int main(int argc,char **argv) {
         if(image.isNull() || !image.save(QString::fromLocal8Bit(argv[2]))) { app.exit(4); return; }
         if(view.rootObject()->property("frame").isValid())
             qInfo()<<"scene_frame"<<view.rootObject()->property("frame").toInt();
+        if(view.rootObject()->property("inputSource").isValid())
+            qInfo()<<"scene_source"<<view.rootObject()->property("inputSource").toString();
         engine.terminate(); engine.waitForFinished(1000);
         rusage child{}; getrusage(RUSAGE_CHILDREN,&child);
         const double childCpu=child.ru_utime.tv_sec+child.ru_utime.tv_usec/1e6+child.ru_stime.tv_sec+child.ru_stime.tv_usec/1e6;
