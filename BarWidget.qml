@@ -11,6 +11,15 @@ BarWidget {
 
   readonly property string settingsError: settingsDocument.error ? settingsDocument.error + ". Check that your config folder is writable, then try again." : ""
   readonly property var config: settingsDocument.config
+  readonly property var displayConfig: visualTransition.presented
+  readonly property real visualOpacity: visualTransition.fade
+  VisualTransition { id: visualTransition; config: root.config }
+  MediaSession { id: shuffleMedia }
+  ShuffleSession {
+    active: settingsDocument.ready && root.vizEnabled && root.config.shuffle
+    player: shuffleMedia.player
+    onTrackChanged: settingsDocument.patch("shuffle", {look: JSON.stringify(Store.randomLook(settingsDocument.text))})
+  }
   SettingsDocument {
     id: settingsDocument
     path: (Quickshell.env("XDG_CONFIG_HOME") || Quickshell.env("HOME") + "/.config") + "/omaviz/config.toml"
@@ -46,7 +55,7 @@ BarWidget {
     }
   }
   readonly property var artworkPalette: artworkColors.colors
-  ArtworkColors { id: artworkColors; active: root.config.artworkColors === true && Store.supportsArtwork(root.config.visual) }
+  ArtworkColors { id: artworkColors; active: root.displayConfig.artworkColors === true && Store.supportsArtwork(root.displayConfig.visual) }
   // Live theme snapshot: persists the current Omarchy accent triple to
   // config whenever the theme changes, so the standalone desktop window
   // (no qs.* context) follows theme switches within its 250ms poll.
@@ -134,10 +143,10 @@ BarWidget {
 
   EngineFeed {
     id: spectrumFeed
-    active: !root._exitRequested && root.vizEnabled && settingsDocument.ready && (!root.desktopLive || root.opened)
-    waveEnabled: root.config.visual !== "Bars"
-    siriEnabled: root.config.visual === "Siri"
-    stringsEnabled: root.config.visual === "Strings"
+    active: !root._exitRequested && root.vizEnabled && settingsDocument.ready
+    waveEnabled: root.displayConfig.visual !== "Bars"
+    siriEnabled: root.displayConfig.visual === "Siri"
+    stringsEnabled: root.displayConfig.visual === "Strings"
   }
   readonly property string sourceLabel: Store.sourceLabel(spectrumFeed.source) + " · " + spectrumFeed.status
 
@@ -207,13 +216,14 @@ BarWidget {
     settingsDocument.patch("desktop", values)
   }
 
-  function selectVisual(mode) { settingsDocument.replace(Store.selectVisual(settingsDocument.text,mode)) }
-  function selectGroup(group) { settingsDocument.replace(Store.selectGroup(settingsDocument.text,group)) }
+  function selectVisual(mode) { settingsDocument.replace(Store.selectVisual(Store.setShuffle(settingsDocument.text,false),mode)) }
+  function selectGroup(group) { settingsDocument.replace(Store.selectGroup(Store.setShuffle(settingsDocument.text,false),group)) }
+  function setShuffle(enabled) { settingsDocument.replace(Store.setShuffle(settingsDocument.text,enabled)) }
 
   function setColorMode(mode) {
     if (["Theme", "Custom", "Artwork", "Flame", "Original"].indexOf(mode) < 0) return false
     var options = { color_mode: mode, fire: mode === "Flame", bar_color_custom: mode === "Custom", artwork_colors: mode === "Artwork" }
-    if (mode === "Artwork") options.artwork = true
+    options.artwork = mode === "Artwork"
     root.writeVizMap(options)
     return true
   }
@@ -222,13 +232,11 @@ BarWidget {
   WidgetButton {
     id: button
     anchors.fill: parent
-    // Option 1: the mini stays in the bar while a desktop window is open,
-    // but renders a paused floor (no animation, bars at bottom) instead
-    // of hiding — settings stay one click away, no round-trip.
+    // Mini and desktop animate together; desktopLive only tracks the popout.
     bar: root.bar
     tooltipText: {
-      var viz = root.config.visual === "Bars" ? "Spectrum" : root.config.visual
-      return "Omaviz — " + viz
+      var viz = Store.visualLabel(root.config.visual)
+      return "Omaviz — " + viz + (root.config.visual === "Cosmos" ? "\nMilky Way: ESO/S. Brunier · CC BY 4.0" : "")
     }
     text: ""
     hasVisualContent: true
@@ -250,66 +258,67 @@ BarWidget {
       height: parent.height * 0.90
       // Theme-aware container: tracks the shell background so it reads
       // correctly on light and dark themes (dark theme ≈ previous look).
-      color: root.config.visual === "Siri" ? "#000000" : root.config.spikes === true ? "transparent" : Qt.rgba(Color.background.r, Color.background.g, Color.background.b, 0.82)
+      opacity: root.visualOpacity
+      color: root.displayConfig.visual === "Siri" || root.displayConfig.visual === "Cosmos" ? "#000000" : root.displayConfig.spikes === true ? "transparent" : Qt.rgba(Color.background.r, Color.background.g, Color.background.b, 0.82)
       // Spikes run borderless — the dense spectrum sits directly on the bar.
-      border.width: root.config.spikes === true ? 0 : 1
+      border.width: root.displayConfig.spikes === true ? 0 : 1
       border.color: Qt.rgba(0.20, 0.20, 0.25, 0.50)
 
       // One shared renderer everywhere: mini uses the same VisualCanvas
       // as preview/desktop, so spikes/splits/fire/peaks look identical.
       DotsCanvas {
         anchors.fill: parent
-        anchors.margins: root.config.spikes === true ? 0 : 4
-        visible: root.config.dots !== false && root.config.visual !== "Siri" && root.config.visual !== "Strings" && !Store.isAmbient(root.config.visual) && !root.desktopLive
+        anchors.margins: root.displayConfig.spikes === true ? 0 : 4
+        visible: root.displayConfig.dots !== false && root.displayConfig.visual !== "Siri" && root.displayConfig.visual !== "Strings" && !Store.isAmbient(root.displayConfig.visual)
       }
       VisualCanvas {
         anchors.fill: parent
-        anchors.margins: root.config.spikes === true ? 0 : (root.config.visual === "Siri" || root.config.visual === "Strings" || Store.isAmbient(root.config.visual) ? 1 : 4)
+        anchors.margins: root.displayConfig.spikes === true ? 0 : (root.displayConfig.visual === "Siri" || root.displayConfig.visual === "Strings" || Store.isAmbient(root.displayConfig.visual) ? 1 : 4)
         dots: false   // static underlay above (per-frame dots = 34K rects)
-        bands: root.desktopLive ? [] : root.spectrumBands
-        silent: root.desktopLive ? true : root.spectrumSilent
-        visual: root.config.visual || "Bars"
-        colorSync: root.config.colorSync === true
+        bands: root.spectrumBands
+        silent: root.spectrumSilent
+        visual: root.displayConfig.visual || "Bars"
+        colorSync: root.displayConfig.colorSync === true
         barCount: root.barCount
         // Rendered gap follows config (same value that sizes the container).
         gapPx: Math.min(6, Math.max(0, root.barGap))
-        peaks: root.config.peaks !== false
-        peakFalloff: root.config.peakFalloff ?? 0.1
-        peakSustainMs: root.config.peakSustainMs ?? 100
-        linearFall: root.config.linearFall !== false
+        peaks: root.displayConfig.peaks !== false
+        peakFalloff: root.displayConfig.peakFalloff ?? 0.1
+        peakSustainMs: root.displayConfig.peakSustainMs ?? 100
+        linearFall: root.displayConfig.linearFall !== false
         noiseFloor: 0.02
-        spikes: root.config.spikes === true
-        fire: root.config.fire === true
-        fireColorFrom: root.config.fireColorFrom || "#be1400"
-        fireColorTo: root.config.fireColorTo || "#fde047"
+        spikes: root.displayConfig.spikes === true
+        fire: root.displayConfig.fire === true
+        fireColorFrom: root.displayConfig.fireColorFrom || "#be1400"
+        fireColorTo: root.displayConfig.fireColorTo || "#fde047"
         // Stacks stay off in the mini (segments need taller bars to read).
         stacks: false
         // Mini holds 32 bars even in spikes (downsampled from the 128 feed).
         spikeBars: 32
-        sensitivity: root.config.sensitivity ?? 1.0
-        scopeLineWidth: root.config.scopeThickness ?? 2
-        siriClassic: root.config.siriClassic === true
-        siriTravel: root.config.siriTravel === true
+        sensitivity: root.displayConfig.sensitivity ?? 1.0
+        scopeLineWidth: root.displayConfig.scopeThickness ?? 2
+        siriClassic: root.displayConfig.siriClassic === true
+        siriTravel: root.displayConfig.siriTravel === true
         // Bar color: custom From→To wins; otherwise LIVE theme accent
         // (Theme mode always follows the Omarchy theme — no stale snapshot).
-        originalColors: root.config.colorMode === "Original"
-        artworkColors: root.config.artworkColors === true
+        originalColors: root.displayConfig.colorMode === "Original"
+        artworkColors: root.displayConfig.artworkColors === true
         artworkPalette: root.artworkPalette
-        barColorCustom: root.config.barColorCustom === true
-        barColorFrom: root.config.barColorFrom || "#e68e0d"
-        barColorTo: root.config.barColorTo || "#f59e0b"
-        barColorMiddle: root.config.barColorMiddle || "#a855f7"
-        barColorMiddleEnabled: root.config.barColorMiddleEnabled === true
-        gradientDir: root.config.barGradientDir || "vertical"
+        barColorCustom: root.displayConfig.barColorCustom === true
+        barColorFrom: root.displayConfig.barColorFrom || "#e68e0d"
+        barColorTo: root.displayConfig.barColorTo || "#f59e0b"
+        barColorMiddle: root.displayConfig.barColorMiddle || "#a855f7"
+        barColorMiddleEnabled: root.displayConfig.barColorMiddleEnabled === true
+        gradientDir: root.displayConfig.barGradientDir || "vertical"
         themeBottom: Qt.darker(Color.accent, 1.3)
         themeTop: Color.accent
         waveRms: root.spectrumWaveRms
-        wave: root.desktopLive ? [] : root.spectrumWave
+        wave: root.spectrumWave
         waveSerial: root.spectrumWaveSerial
         bandLayout: root.spectrumBandLayout
         reflect: false
         // Mono: B&W bars by theme luminance (black on light, white on dark).
-        mono: root.config.mono === true
+        mono: root.displayConfig.mono === true
         monoLight: (0.299 * Color.background.r + 0.587 * Color.background.g + 0.114 * Color.background.b) > 0.5
       }
     }
@@ -335,14 +344,16 @@ BarWidget {
       root.selectVisual(mode === "Oscilloscope" ? "Waves" : mode)
       return true
     }
+    function setShuffle(enabled: bool) { root.setShuffle(enabled) }
     function setEnabled(enabled: bool) { root.writeEnabled(enabled) }
     function setColorMode(mode: string): bool { return root.setColorMode(mode) }
     function setSiriClassic(enabled: bool) { root.writeVizOption("siri_classic", enabled) }
     function setSiriTravel(enabled: bool) { root.writeVizOption("siri_travel", enabled) }
     function setFlame(enabled: bool) { root.writeVizOption("fire", enabled) }
     function status(): string {
-      return JSON.stringify({visual: root.config.visual, colorMode: root.config.colorMode, categories: Store.VISUAL_GROUPS.map(function(group) { return group.id }), siriTravel: root.config.siriTravel, siriClassic: root.config.siriClassic, enabled: root.vizEnabled,
+      return JSON.stringify({shuffle: root.config.shuffle, visual: root.config.visual, colorMode: root.config.colorMode, categories: Store.VISUAL_GROUPS.map(function(group) { return group.id }), siriTravel: root.config.siriTravel, siriClassic: root.config.siriClassic, enabled: root.vizEnabled,
         silent: root.spectrumSilent, bands: root.spectrumBands.length, preview: root.opened,
+        desktopLive: root.desktopLive, miniActive: spectrumFeed.active,
         waveSamples: root.spectrumWave.length, engineRunning: spectrumFeed.started, restarting: spectrumFeed.restarting})
     }
   }

@@ -4,6 +4,7 @@ import "native" as Native
 
 Item {
   id: cv
+  clip: visual === "Tunnel" || visual === "SolidTunnel" || visual === "Cosmos"
   property var bands: []
   property string bandLayout: ""
   // `silent` is now ADVISORY ONLY (drives the settle optimisation). It never
@@ -47,7 +48,7 @@ Item {
   property bool originalColors: false
   property bool artworkColors: false
   property var artworkPalette: []
-  readonly property bool ambientMode: ["Orbit", "PixelWave", "Bokeh"].includes(visual)
+  readonly property bool ambientMode: ["Orbit", "PixelWave", "Bokeh", "Tunnel", "SolidTunnel", "Cosmos"].includes(visual)
   readonly property bool artMode: artworkColors && (visual === "Bars" || ambientMode)
   readonly property bool artReady: artMode && artworkPalette.length >= 3
   readonly property bool customMode: !artMode && barColorCustom
@@ -98,7 +99,7 @@ Item {
     // Spikes mode: dense gapless spectrum (~2px per bar, like the
     // Winamp thin-bar visualizer) instead of the barCount mapping —
     // unless spikeBars caps it (mini holds 32).
-    var n = spikes ? (spikeBars > 0 ? spikeBars : Math.max(16, Math.floor(width / 2))) : (barCount > 0 ? barCount : b.length)
+    var n = spikes ? Math.min(512, spikeBars > 0 ? spikeBars : Math.max(16, Math.floor(width / 2))) : (barCount > 0 ? barCount : b.length)
     if (n === b.length) return b
     if (n < b.length) {
       var out = _bandBuf.length === n ? _bandBuf : (_bandBuf = new Array(n))

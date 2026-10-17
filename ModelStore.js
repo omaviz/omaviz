@@ -149,7 +149,7 @@ function readTomlInt(tomlText, section, key) {
 // explicitly carry the key — the "theme palette ignored" bug. Keep the
 // DEFAULT_TRUE_BOOLS invariant in sync with tests/modelstore.test.cjs.
 
-function readConfigFromText(tomlText) {
+function readConfigFromText(tomlText, ignoreShuffle) {
   var d = defaultConfig()
   if (!tomlText) return d
   d.sensitivity = readTomlFloat(tomlText, "audio", "sensitivity") ?? d.sensitivity
@@ -246,6 +246,21 @@ function readConfigFromText(tomlText) {
   d.geometry = ["Bars", "Spikes", "Stacks"].indexOf(geometry) >= 0 ? geometry : d.spikes ? "Spikes" : d.stacks ? "Stacks" : "Bars"
   d.spikes = d.geometry === "Spikes"
   d.stacks = d.geometry === "Stacks"
+  d.shuffle = readTomlValue(tomlText, "desktop", "shuffle") === "true"
+  if (d.shuffle && !ignoreShuffle) {
+    try {
+      var look = JSON.parse(readTomlValue(tomlText, "shuffle", "look") || "null")
+      if (look && validVisual(look.visual)) {
+        SHUFFLE_KEYS.forEach(function(key) {
+          if (typeof look[key] === typeof d[key] && (typeof look[key] !== "number" || isFinite(look[key]))) d[key] = look[key]
+        })
+        d.colorMode = ["Theme", "Custom", "Artwork", "Flame", "Original"].indexOf(d.colorMode) >= 0 ? d.colorMode : "Theme"
+        d.geometry = ["Bars", "Spikes", "Stacks"].indexOf(d.geometry) >= 0 ? d.geometry : "Bars"
+        d.spikes = d.geometry === "Spikes"; d.stacks = d.geometry === "Stacks"
+        d.fire = d.colorMode === "Flame"; d.artworkColors = d.colorMode === "Artwork"; d.barColorCustom = d.colorMode === "Custom"
+      }
+    } catch (e) { /* A malformed transient look must never hide the saved selection. */ }
+  }
   return d
 }
 
@@ -272,6 +287,7 @@ function defaultConfig() {
     themeAccent: "#f59e0b",
     gpu: true,
     colorMode: "Theme", geometry: "Bars",
+    shuffle: false,
   }
 }
 
@@ -326,6 +342,7 @@ var KEY_SPEC = [
   ["widthScale", "mini", "width_scale", "num"],
   ["colorSync", "mini", "color_sync", "bool"],
   ["enabled", "desktop", "enabled", "bool"],
+  ["shuffle", "desktop", "shuffle", "bool"],
   ["desktopActive", "desktop", "active", "bool"],
   ["desktopHeartbeat", "desktop", "heartbeat", "int"],
   ["themeBottom", "desktop", "theme_bottom", "str"],
@@ -442,10 +459,17 @@ var LOOK_KEYS = ["sensitivity", "mono", "peaks", "peakFalloff", "peakSustainMs",
 var VISUAL_GROUPS = [
   { id: "spectrum", label: "Spectrum", options: [{id:"Bars", label:"Spectrum"}] },
   { id: "waveforms", label: "Waveforms", options: [{id:"Waves",label:"Waves"},{id:"Strings",label:"Strings"},{id:"Siri",label:"Siri"}] },
-  { id: "particles", label: "Particles", options: [{id:"Bokeh",label:"Bokeh"},{id:"PixelWave",label:"Pixel Wave"}] },
-  { id: "radial", label: "Radial", options: [{id:"Orbit",label:"Orbit"}] }
+  { id: "particles", label: "Particles", options: [{id:"Bokeh",label:"Bokeh"},{id:"PixelWave",label:"Pixel Wave"},{id:"Cosmos",label:"Cosmos"}] },
+  { id: "radial", label: "Radial", options: [{id:"Orbit",label:"Orbit"},{id:"Tunnel",label:"Spiral"},{id:"SolidTunnel",label:"Tunnel"}] }
 ]
-function isAmbient(mode) { return ["Orbit", "PixelWave", "Bokeh"].indexOf(mode) >= 0 }
+// Keep persisted IDs stable so existing looks and category memory survive renames.
+function visualLabel(mode) {
+  for (var g = 0; g < VISUAL_GROUPS.length; ++g)
+    for (var i = 0; i < VISUAL_GROUPS[g].options.length; ++i)
+      if (VISUAL_GROUPS[g].options[i].id === mode) return VISUAL_GROUPS[g].options[i].label
+  return mode || "Spectrum"
+}
+function isAmbient(mode) { return ["Orbit", "PixelWave", "Bokeh", "Tunnel", "SolidTunnel", "Cosmos"].indexOf(mode) >= 0 }
 function supportsArtwork(mode) { return mode === "Bars" || isAmbient(mode) }
 function visualGroup(mode) {
   for (var g = 0; g < VISUAL_GROUPS.length; ++g)
@@ -480,7 +504,7 @@ function patchSettings(text, section, values) {
   return text
 }
 function rememberLook(text) {
-  var cfg = readConfigFromText(text)
+  var cfg = readConfigFromText(text, true)
   return patchSettings(text, lookSection(cfg.visual), lookValues(cfg))
 }
 function applyLook(text, values) {
@@ -502,7 +526,7 @@ function restoreLook(text, mode) {
 }
 function selectVisual(text, mode) {
   if (!validVisual(mode)) return text
-  var cfg = readConfigFromText(text)
+  var cfg = readConfigFromText(text, true)
   if (cfg.visual === mode) return text
   text = rememberLook(text)
   text = patchSettings(text,"selection",{[visualGroup(mode)]:mode})
@@ -518,10 +542,43 @@ function selectGroup(text, group) {
   if (!validVisual(mode) || visualGroup(mode) !== group) mode = options[0].id
   return selectVisual(text,mode)
 }
+// Shuffle is a transient overlay. The selected mode, per-mode looks, category
+// memory, and audio settings remain intact underneath it, including on restart.
+var SHUFFLE_KEYS = ["visual", "colorMode", "geometry", "siriClassic", "siriTravel", "reflect", "artwork", "barColorFrom", "barColorTo", "barColorMiddleEnabled"]
+function visualSignature(config) {
+  return JSON.stringify(SHUFFLE_KEYS.map(function(key) { return config[key] }))
+}
+function setShuffle(text, enabled) {
+  if (enabled === readConfigFromText(text).shuffle) return text
+  text = writeConfigKey(text, "shuffle", "look", "")
+  return writeConfigKey(text, "desktop", "shuffle", enabled)
+}
+function randomLook(text, random) {
+  random = random || Math.random
+  function pick(options) { return options[Math.min(options.length - 1, Math.max(0, Math.floor(random() * options.length)))] }
+  var current = readConfigFromText(text), modes = []
+  VISUAL_GROUPS.forEach(function(group) { group.options.forEach(function(option) { if (option.id !== current.visual) modes.push(option.id) }) })
+  var mode = pick(modes)
+  var base = readConfigFromText(restoreLook(writeConfigKey(text, "desktop", "visual", mode), mode), true)
+  var look = {}; SHUFFLE_KEYS.forEach(function(key) { look[key] = base[key] })
+  look.visual = mode
+  look.colorMode = pick(isAmbient(mode) ? ["Original", "Theme", "Custom"] : ["Theme", "Custom"])
+  var colors = pick([["#df7147", "#ffd69a"], ["#437abe", "#c8a3ed"], ["#35a6a0", "#a9e0bc"], ["#a663bc", "#f1b6ce"]])
+  look.barColorFrom = colors[0]; look.barColorTo = colors[1]; look.barColorMiddleEnabled = false
+  look.artwork = false
+  if (mode === "Bars") {
+    look.geometry = pick(["Bars", "Stacks", "Spikes"])
+    look.reflect = look.geometry !== "Spikes" && pick([true, false])
+    if (look.geometry === "Spikes") look.colorMode = "Flame"
+  }
+  if (mode === "Siri") { look.siriClassic = pick([true, false]); look.siriTravel = !look.siriClassic && pick([true, false]) }
+  return look
+}
 // ---- Module exports ----
 if (typeof module !== "undefined") {
   module.exports = {
-    VISUAL_GROUPS, isAmbient, supportsArtwork, visualGroup, groupOptions, selectVisual, selectGroup, patchSettings,
+    VISUAL_GROUPS, isAmbient, supportsArtwork, visualGroup, visualLabel, groupOptions, selectVisual, selectGroup, patchSettings,
+    setShuffle, randomLook, visualSignature,
     configPath: configPath,
     decodeFrame: decodeFrame,
     engineBin: engineBin,

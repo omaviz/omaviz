@@ -30,24 +30,24 @@ class Shader:public QSGMaterialShader {
 public:
     Shader() {
         setShaderFileName(VertexStage,QStringLiteral(":/omaviz/shaders/spectrum.vert.qsb"));
-        setShaderFileName(FragmentStage,QStringLiteral(":/omaviz/shaders/siri.frag.qsb"));
+        setShaderFileName(FragmentStage,QStringLiteral(":/omaviz/shaders/spectrum.frag.qsb"));
     }
     bool updateUniformData(RenderState &,QSGMaterial *,QSGMaterial *) override;
 };
 class Material:public QSGMaterial {
 public:
-    std::array<float,32> params{};
+    std::array<float,36> params{};
     std::array<float,2048> bands{}; // two height/peak pairs per std140 vec4
     Material() {setFlag(Blending);setFlag(RequiresFullMatrix);setFlag(NoBatching);}
     QSGMaterialType *type() const override {static QSGMaterialType t;return &t;}
     QSGMaterialShader *createShader(QSGRendererInterface::RenderMode) const override {return new Shader;}
 };
 bool Shader::updateUniformData(RenderState &s,QSGMaterial *material,QSGMaterial *) {
-    auto *data=s.uniformData();Q_ASSERT(data->size()>=8384);
+    auto *data=s.uniformData();Q_ASSERT(data->size()>=8400);
     if(s.isMatrixDirty()) {auto matrix=s.combinedMatrix();std::memcpy(data->data(),matrix.constData(),64);}
     auto *m=static_cast<Material *>(material);m->params[0]=s.opacity();
-    std::memcpy(data->data()+64,m->params.data(),128);
-    std::memcpy(data->data()+192,m->bands.data(),8192);return true;
+    std::memcpy(data->data()+64,m->params.data(),144);
+    std::memcpy(data->data()+208,m->bands.data(),8192);return true;
 }
 struct Node:QSGGeometryNode {
     QSGGeometry mesh{attributes(),0};Material shader;QVariantMap style;
@@ -80,6 +80,7 @@ struct Node:QSGGeometryNode {
         put(24,mono?flat:spikes?QColor("#ffe9a8"):QColor(Qt::white),true);
         QColor reflection=fire&&split?mix(bottom,middle,.12f/stop):bottom;
         reflection.setAlphaF(unit(reflection.alphaF()*.22f));put(28,reflection,true);
+        p[33]=float(n);p[34]=float(mono);p[35]=float(flag("monoLight"));
         std::vector<Vertex> vertices;
         auto quad=[&](float l,float r,int i,int kind,int section,float row){
             for(auto corner:{0,1,2,0,2,3}) {
@@ -95,19 +96,15 @@ struct Node:QSGGeometryNode {
             quad(l,r,i,kind,0,row);
             if(!horizontal&&split)quad(l,r,i,kind,1,row);
         };
-        if(flag("wash"))for(int i=0;i<n;++i)rect(i*w/n,(i+1)*w/n,i,1,0);
-        for(int i=0;i<n;++i) {
+        if(spikes) quad(0,w,0,5,0,0);
+        else if(flag("wash"))for(int i=0;i<n;++i)rect(i*w/n,(i+1)*w/n,i,1,0);
+        for(int i=0;!spikes && i<n;++i) {
             float x=std::round(i*(bw+gap)*scale)/scale,r=std::round((i*(bw+gap)+bw)*scale)/scale;
             if(stacks) {
                 // Retain every possible tile; tiles above the current bar collapse.
                 for(float sy=base;sy>base-std::max(pixel,area);sy-=4*stackScale)rect(x,r,i,0,sy);
             } else {
                 rect(x,r,i,0,base);
-                if(spikes) {
-                    vertices.push_back({x,h,float(i),4,1,0,0});
-                    vertices.push_back({r,h,float(i),4,1,0,0});
-                    vertices.push_back({(x+r)/2,0,float(i),4,0,0,0});
-                }
             }
             if(flag("peaks"))quad(x,r,i,2,0,0);
             if(flag("reflect"))quad(x,r,i,3,0,0);
@@ -119,7 +116,7 @@ struct Node:QSGGeometryNode {
 };
 }
 QSGNode *updateSpectrumNode(QSGNode *old,const QVariantMap &style,const QVariantList &bars,
-                            const QVariantList &peaks,float w,float h,float dpr) {
+                            const QVariantList &peaks,float w,float h,float dpr,float phase) {
     if(w<=0||h<=0||bars.empty()){delete old;return nullptr;}
     auto *node=static_cast<Node *>(old);
     if(!node) {
@@ -133,5 +130,6 @@ QSGNode *updateSpectrumNode(QSGNode *old,const QVariantMap &style,const QVariant
         node->shader.bands[i*2]=unit(bars[i].toFloat());
         node->shader.bands[i*2+1]=i<peaks.size()?unit(peaks[i].toFloat()):0;
     }
+    node->shader.params[32]=finite(phase);
     node->markDirty(QSGNode::DirtyMaterial);return node;
 }

@@ -6,7 +6,7 @@ find_package(Qt6 6.11 REQUIRED COMPONENTS Quick Qml Network ShaderTools)
 add_library(omavizrenderer SHARED plugin.cpp geometry.cpp sirinode.cpp siriribbonnode.cpp stringsnode.cpp spectrumnode.cpp ambientnode.cpp artworkpalette.cpp)
 # Embed the complete source input identity to detect stale bundled libraries.
 # This is a rebuild guard, not a reproducibility/provenance attestation.
-file(GLOB_RECURSE source_inputs CONFIGURE_DEPENDS RELATIVE "${CMAKE_CURRENT_SOURCE_DIR}" "*.cpp" "*.h" "shaders/*")
+file(GLOB_RECURSE source_inputs CONFIGURE_DEPENDS RELATIVE "${CMAKE_CURRENT_SOURCE_DIR}" "*.cpp" "*.h" "shaders/*" "textures/*")
 list(FILTER source_inputs EXCLUDE REGEX "^build/")
 list(APPEND source_inputs "CMakeLists.txt")
 list(SORT source_inputs)
@@ -23,9 +23,11 @@ qt_add_shaders(omavizrenderer siri_shaders
 qt_add_shaders(omavizrenderer strings_shaders
   PREFIX "/omaviz" FILES shaders/strings.vert)
 qt_add_shaders(omavizrenderer spectrum_shaders
-  PREFIX "/omaviz" FILES shaders/spectrum.vert)
+  PREFIX "/omaviz" FILES shaders/spectrum.vert shaders/spectrum.frag)
 qt_add_shaders(omavizrenderer ambient_shaders
   PREFIX "/omaviz" FILES shaders/ambient.vert shaders/ambient.frag)
+qt_add_resources(omavizrenderer cosmos_texture
+  PREFIX "/omaviz" FILES textures/milkyway.jpg textures/ATTRIBUTION.md)
 target_link_libraries(omavizrenderer PRIVATE Qt6::Quick Qt6::Qml Qt6::Network)
 set_target_properties(omavizrenderer PROPERTIES LIBRARY_OUTPUT_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/../native")
 option(OMAVIZ_RENDER_PROBE "Build bounded native rendering probe" OFF)

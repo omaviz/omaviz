@@ -16,7 +16,7 @@ if 'fixture=stall' in sys.argv:
  print('{"bands":[0.8,0.4],"silent":false}',flush=True)
  print('{"wave":[0.6,-0.6]}',flush=True)
 while True:
- print('invalid frame',flush=True)
+ print('{"wave":[0.6,-0.6]}' if 'fixture=empty' in sys.argv else 'invalid frame',flush=True)
  time.sleep(0.05)
 `, {mode:0o755});
   const result = spawnSync('timeout', ['15', 'quickshell', '-p', path.join(dir, 'shell.qml')], {

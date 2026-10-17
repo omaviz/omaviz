@@ -82,13 +82,13 @@ Item {
         if (!feed.active || feed.restarting) return
         var frame = Store.decodeFrame(line)
         if (!frame) return
-        feed.failures = 0
         if (frame.wave) {
           feed.waveRms = frame.waveRms === undefined ? -1 : frame.waveRms
           feed.wave = frame.wave
           if (frame.waveSerial !== undefined) feed.waveSerial = frame.waveSerial
         }
         else {
+          feed.failures = 0
           frameDeadline.restart()
           feed.status = frame.silent ? "Listening · quiet" : "Listening"
           feed.bandLayout = frame.bandLayout || ""

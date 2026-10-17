@@ -187,13 +187,13 @@ QSGNode *VisualGeometry::updatePaintNode(QSGNode *old,UpdatePaintNodeData *) {
     static const bool retainedSpectrum = !qEnvironmentVariableIsSet("OMAVIZ_SPECTRUM_RETAINED")
         || qEnvironmentVariableIntValue("OMAVIZ_SPECTRUM_RETAINED") != 0;
     static const bool legacySpectrum = qEnvironmentVariableIsSet("OMAVIZ_BARS_LEGACY");
-    const auto kind = (mode == "Orbit" || mode == "PixelWave" || mode == "Bokeh") ? NodeKind::Ambient
+    const auto kind = (mode == "Orbit" || mode == "PixelWave" || mode == "Bokeh" || mode == "Tunnel" || mode == "SolidTunnel" || mode == "Cosmos") ? NodeKind::Ambient
                     : mode == "Siri" ? (m_style.value("siriClassic",false).toBool()?NodeKind::Siri:NodeKind::SiriRibbon)
                     : mode == "Strings" && !legacyStrings ? NodeKind::Strings
                     : mode == "Bars" && retainedSpectrum && !legacySpectrum && m_bars.size()<=1024 ? NodeKind::Spectrum : NodeKind::Standard;
     if (kind != m_nodeKind) { delete old; old = nullptr; m_nodeKind = kind; }
     if (kind == NodeKind::Ambient) return updateAmbientNode(old,m_style,m_bars,m_wave,m_phase,width(),height(),
-                                  window()?window()->effectiveDevicePixelRatio():1);
+                                  window()?window()->effectiveDevicePixelRatio():1,m_rms,window());
     if (kind == NodeKind::SiriRibbon) return updateSiriRibbonNode(old,m_style,m_bars,m_wave,m_phase,width(),height(),
                                   window()?window()->effectiveDevicePixelRatio():1);
     if (kind == NodeKind::Siri) return updateSiriNode(old, m_style, m_bars, m_wave, m_phase, width(), height(),
@@ -201,7 +201,7 @@ QSGNode *VisualGeometry::updatePaintNode(QSGNode *old,UpdatePaintNodeData *) {
     if (kind == NodeKind::Strings) return updateStringsNode(old, m_style, m_bars, m_wave, m_phase,
                                   width(), height(), window() ? window()->effectiveDevicePixelRatio() : 1, m_rms);
     if (kind == NodeKind::Spectrum) return updateSpectrumNode(old, m_style, m_bars, m_peaks,
-                                  width(), height(), window() ? window()->effectiveDevicePixelRatio() : 1);
+                                  width(), height(), window() ? window()->effectiveDevicePixelRatio() : 1, m_phase);
     auto *node=static_cast<MeshNode *>(old);
     // A mode switch can change primitive topology and envelope state. Give
     // the scene graph a fresh node instead of reusing its cached pipeline.

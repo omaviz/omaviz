@@ -20,12 +20,14 @@ env = dict(os.environ, QT_QPA_PLATFORM='offscreen', QT_QPA_PLATFORMTHEME='basic'
 def metric(*args):
     return float(subprocess.check_output(['magick',*map(str,args),'-alpha','off','info:'],text=True))
 
-for mode in ('Orbit', 'PixelWave', 'Bokeh'):
-    for case in ('desktop', 'mini', 'artwork', 'mono', 'silence', 'resize', 'audio', 'reference', 'mono-light', 'custom'):
+for mode in ('Orbit', 'PixelWave', 'Bokeh', 'Tunnel', 'SolidTunnel', 'Cosmos'):
+    for case in ('desktop', 'mini', 'artwork', 'mono', 'silence', 'resize', 'audio', 'reference', 'mono-light', 'custom', 'quiet', 'occlusion'):
+        if case == 'occlusion' and mode not in ('SolidTunnel','Cosmos'):
+            continue
         if len(sys.argv)>3 and f'{mode}:{case}' not in sys.argv[3:]:
             continue
         width, height = (160,32) if case == 'mini' else (590,540) if case == 'reference' else (640,360)
-        background = '#3d3435' if case == 'reference' else 'white' if case == 'mono-light' else 'black'
+        background = '#ff00ff' if case == 'occlusion' else '#3d3435' if case == 'reference' else 'white' if case == 'mono-light' else 'black'
         options = 'originalColors:true; '
         if case in ('mono','mono-light'): options += 'mono:true;'
         if case == 'mono-light': options += 'monoLight:true;'
@@ -44,23 +46,24 @@ Rectangle {{
  property int frame: canvas._awake ? 1 : 0
  property var inputBands: []
  property var inputWave: []
+ property real inputWaveRms: -1
  property bool inputSilent: true
  property string inputBandLayout: ""
  App.VisualCanvas {{
-  id:canvas; width:parent.width; height:parent.height; visual:"{mode}"; silent:false
+  id:canvas; width:parent.width; height:parent.height; wave:parent.inputWave; waveRms:parent.inputWaveRms; visual:"{mode}"; silent:false
   themeBottom:"#b9c7e9"; themeTop:"#fff4e1"; {options}
   bands:Array.from({{length:128}},(_,i)=>.04+.3*Math.pow(.5+.5*Math.sin(i*.29),3))
  }}
  {timer}
 }}'''
         case_env = dict(env)
-        if case == 'audio':
+        if case in ('audio', 'quiet'):
             source = source.replace('bands:Array.from({length:128},(_,i)=>.04+.3*Math.pow(.5+.5*Math.sin(i*.29),3))',
                                     'bands:parent.inputBands; silent:parent.inputSilent')
             # Remove the original silent binding before setting the live one.
             source = source.replace(f'visual:"{mode}"; silent:false',f'visual:"{mode}"')
             case_env['OMAVIZ_PROBE_ENGINE'] = str(root/'bin/omaviz-engine')
-            case_env['OMAVIZ_PROBE_SOURCE'] = 'gen=mixed'
+            case_env['OMAVIZ_PROBE_SOURCE'] = 'gen=mixed:amp=0.02' if case == 'quiet' else 'gen=mixed'
         qml = out / f'{mode}-{case}.qml'
         png = out / f'{mode}-{case}.png'
         qml.write_text(source)
@@ -79,11 +82,13 @@ Rectangle {{
             assert metric(png,'-format','%[fx:minima]')*255<235,(mode,'invisible black mono')
         else:
             assert peak > 20, (mode,case,'empty capture')
-        if case in ('desktop','audio','reference'):
+        if case in ('desktop','audio','reference','quiet'):
             delta=metric(out/f'{mode}-{case}-1.png',out/f'{mode}-{case}-3.png',
                          '-compose','difference','-composite','-format','%[fx:mean]')
-            assert delta>.00013,(mode,'motion frozen')
+            assert delta>(.00002 if case=='quiet' else .00013),(mode,'motion frozen')
         if case in ('mono','mono-light'):
             assert metric(png,'-fx','max(abs(r-g),abs(r-b))','-format','%[fx:maxima]')==0
+        if case == 'occlusion':
+            assert metric(png,'-fx','r>0.95&&g<0.05&&b>0.95','-format','%[fx:mean]')==0, 'outside background leaked through solid walls'
         print(f'{mode} {case}: PASS',flush=True)
 print(f'Native catalog captures: {out}')

@@ -25,7 +25,8 @@ Window {
   readonly property var spectrumBands: bridge.bands
   readonly property var spectrumWave: bridge.wave
   readonly property bool spectrumSilent: bridge.silent
-  readonly property var vizConfig: settingsDocument.config
+  readonly property var vizConfig: visualTransition.presented
+  VisualTransition { id: visualTransition; config: settingsDocument.config }
   SettingsDocument {
     id: settingsDocument
     path: win.settingsPath
@@ -43,7 +44,7 @@ Window {
   readonly property string trackArtist: win.activePlayer ? (win.activePlayer.trackArtist || "") : ""
   readonly property string trackArt: win.activePlayer ? (win.activePlayer.trackArtUrl || "") : ""
   readonly property string trackLabel: win.trackArtist !== "" ? win.trackArtist + " — " + win.trackTitle : win.trackTitle
-  readonly property string modeName: "Omaviz — " + (win.vizConfig.visual || "Bars")
+  readonly property string modeName: "Omaviz — " + Store.visualLabel(win.vizConfig.visual || "Bars")
   // Artwork available: MPRIS art URL present and backdrop toggle on.
   readonly property bool hasArt: win.trackArt !== "" && win.vizConfig.artwork !== false
   readonly property string playerSource: win.activePlayer ? (win.activePlayer.identity || win.activePlayer.desktopEntry || "") : ""
@@ -59,11 +60,13 @@ Window {
 
   // A passive parent handler observes the whole content tree, including buttons.
   // Keyboard access must also reveal the otherwise hover-only controls.
+  property int transportIdleMs: 30000
+  function revealTransport() { trayBox.shown = true; fadeTimer.restart() }
   Shortcut {
     sequence: "Tab"
     enabled: !trayBox.shown
     onActivated: {
-      trayBox.shown = true
+      win.revealTransport()
       Qt.callLater(trayBox.focusPlayback)
     }
   }
@@ -71,24 +74,26 @@ Window {
     id: windowHover
     parent: win.contentItem
     blocking: false
+    property point cursorPosition: point.position
     onHoveredChanged: {
-      if (hovered) { fadeTimer.stop(); trayBox.shown = true }
-      else fadeTimer.restart()
+      if (hovered) win.revealTransport()
     }
+    onCursorPositionChanged: if (hovered) win.revealTransport()
   }
   Timer {
-    id: fadeTimer
-    interval: 350
+    id: fadeTimer; objectName: "transportIdleTimer"
+    interval: win.transportIdleMs
     repeat: false
-    onTriggered: if (!windowHover.hovered && !trayBox.controlsFocused) trayBox.shown = false
+    onTriggered: trayBox.shown = false
   }
 
   Column {
+    opacity: visualTransition.fade
     anchors.fill: parent
     spacing: 0
 
     Rectangle {
-      width: parent.width; height: parent.height; color: win.vizConfig.visual === "Siri" ? "#000000" : "#0c0c12"
+      width: parent.width; height: parent.height; color: win.vizConfig.visual === "Siri" || win.vizConfig.visual === "Cosmos" ? "#000000" : "#0c0c12"
 
       // Artwork backdrop (backdrop toggle): downscaled source = free blur,
       // dimmed so the bars stay readable. Falls back to the
@@ -152,6 +157,12 @@ Window {
         }
       }
 
+      // Keep the inset frame black even when an artwork backdrop is loaded.
+      Rectangle {
+        anchors.fill: parent
+        visible: win.vizConfig.visual === "Cosmos"
+        color: "#000000"
+      }
       DotsCanvas {
         anchors.left: parent.left; anchors.right: parent.right
         anchors.leftMargin: 4; anchors.rightMargin: 4
@@ -249,14 +260,17 @@ Window {
 
   TransportPanel {
     id: trayBox
-    anchors.left: parent.left; anchors.right: parent.right; anchors.bottom: parent.bottom
-    anchors.margins: 12
+    anchors.horizontalCenter: parent.horizontalCenter; anchors.bottom: parent.bottom
+    anchors.bottomMargin: 12
+    width: Math.min(480, parent.width - 24)
     player: media.player
     fallbackTitle: win.modeName
     status: bridge.status
-    onToggleRequested: media.toggle()
-    onPreviousRequested: media.previous()
-    onNextRequested: media.next()
+    creditText: win.vizConfig.visual === "Cosmos" ? 'Milky Way: <a href="https://www.eso.org/public/images/eso0932a/">ESO/S. Brunier</a><br/><a href="https://creativecommons.org/licenses/by/4.0/">CC BY 4.0</a> · adapted panorama' : ""
+    creditUrl: "https://www.eso.org/public/images/eso0932a/"
+    onToggleRequested: { win.revealTransport(); media.toggle() }
+    onPreviousRequested: { win.revealTransport(); media.previous() }
+    onNextRequested: { win.revealTransport(); media.next() }
     onCloseRequested: { win.setDesktopActive(false); closeTimer.restart() }
   }
 
