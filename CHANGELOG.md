@@ -1,3 +1,12 @@
+## 8.10.1 — Bounded artwork decoding and refreshed live previews
+
+- Address marketplace artwork review #11183: remove PNG text and compressed ancillary metadata before Qt decoding, bound source bytes/pixels/dimensions and request lifetime, and restrict supported raster formats.
+- Reuse metadata-free 192px thumbnails for desktop posters and blurred backdrops; QML no longer decodes original MPRIS artwork URLs. Preserve palette extraction and cancellation behavior.
+- Explicitly render full-metadata tooltips as plain text, preserving the earlier metadata/clipboard review protections.
+- Add a memory-limited compressed-metadata regression, decoder rejection/thumbnail checks, and native/GPU artwork coverage.
+- Refresh preview.png, all ten visualization captures, three additional styles, the actual bar/settings screenshots, README gallery, capture provenance, and marketplace review evidence using live system audio.
+- Keep the Rust source and bundled engine unchanged from v8.9.1.
+
 ## 8.10.0 — Immersive visuals, track shuffle, and desktop controls
 
 - Add Cosmos with dense parallax stars, a credited real Milky Way panorama, and distant moving galaxies. Preserve natural star colors while allowing palette tinting of the diffuse galactic core; use transparent circular star halos.

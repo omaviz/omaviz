@@ -6,7 +6,7 @@ desktop visualizer window, and an oscilloscope that dances to whatever
 is playing. Same soul, zero nostalgia tax: native GPU rendering,
 theme-aware, and configured from the bar.
 
-![version](https://img.shields.io/badge/version-8.10.0-amber) ![license](https://img.shields.io/badge/license-MIT-blue)
+![version](https://img.shields.io/badge/version-8.10.1-amber) ![license](https://img.shields.io/badge/license-MIT-blue)
 
 ## Why omaviz
 
@@ -28,24 +28,49 @@ theme-aware, and configured from the bar.
 
 ## The tour
 
-![Omaviz: seven live visualizations, the real bar widget, and native settings](preview.png)
+![Omaviz: ten live visualizations, spectrum and Siri styles, the real bar widget, and current settings](preview.png)
 
-The marketplace preview shows all seven production visualizations captured with
-live system audio, plus the actual v8.9.1 Omarchy bar and settings panel. Source
-captures and provenance are in `docs/screenshots/marketing/`; images retain their
-original proportions. Other examples below use controlled sample data.
+All ten visualizations below use the production renderer driven by **live PipeWire
+system audio**. The bar and settings images are actual installed v8.10.1 screenshots.
+The [capture manifest](docs/screenshots/marketing/captures.json) records the source,
+dimensions, timestamps, audible frame counts, and renderer digest. Screenshots keep
+their original proportions; the preview layout does not repaint the visualizations.
+
+<details>
+<summary>All ten visualizations — live captures</summary>
 
 | | |
 |---|---|
-| ![Siri translucent cyan, blue, and violet ribbons](docs/screenshots/Siri-v8.8.0.png) | ![Strings with warm strands and soft blue foreground curves](docs/screenshots/Strings-v8.8.0.png) |
-| *Siri: luminous, layered ribbons* | *Strings: vibrating strands with depth* |
-| ![Waves showing the audio waveform](docs/screenshots/Waves-v8.8.0.png) | ![Spectrum with peak markers and floor reflection](docs/screenshots/Spectrum-v8.8.0.png) |
-| *Waves: the audio signal as an oscilloscope* | *Live fire spectrum: reflection and Winamp-style peaks* |
+| ![Cosmos: parallax stars and the Milky Way](docs/screenshots/marketing/Cosmos.png) | ![Tunnel: shaded concrete segments](docs/screenshots/marketing/Tunnel.png) |
+| **Cosmos** | **Tunnel** |
+| ![Spiral: music-driven rings into depth](docs/screenshots/marketing/Spiral.png) | ![Orbit: grouped luminous arcs](docs/screenshots/marketing/Orbit.png) |
+| **Spiral** | **Orbit** |
+| ![Siri: layered cyan and blue ribbons](docs/screenshots/marketing/Siri.png) | ![Strings: warm strands with soft foreground loops](docs/screenshots/marketing/Strings.png) |
+| **Siri** | **Strings** |
+| ![Waves: live audio waveform](docs/screenshots/marketing/Waves.png) | ![Spectrum: bars, peaks and reflection](docs/screenshots/marketing/Spectrum.png) |
+| **Waves** | **Spectrum** |
+| ![Bokeh: softly focused floating lights](docs/screenshots/marketing/Bokeh.png) | ![Pixel Wave: music-shaped receding tiles](docs/screenshots/marketing/PixelWave.png) |
+| **Bokeh** | **Pixel Wave** |
+
+Milky Way photograph: [ESO/S. Brunier](https://www.eso.org/public/images/eso0932a/),
+[CC BY 4.0](https://creativecommons.org/licenses/by/4.0/). Cosmos projects and dims the
+photograph and optionally tints its core; the foreground stars are procedural.
+
+</details>
 
 <details>
-<summary>Settings panel (v8.8.0)</summary>
+<summary>More Spectrum and Siri styles — live captures</summary>
 
-![Omaviz v8.8.0 settings with square visualization choices and automatic persistence](docs/screenshots/Settings-v8.8.0.png)
+![Spectrum Spikes: rising flames](docs/screenshots/marketing/Spikes.png)
+![Spectrum Stacks: separated tiles and reflection](docs/screenshots/marketing/Stacks.png)
+![Classic Siri: independent mirrored color lobes](docs/screenshots/marketing/ClassicSiri.png)
+
+</details>
+
+<details>
+<summary>Current settings panel</summary>
+
+![Omaviz v8.10.1 settings: compact Shuffle toggle in the preview header](docs/screenshots/marketing/Settings.png)
 
 </details>
 
@@ -255,6 +280,14 @@ Installs to `~/.config/omarchy/plugins/org.omaviz.visualizer/`.
 > to display artwork or extract its colors; those requests contact the artwork
 > host. Local file artwork stays local.
 
+Artwork fetching is bounded to 12 MiB and a ten-second deadline. The decoder accepts
+PNG, JPEG, and WebP when supported by Qt, with at most 4,194,304 source pixels and
+8,192 pixels per dimension. PNG text, compressed profiles, and other non-pixel
+metadata are removed **before** decoding. Only metadata-free thumbnails of at most
+192×192 reach QML's poster and backdrop images; unsupported or oversized artwork
+falls back to the placeholder/theme colors. The shared shell's global image limits
+are unchanged. [Marketplace review evidence](docs/REVIEW-8.10.1.md).
+
 MIT-licensed and hackable end to end: QML surfaces, shared GPU
 renderer and the Rust PipeWire engine all live in this repo, with
 `APP_SPEC.md` as the design record and tests for both sides
@@ -295,7 +328,8 @@ are kept in the reported temporary directory for visual review.
 Keyboard controls: use Tab to reach settings, Space/Enter to activate choices,
 and arrow keys or Home/End to adjust sliders. Focused settings scroll into view.
 In the desktop visualizer, Tab reveals playback/close controls; they remain
-visible while focused. The desktop minimum size is 320×160 to keep actions usable.
+visible until the 30-second inactivity deadline. Pointer movement and playback actions
+restart the deadline. The desktop minimum size is 320×160 to keep actions usable.
 
 Run `npm run test:interactions` on an Omarchy development machine for Qt mouse
 and keyboard regression tests. The tests extract current controls from the QML;
@@ -327,3 +361,17 @@ performed, including while the settings panel is hidden.
 
 Launching **Omaviz** re-enables a disabled plugin before opening the desktop.
 The mini and desktop animate together. The Rust engine remains at v8.9.1.
+
+To regenerate the live gallery on an Omarchy development machine, play music and run:
+
+```bash
+cmake -S renderer -B renderer/build -DOMAVIZ_RENDER_PROBE=ON -DCMAKE_BUILD_TYPE=Release
+cmake --build renderer/build --parallel 2
+python3 tools/capture-preview.py
+python3 tools/render-preview.py
+```
+
+`capture-preview.py` opens only bounded native capture surfaces and never writes
+user settings. It requires live PipeWire input and refuses silent/synthetic captures.
+Mini and Settings must be refreshed from the installed desktop with `grim`; keep
+surrounding applications out of those crops and update their capture-manifest entries.

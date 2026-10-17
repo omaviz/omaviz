@@ -36,7 +36,11 @@ Window {
       win.setDesktopActive(true)
     }
   }
-  ArtworkColors { id: coverPalette; player: media.player; active: win.vizConfig.artworkColors === true && Store.supportsArtwork(win.vizConfig.visual) }
+  ArtworkColors {
+    id: coverPalette; player: media.player
+    active: win.vizConfig.artworkColors === true && Store.supportsArtwork(win.vizConfig.visual)
+    imageActive: win.hasArt || trayBox.shown
+  }
   readonly property bool immersiveArt: win.vizConfig.visual === "Bars" && win.vizConfig.artworkColors === true && coverPalette.colors.length >= 3
   MediaSession { id: media }
   readonly property var activePlayer: media.player
@@ -106,13 +110,13 @@ Window {
         anchors.fill: parent
         // Unload the entire cached blur whenever the selected mode does not
         // support artwork; no frozen image can survive a mode transition.
-        active: win.hasArt && Store.supportsArtwork(win.vizConfig.visual)
+        active: win.hasArt && coverPalette.imageSource.toString() !== "" && Store.supportsArtwork(win.vizConfig.visual)
         sourceComponent: Component {
           Item {
             Image {
               id: artSource
               anchors.fill: parent
-              source: win.trackArt
+              source: coverPalette.imageSource
               sourceSize.width: 160; sourceSize.height: 160
               fillMode: Image.PreserveAspectCrop
               visible: false
@@ -264,6 +268,7 @@ Window {
     anchors.bottomMargin: 12
     width: Math.min(480, parent.width - 24)
     player: media.player
+    artworkSource: coverPalette.imageSource
     fallbackTitle: win.modeName
     status: bridge.status
     creditText: win.vizConfig.visual === "Cosmos" ? 'Milky Way: <a href="https://www.eso.org/public/images/eso0932a/">ESO/S. Brunier</a><br/><a href="https://creativecommons.org/licenses/by/4.0/">CC BY 4.0</a> · adapted panorama' : ""
