@@ -2,8 +2,10 @@
 #include <QQuickView>
 #include <QQmlEngine>
 #include <QQuickItem>
+#include <QVariantMap>
 #include <QTest>
 #include <cstdio>
+#include <cmath>
 int main(int argc,char **argv) {
  QGuiApplication app(argc,argv); QQuickView view;
  view.engine()->addImportPath(QString::fromLocal8Bit(argv[1]));
@@ -16,6 +18,21 @@ int main(int argc,char **argv) {
  QQuickItem *scroll=nullptr;
  for(auto item:root->findChildren<QQuickItem*>()) if(item->inherits("QQuickFlickable")) { scroll=item; break; }
  if(!scroll || scroll->height()>720 || scroll->height()<100) return 3;
+ auto shuffle=root->findChild<QQuickItem*>("shuffleToggle");
+ if(!shuffle || shuffle->property("checked").toBool()) return 8;
+ auto heading=root->findChild<QQuickItem*>("previewLabel");
+ auto header=root->findChild<QQuickItem*>("previewHeader");
+ if(!heading || !header || header->height()>36) return 11;
+ const auto left=heading->mapRectToScene(heading->boundingRect());
+ const auto right=shuffle->mapRectToScene(shuffle->boundingRect());
+ if(left.right()>=right.left() || std::abs(left.center().y()-right.center().y())>1) return 12;
+
+ shuffle->forceActiveFocus(); QTest::keyClick(&view,Qt::Key_Space); QTest::qWait(50);
+ if(!host->property("config").toMap().value("shuffle").toBool()) return 9;
+ QMetaObject::invokeMethod(shuffle,"toggled"); QTest::qWait(50);
+ if(host->property("config").toMap().value("shuffle").toBool()) return 10;
+ puts("PASS: shuffle control supports keyboard and pointer actions through the settings writer");
+
  panel->setProperty("showAdvanced",true); QTest::qWait(100);
  if(scroll->property("contentHeight").toDouble()<=scroll->height()) return 4;
  scroll->setProperty("contentY",scroll->property("contentHeight").toDouble()-scroll->height());

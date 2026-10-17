@@ -1,3 +1,15 @@
+## 8.10.0 — Immersive visuals, track shuffle, and desktop controls
+
+- Add Cosmos with dense parallax stars, a credited real Milky Way panorama, and distant moving galaxies. Preserve natural star colors while allowing palette tinting of the diffuse galactic core; use transparent circular star halos.
+- Add a segmented concrete Tunnel and a sparse music-driven Spiral. Smooth Tunnel steering, reduce camera wobble, and increase broad turns with music intensity.
+- Shape Pixel Wave from the music waveform and spectrum with a receding, fading tail; improve Bokeh music response without changing the audio engine.
+- Render Spectrum Spikes as rising procedural flames with turbulence, curling tips, transparent edges, and hot cores; preserve palettes, monochrome, reflection, and silence settling.
+- Add track-change Shuffle in the compact preview header, with mode-appropriate random looks and gentle fades. Keep saved visualizations and looks intact and restore them when Shuffle is disabled.
+- Center the desktop artwork panel, place track/artist/album details beside the poster, move actions to the top right, and fade after 30 seconds of mouse inactivity. Keep image credits below actions and full metadata in tooltips.
+- Resume both mini and desktop after launching a disabled plugin, preserve simultaneous surfaces, and clear cached artwork when deselected.
+- Reject unowned installer payload collisions before replacing files, retain engine recovery backoff for invalid spectrum streams, and remove the obsolete redesign mockup.
+- Expand native/QML, shuffle, palette, artwork, flame, and motion regression coverage. Ship the updated native renderer with its source stamp; keep Rust source and the bundled engine identical to v8.9.1.
+
 ## 8.9.1 — GPU particle and radial visualizations
 
 - Add Bokeh, Pixel Wave, and Orbit under Particles and Radial, available in the bar, settings preview, and desktop window.

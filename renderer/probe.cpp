@@ -55,6 +55,7 @@ int main(int argc,char **argv) {
                 }
                 if(obj.contains("wave")) {
                     view.rootObject()->setProperty("inputWave",obj["wave"].toArray().toVariantList());
+                    if(obj.contains("wave_rms")) view.rootObject()->setProperty("inputWaveRms",obj["wave_rms"].toDouble());
                     if(obj.contains("wave_serial")) view.rootObject()->setProperty("inputWaveSerial",obj["wave_serial"].toInt());
                 }
             }

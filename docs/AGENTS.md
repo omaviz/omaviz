@@ -29,8 +29,9 @@ rule below cost a debugging session.
 3. **`FileView.setText` is async** — never write-then-quit instantly
    (Desktop delays `Qt.quit()` 300ms); never two `setText`s off one base
    text (use `writeVizOptions` multi-key single write).
-4. **Mini visibility = `desktopLive`** (shared `desktop.active` flag in desktop-state.toml +
-   2s heartbeat lease (6s expiry)). Do NOT gate on process state, do NOT clear the
+4. **Mini stays active beside Desktop** (user requested simultaneous surfaces).
+   `desktopLive` only tracks the popout, using `desktop.active` in desktop-state.toml +
+   a 2s heartbeat lease (6s expiry). Do NOT gate on process state, do NOT clear the
    flag from the bar based on `detachProc` (fights launcher-opened windows).
 5. **One renderer**: `VisualCanvas.qml` owns the shared API/physics; `renderer/geometry.cpp` owns
    shared native GPU drawing. Never add

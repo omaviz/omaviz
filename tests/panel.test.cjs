@@ -3,6 +3,20 @@ const {test} = require('node:test');
 const assert = require('node:assert/strict');
 const Store = require('./helpers.cjs').load('ModelStore.js');
 
+test('renamed radial modes retain saved identities and independent looks', () => {
+ assert.equal(Store.visualLabel('Tunnel'),'Spiral');
+ assert.equal(Store.visualLabel('SolidTunnel'),'Tunnel');
+ assert.equal(Store.visualLabel('PixelWave'),'Pixel Wave');
+ assert.deepEqual(Array.from(Store.groupOptions('radial'),o=>o.label),['Orbit','Spiral','Tunnel']);
+ let text=Store.selectVisual(Store.toTOML(Store.defaultConfig()),'Tunnel');
+ text=Store.patchSettings(text,'desktop',{color_mode:'Custom',bar_color_from:'#123abc'});
+ text=Store.selectVisual(text,'SolidTunnel');
+ text=Store.patchSettings(text,'desktop',{color_mode:'Theme'});
+ text=Store.selectVisual(text,'Tunnel');
+ assert.equal(Store.readConfigFromText(text).barColorFrom,'#123abc');
+ assert.equal(Store.readConfigFromText(text).colorMode,'Custom');
+});
+
 test('switching families restores the previous visual and its complete look', () => {
  let text=Store.toTOML(Store.defaultConfig());
  text=Store.patchSettings(text,'desktop',{geometry:'Stacks',color_mode:'Flame',peak_falloff:0.8});
@@ -63,17 +77,18 @@ test('particle and radial categories remember independent palettes and response'
 
 test('new particle and radial looks default to Original and preserve explicit theme choices', () => {
  let text=Store.toTOML(Store.defaultConfig());
- for (const mode of ['Orbit','PixelWave','Bokeh']) {
+ for (const mode of ['Orbit','PixelWave','Bokeh','Tunnel','SolidTunnel','Cosmos']) {
    text=Store.selectVisual(text,mode);
    assert.equal(Store.readConfigFromText(text).colorMode,'Original');
    text=Store.patchSettings(text,'desktop',{color_mode:'Theme'});
  }
- for (const mode of ['Orbit','PixelWave','Bokeh']) {
+ for (const mode of ['Orbit','PixelWave','Bokeh','Tunnel','SolidTunnel','Cosmos']) {
    text=Store.selectVisual(text,mode);
    assert.equal(Store.readConfigFromText(text).colorMode,'Theme');
  }
+ text=Store.selectVisual(text,'Tunnel');
  text=Store.patchSettings(text,'desktop',{color_mode:'Original'});
- text=Store.selectVisual(text,'Bars');text=Store.selectVisual(text,'Bokeh');
+ text=Store.selectVisual(text,'Bars');text=Store.selectVisual(text,'Tunnel');
  assert.equal(Store.readConfigFromText(text).colorMode,'Original');
  assert.equal(Store.readConfigFromText(Store.toTOML(Store.readConfigFromText(text))).colorMode,'Original');
 });

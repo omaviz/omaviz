@@ -2,6 +2,7 @@
 from pathlib import Path
 import sys
 import shutil
+import re
 repo=Path(__file__).resolve().parents[2]
 out=Path(sys.argv[1]); out.mkdir(parents=True,exist_ok=True)
 commons=out/'qs'/'Commons'; commons.mkdir(parents=True,exist_ok=True)
@@ -38,6 +39,9 @@ shutil.copy2(repo/'ChoiceGroup.qml',out/'ChoiceGroup.qml')
 media=(repo/'MediaSession.qml').read_text().replace('import Quickshell.Services.Mpris','').replace('Mpris.players ? Mpris.players.values : []','[]')
 (out/'MediaSession.qml').write_text(media)
 desktop=(repo/'Desktop.qml').read_text()
+# Exercise the shipped action rather than duplicating its palette logic.
+color_action=re.search(r'^  function setColorMode\(.*?^  }',
+                       (repo/'BarWidget.qml').read_text(),re.M|re.S).group(0).replace('root.','win.')
 hover=desktop[desktop.index('  // Keyboard access'):desktop.index('  Column {',desktop.index('  // Keyboard access'))]
 controls=desktop[desktop.index('  TransportPanel {'):desktop.index('  Settings {')].replace('id: trayBox','id: trayBox; objectName:"tray"')
 start=desktop.index('      Loader {', desktop.index('// One active instance'))
@@ -63,7 +67,8 @@ Rectangle {
    property bool canGoPrevious:true
    property bool canGoNext:true
    property bool isPlaying:true
-   property string trackTitle:"Kind of Blue"
+   property string trackTitle:"Blue in Green"
+   property string trackAlbum:"Kind of Blue (Legacy Edition)"
    property string trackArtist:"Miles Davis"
    property string trackArtUrl: win.trackArt
    property string identity:"Test player"
@@ -90,6 +95,16 @@ Rectangle {
  property string modeName:"Omaviz"
  function setDesktopActive(v) { closed=!v }
  Timer { id:closeTimer }
+"""+color_action+"""
+ property string configText: ""
+ function selectTestVisual(mode) {
+   configText=Store.selectVisual(configText,mode)
+   vizConfig=Store.readConfigFromText(configText)
+ }
+ function writeVizMap(options) {
+   configText=Store.patchSettings(configText,"desktop",options)
+   vizConfig=Store.readConfigFromText(configText)
+ }
 """+backdrop+viewport+hover+controls+'}')
 
 # Load the full production panel, with shell-only hosting and rendering stubbed.
@@ -101,7 +116,7 @@ ui_types={
 'PanelSectionHeader': 'Text { color:"#a6afbe"; font.pixelSize:11 }',
 'PanelSeparator': 'Rectangle { width:parent.width; height:1; color:"#30333a" }',
 'BorderSurface': 'Rectangle { property var borderSpec; color:"#171b22"; radius:6 }',
-'ToggleSwitch': 'Item { property bool hasCursor:false; property bool cursorRing:false; property color foreground:"white"; property color accent:"blue"; property bool checked:false; signal toggled(); implicitWidth:42; implicitHeight:24; Rectangle { anchors.fill:parent; radius:12; color:parent.checked?"#6095b8":"#303844" } }',
+'ToggleSwitch': 'Item { property int trackHeight:22; property int cursorPad:6; property bool hasCursor:false; property bool cursorRing:false; property color foreground:"white"; property color accent:"blue"; property bool checked:false; signal toggled(); implicitWidth:42; implicitHeight:24; Rectangle { anchors.fill:parent; radius:12; color:parent.checked?"#6095b8":"#303844" } }',
 'Toggle': 'Item { property bool hasCursor:false; property color foreground:"white"; property color accent:"blue"; property string label:""; property string description:""; property bool checked:false; signal clicked(); implicitHeight:44; Text {text:parent.label;color:"white"} MouseArea {anchors.fill:parent;onClicked:parent.clicked()} }'
 }
 for name,body in ui_types.items(): (ui/(name+'.qml')).write_text('import QtQuick\n'+body)
@@ -139,6 +154,7 @@ Rectangle {
   property real barGap:1
   function writeVizOption(k,v){var values={};values[k]=v;document=Store.patchSettings(document,"desktop",values)}
   function writeVizOptions(k,v,k2,v2){var values={};values[k]=v;values[k2]=v2;document=Store.patchSettings(document,"desktop",values)}
+  function setShuffle(v){document=Store.setShuffle(document,v)}
   function selectGroup(g){document=Store.selectGroup(document,g)}
   function selectVisual(v){document=Store.selectVisual(document,v)}
  }

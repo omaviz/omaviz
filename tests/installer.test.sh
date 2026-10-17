@@ -58,6 +58,7 @@ check "marker written"                  "[ -f \"$(PD)/.omaviz-managed\" ]"
 check "native import resolves on disk" "grep -q 'import \"file:.*/native\" as Native' \"$(PD)/VisualCanvas.qml\""
 check "generated QML stays managed" "grep -Fxq 'VisualCanvas.qml' \"$(PD)/.omaviz-managed\""
 check "bundled engine installed + exec" "[ -x \"$(PD)/bin/omaviz-engine\" ]"
+check "launcher resumes through Launch.qml" "grep -q '^Exec=quickshell -n -p .*/Launch.qml$' \"$(LAUNCHER)\""
 check "our launcher installed"          "[ -f \"$(LAUNCHER)\" ]"
 # A `.git` FILE (worktree/submodule) is not matched by the '/.git/' directory
 # pattern, so it used to be copied into the plugin dir. Nothing dev-only may
@@ -356,6 +357,31 @@ run_uninstall
 check "uninstall exits 0"                      "[ $? -eq 0 ]"
 check "the symlink target survived"            "[ -f \"$HOME/target\" ]"
 check "its contents are untouched"             "grep -q outside \"$HOME/target\""
+
+# Incoming names cannot silently take ownership of unrelated existing files.
+step "unowned payload collisions fail before any managed file is removed"
+new_home 40
+run_install
+sed -i '/^Panel.qml$/d' "$(PD)/.omaviz-managed"
+printf 'user panel\n' >"$(PD)/Panel.qml"
+cp "$(PD)/manifest.json" "$HOME/manifest-before"
+run_install
+check "unowned file collision is refused" "[ $? -ne 0 ]"
+check "unowned file preserved" "grep -qx 'user panel' \"$(PD)/Panel.qml\""
+check "managed files preserved on refusal" "cmp -s \"$(PD)/manifest.json\" \"$HOME/manifest-before\""
+run_install --force
+check "force collision install succeeds" "[ $? -eq 0 ]"
+check "force preserves colliding file in backup" "grep -qx 'user panel' \"$(PD)\".bak-*/Panel.qml"
+
+step "directory occupying an incoming file is preserved"
+new_home 41
+run_install
+rm "$(PD)/Panel.qml"
+mkdir "$(PD)/Panel.qml"
+printf 'keep\n' >"$(PD)/Panel.qml/notes"
+run_install
+check "directory collision refused" "[ $? -ne 0 ]"
+check "directory contents preserved" "grep -qx keep \"$(PD)/Panel.qml/notes\""
 
 # ================================================================ summary
 printf '\n\033[1m== installer/uninstaller safety ==\033[0m\n'

@@ -26,6 +26,54 @@ int main(int argc,char **argv) {
  const auto bounds=close->mapRectToScene(close->boundingRect());
  if(bounds.right()>view.width() || bounds.bottom()>view.height()) return 7;
  puts("PASS: desktop actions fit at minimum size");
+ if(root->property("transportIdleMs").toInt()!=30000) return 41;
+ root->setProperty("transportIdleMs",300);
+ QTest::mouseMove(&view,{100,20}); QTest::qWait(180);
+ if(!tray->property("shown").toBool()) return 42;
+ QTest::mouseMove(&view,{110,25}); QTest::qWait(180);
+ if(!tray->property("shown").toBool()) return 43;
+ QTest::qWait(350);
+ if(tray->property("shown").toBool() || tray->opacity()>.01) {
+  auto idle=root->findChild<QObject*>("transportIdleTimer");
+  fprintf(stderr,"idle shown=%d opacity=%f interval=%d running=%d\n",tray->property("shown").toBool(),tray->opacity(),idle?idle->property("interval").toInt():-1,idle?idle->property("running").toBool():false); return 44;
+ }
+ QTest::mouseMove(&view,{120,25}); QTest::qWait(220);
+ if(!tray->property("shown").toBool()) return 45;
+ root->setProperty("transportIdleMs",30000);
+ QMetaObject::invokeMethod(root,"revealTransport");
+ puts("PASS: mouse movement resets the 30-second idle deadline; stationary hover fades out and moving reveals it again");
+
+ auto credit=root->findChild<QQuickItem*>("visualizationCredit");
+ auto actions=root->findChild<QQuickItem*>("transportActions");
+ auto details=root->findChild<QQuickItem*>("transportDetails");
+ auto controls=root->findChild<QQuickItem*>("transportControls");
+ auto poster=root->findChild<QQuickItem*>("transportPoster");
+ auto metadata=root->findChild<QQuickItem*>("transportMetadata");
+ auto title=root->findChild<QQuickItem*>("transportTitle");
+ auto album=root->findChild<QQuickItem*>("transportAlbum");
+ if(!credit || !actions || !details || !controls || !title || !album || !poster || !metadata) return 34;
+ root->setProperty("vizConfig",QVariantMap{{"visual","Cosmos"},{"enabled",true}});
+ for(const auto &size: {QSize(320,160),QSize(600,200),QSize(1200,700)}) {
+  view.resize(size); QTest::qWait(60);
+  const auto card=tray->mapRectToScene(tray->boundingRect());
+  if(tray->width()>480 || std::abs(card.center().x()-view.width()/2.0)>.1 ||
+     std::abs(card.bottom()-(view.height()-12))>.1 || card.top()<0 || card.left()<0) return 35;
+  if(tray->property("radius").toDouble()!=0 || close->property("radius").toDouble()!=0) return 36;
+  if(!credit->isVisible() || credit->y()<actions->y()+actions->height() ||
+     credit->y()+credit->height()>controls->height()) return 37;
+  const auto meta=metadata->mapRectToScene(metadata->boundingRect());
+  const auto art=poster->mapRectToScene(poster->boundingRect());
+  const auto buttons=actions->mapRectToScene(actions->boundingRect());
+  if(meta.left()<=art.right() || std::abs(meta.top()-art.top())>.1 || meta.intersects(buttons) ||
+     std::abs(buttons.top()-(card.top()+12))>.1 || std::abs(buttons.right()-(card.right()-12))>.1) return 39;
+  if(!album->isVisible() || album->property("text").toString()!="Kind of Blue (Legacy Edition)" ||
+     title->property("maximumLineCount").toInt()!=(tray->width()<440?1:2) || metadata->width()<200) return 40;
+ }
+ view.grabWindow().save(QString::fromLocal8Bit(argv[1])+"/transport-cosmos.png");
+ root->setProperty("vizConfig",QVariantMap{{"visual","Bokeh"},{"enabled",true}}); QTest::qWait(50);
+ if(credit->isVisible()) return 38;
+ puts("PASS: square transport stays bottom-center, aligns metadata beside artwork and actions top-right, and fits album names and credits at minimum, normal and large sizes");
+ view.resize(320,160); QTest::qWait(50);
  QTest::mouseMove(&view,{-20,-20}); tray->setProperty("shown",false); QTest::qWait(250);
  view.requestActivate(); QTest::qWait(50); QTest::keyClick(&view,Qt::Key_Tab); QTest::qWait(250);
  if(!tray->property("shown").toBool() || !playback->hasActiveFocus()) { fprintf(stderr,"keyboard tray=%d focus=%d activeWindow=%d\n",tray->property("shown").toBool(),playback->hasActiveFocus(),view.isActive()); return 8; }
@@ -58,7 +106,7 @@ int main(int argc,char **argv) {
  auto viewport=root->findChild<QQuickItem*>("viewport");
  auto artwork=root->findChild<QQuickItem*>("artworkBackdrop");
  if(!viewport || !artwork) return 12;
- for(const auto &mode: {"Waves","Strings","Siri","Bars","Orbit","PixelWave","Bokeh"}) {
+ for(const auto &mode: {"Waves","Strings","Siri","Bars","Orbit","PixelWave","Bokeh","Tunnel","SolidTunnel","Cosmos"}) {
   root->setProperty("vizConfig",QVariantMap{{"visual",mode},{"enabled",true}});
   for(const auto &size: {QSize(600,200),QSize(1200,180),QSize(360,600),QSize(320,160)}) {
    view.resize(size); QTest::qWait(25);
@@ -68,7 +116,7 @@ int main(int argc,char **argv) {
    if(!fitted &&
       (std::abs(viewport->width()-(view.width()-8))>0.001 ||
        std::abs(viewport->height()-(view.height()-8))>0.001)) return 15;
-   if(artwork->property("active").toBool() != (QString(mode)=="Bars" || QString(mode)=="Orbit" || QString(mode)=="PixelWave" || QString(mode)=="Bokeh")) return 16;
+   if(artwork->property("active").toBool() != (QString(mode)=="Bars" || QString(mode)=="Orbit" || QString(mode)=="PixelWave" || QString(mode)=="Bokeh" || QString(mode)=="Tunnel" || QString(mode)=="SolidTunnel" || QString(mode)=="Cosmos")) return 16;
   }
  }
  puts("PASS: Siri/Waves preserve 3:1 and Strings/Bars/particle/radial modes fill the desktop at normal, wide, tall, and minimum sizes");
@@ -86,11 +134,33 @@ int main(int argc,char **argv) {
  QTest::qWait(100);
  if(artwork->property("active").toBool() || artwork->property("item").value<QObject*>()!=nullptr) return 18;
  puts("PASS: leaving artwork spectrum unloads the cached backdrop");
- for(const auto &mode: {"Orbit","PixelWave","Bokeh"}) {
+ for(const auto &mode: {"Bars","Orbit","PixelWave","Bokeh","Tunnel","SolidTunnel","Cosmos"}) {
   root->setProperty("vizConfig",QVariantMap{{"visual",mode},{"artwork",true},{"enabled",true}}); QTest::qWait(50);
   if(!artwork->property("active").toBool() || artwork->property("item").value<QObject*>()==nullptr) return 21;
   root->setProperty("vizConfig",QVariantMap{{"visual",mode},{"artwork",false},{"enabled",true}}); QTest::qWait(50);
   if(artwork->property("active").toBool() || artwork->property("item").value<QObject*>()!=nullptr) return 22;
  }
  puts("PASS: particle/radial artwork backdrops load and fully unload on demand");
+ // Drive the production palette action and store, then inspect the real Loader.
+ for(const auto &mode: {"Bars","Orbit","PixelWave","Bokeh","Tunnel","SolidTunnel","Cosmos"}) {
+  QMetaObject::invokeMethod(root,"selectTestVisual",Q_ARG(QVariant,QString(mode)));
+  for(const auto &palette: {"Theme","Custom","Original","Flame"}) {
+   if(QString(palette)=="Flame" && QString(mode)!="Bars") continue;
+   if(QString(palette)=="Original" && QString(mode)=="Bars") continue;
+   QMetaObject::invokeMethod(root,"setColorMode",Q_ARG(QVariant,QString("Artwork")));
+   QTest::qWait(60);
+   if(!artwork->property("active").toBool() || !artwork->property("item").value<QObject*>()) return 30;
+   QMetaObject::invokeMethod(root,"setColorMode",Q_ARG(QVariant,QString(palette)));
+   QTest::qWait(60);
+   if(artwork->property("active").toBool() || artwork->property("item").value<QObject*>()) return 31;
+   const auto config=root->property("vizConfig").toMap();
+   if(config.value("visual").toString()!=mode || config.value("colorMode").toString()!=palette ||
+      config.value("artwork").toBool() || config.value("artworkColors").toBool()) return 32;
+   QMetaObject::invokeMethod(root,"selectTestVisual",Q_ARG(QVariant,QString("Waves")));
+   QMetaObject::invokeMethod(root,"selectTestVisual",Q_ARG(QVariant,QString(mode)));
+   QTest::qWait(30);
+   if(artwork->property("active").toBool() || root->property("vizConfig").toMap().value("artwork").toBool()) return 33;
+  }
+ }
+ puts("PASS: actual Artwork palette action clears the cached desktop background and stays cleared after mode round-trip");
 }

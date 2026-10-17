@@ -14,3 +14,7 @@ run("bash", ["tests/renderer-visual.sh", path.join(root, "renderer/build/omaviz-
   ...process.env, QT_QPA_PLATFORM: "offscreen", QT_QPA_PLATFORMTHEME: "basic",
   QT_QUICK_BACKEND: "rhi", QSG_RHI_BACKEND: "opengl",
 });
+run(process.execPath, ["tests/artwork-backdrop.cjs", path.join(root, "renderer/build/omaviz-render-probe")]);
+run(process.execPath, ["tests/pixel-music.cjs", path.join(root, "renderer/build/omaviz-render-probe")]);
+run(process.execPath, ["tests/cosmos-palette.cjs", path.join(root, "renderer/build/omaviz-render-probe")]);
+run(process.execPath, ["tests/flames.cjs", path.join(root, "renderer/build/omaviz-render-probe")]);

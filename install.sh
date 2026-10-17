@@ -238,6 +238,39 @@ validate_marker "$PLUGIN_DIR/$MARKER" || {
   echo "refusing to touch $PLUGIN_DIR: invalid marker" >&2
   exit 1
 }
+# Check the complete incoming payload before removing any managed file. A
+# matching destination name is not proof of ownership (including directories
+# where an incoming file belongs). --force preserves the whole old tree.
+if ! python3 - "$SRC" "$PLUGIN_DIR" "$MARKER" <<'PY'
+from pathlib import Path
+import sys
+src, dest = map(Path, sys.argv[1:3])
+marker = dest / sys.argv[3]
+owned = set(marker.read_text().splitlines()) if marker.exists() else set()
+files = [src / "manifest.json"]
+for pattern in ("*.qml", "*.js", "*.frag", "*.qsb"):
+    files.extend(src.glob(pattern))
+for directory in ("assets", "bin", "native"):
+    files.extend(p for p in (src / directory).rglob("*") if p.is_file())
+for source in files:
+    rel = source.relative_to(src)
+    target = dest / rel
+    for parent in rel.parents:
+        path = dest / parent
+        if path.exists() and not path.is_dir():
+            sys.exit(f"refusing payload directory collision: {path}")
+    if target.exists() and (not target.is_file() or rel.as_posix() not in owned):
+        sys.exit(f"refusing to overwrite unowned payload path: {target}")
+PY
+then
+  if [ "$DO_FORCE" = 1 ]; then
+    backup "$PLUGIN_DIR"
+    mkdir -p "$PLUGIN_DIR"
+  else
+    echo "Re-run with --force to back up the directory before replacing it." >&2
+    exit 1
+  fi
+fi
 # Remove only files WE shipped in a previous run (listed in the marker) — never
 # foreign files a user may have dropped into the plugin dir — then prune the
 # directories that emptied out. Both steps are non-recursive.
@@ -283,9 +316,8 @@ PY
 say "plugin -> $PLUGIN_DIR"
 
 # ---------------------------------------------------------------- launcher
-# App-launcher entry: opens the desktop window directly (quickshell -p).
-# Desktop.qml self-claims config desktop.active on open, so the mini hides
-# no matter which path launched it. Replaces any stale `omaviz start` entry
+# App-launcher entry: resumes the plugin and opens the desktop window.
+# Launch.qml saves enabled=true before enabling the bar plugin. Replaces stale entries
 # that pointed at a CLI that no longer exists.
 #
 # Ownership rules:
@@ -310,7 +342,7 @@ fi
   # delimiter or an '&' cannot corrupt the entry.
   while IFS= read -r l; do
     case "$l" in
-      Exec=*) printf 'Exec=quickshell -p %s/Desktop.qml\n' "$PLUGIN_DIR" ;;
+      Exec=*) printf 'Exec=quickshell -n -p %s/Launch.qml\n' "$PLUGIN_DIR" ;;
       *)      printf '%s\n' "$l" ;;
     esac
   done < "$SRC/assets/omaviz.desktop"

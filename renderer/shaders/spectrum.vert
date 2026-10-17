@@ -3,6 +3,7 @@ layout(location=0) in vec2 position;
 layout(location=1) in vec4 shape; // band, kind, bottom edge, palette section
 layout(location=2) in float row;
 layout(location=0) out vec4 vertexColor;
+layout(location=1) out vec2 flameUv;
 layout(std140,binding=0) uniform buf {
     mat4 matrix;
     vec4 metrics; // opacity, width, height, pixel
@@ -13,6 +14,7 @@ layout(std140,binding=0) uniform buf {
     vec4 topColor;
     vec4 capColor;
     vec4 reflectionColor;
+    vec4 flameInfo; // time, band count, monochrome, light monochrome
     vec4 bands[512];
 } u;
 vec4 palette(float t,float opacity) {
@@ -27,6 +29,12 @@ vec4 palette(float t,float opacity) {
     return vec4(floor((c8.rgb*c8.a+127.0)/255.0),c8.a)/255.0;
 }
 void main() {
+    flameUv=position/u.metrics.yz;
+    if(u.flags.w>=0.0) {
+        gl_Position=u.matrix*vec4(position,0,1);
+        vertexColor=vec4(0);
+        return;
+    }
     int i=int(shape.x);vec4 pair=u.bands[i/2];
     vec2 values=(i%2==0)?pair.xy:pair.zw;
     float area=u.geometry.x,base=u.geometry.y,pixel=u.metrics.w;

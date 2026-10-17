@@ -65,6 +65,7 @@ Panel {
   // object property is not observable, and sharedConfig lagged the real
   // config — so the switch showed a stale value until something else forced
   // a re-evaluation. hcfg is a fresh object per config load, so this updates.
+  readonly property var displayCfg: root.hostWidget && root.hostWidget.displayConfig ? root.hostWidget.displayConfig : root.hcfg
   readonly property bool vizEnabled: root.hcfg ? (root.hcfg.enabled !== false) : true
   function setVizEnabled(v) {
     // Do NOT assign vizEnabled imperatively — that would break the reactive
@@ -281,9 +282,45 @@ Panel {
       // ============================================================
       //  PREVIEW — live canvas
       // ============================================================
-      PanelSectionHeader { text: "PREVIEW" }
+      Item {
+        objectName: "previewHeader"
+        width: parent.width
+        height: Math.max(previewLabel.implicitHeight, shuffleControls.implicitHeight)
+        PanelSectionHeader {
+          id: previewLabel; objectName: "previewLabel"
+          anchors.left: parent.left; anchors.verticalCenter: parent.verticalCenter
+          text: "PREVIEW"
+        }
+        Row {
+          id: shuffleControls
+          anchors.right: parent.right; anchors.verticalCenter: parent.verticalCenter
+          spacing: Style.space(8)
+          Text {
+            anchors.verticalCenter: parent.verticalCenter
+            text: "Shuffle"
+            color: root.fgMuted; font.family: Style.font.family; font.pixelSize: Style.font.caption
+          }
+          ToggleSwitch {
+            objectName: "shuffleToggle"
+            trackHeight: 16; cursorPad: 4
+            checked: root.hcfg.shuffle === true
+            foreground: root.fg; accent: Color.accent
+            hasCursor: activeFocus
+            activeFocusOnTab: true
+            onActiveFocusChanged: root.revealControl(this)
+            Accessible.role: Accessible.CheckBox
+            Accessible.name: "Shuffle on track change"
+            Accessible.checked: checked
+            Accessible.onToggleAction: toggled()
+            Keys.onSpacePressed: toggled()
+            Keys.onReturnPressed: toggled()
+            onToggled: if (root.hostWidget) root.hostWidget.setShuffle(!checked)
+          }
+        }
+      }
 
       Rectangle {
+        opacity: root.hostWidget && root.hostWidget.visualOpacity !== undefined ? root.hostWidget.visualOpacity : 1
         width: parent.width
         height: Style.space(132)
         color: "#000000"
@@ -294,7 +331,7 @@ Panel {
         DotsCanvas {
           anchors.fill: parent
           anchors.margins: Style.space(6)
-          visible: root.hcfg.dots !== false && !root.isDecorative
+          visible: root.displayCfg.dots !== false && !(root.displayCfg.visual === "Siri" || root.displayCfg.visual === "Strings" || Store.isAmbient(root.displayCfg.visual))
         }
         VisualCanvas {
           id: previewViz
@@ -307,35 +344,35 @@ Panel {
           wave: root.hostWidget ? root.hostWidget.spectrumWave : []
           waveSerial: root.hostWidget ? root.hostWidget.spectrumWaveSerial : 0
           bandLayout: root.hostWidget ? root.hostWidget.spectrumBandLayout : ""
-          visual: root.hcfg.visual || "Bars"
+          visual: root.displayCfg.visual || "Bars"
           wash: false
-          reflect: root.hcfg.reflect === true
-          scopeLineWidth: (root.hcfg.scopeThickness ?? 2)
-          siriClassic: root.hcfg.siriClassic === true
-          siriTravel: root.hcfg.siriTravel === true
-          colorSync: root.hcfg.colorSync !== false
+          reflect: root.displayCfg.reflect === true
+          scopeLineWidth: (root.displayCfg.scopeThickness ?? 2)
+          siriClassic: root.displayCfg.siriClassic === true
+          siriTravel: root.displayCfg.siriTravel === true
+          colorSync: root.displayCfg.colorSync !== false
           barCount: 64
           gapPx: root.hostWidget ? Math.min(6, Math.max(0, root.hostWidget.barGap)) : 1
-          peaks: root.peaksOn
-          peakFalloff: (root.hcfg.peakFalloff ?? 0.1)
-          peakSustainMs: (root.hcfg.peakSustainMs ?? 100)
-          linearFall: root.hcfg.linearFall !== false
+          peaks: (root.displayCfg.peaks !== false)
+          peakFalloff: (root.displayCfg.peakFalloff ?? 0.1)
+          peakSustainMs: (root.displayCfg.peakSustainMs ?? 100)
+          linearFall: root.displayCfg.linearFall !== false
           noiseFloor: 0.02
-          spikes: root.spikesOn
-          fire: root.fireOn
-          fireColorFrom: root.hcfg.fireColorFrom || "#be1400"
-          fireColorTo: root.hcfg.fireColorTo || "#fde047"
-          stacks: root.stacksOn
-          sensitivity: (root.hcfg.sensitivity ?? 1.0)
-          originalColors: root.hcfg.colorMode === "Original"
-          artworkColors: root.artworkOn
+          spikes: (root.displayCfg.spikes === true)
+          fire: (root.displayCfg.fire === true)
+          fireColorFrom: root.displayCfg.fireColorFrom || "#be1400"
+          fireColorTo: root.displayCfg.fireColorTo || "#fde047"
+          stacks: root.displayCfg.stacks === true
+          sensitivity: (root.displayCfg.sensitivity ?? 1.0)
+          originalColors: root.displayCfg.colorMode === "Original"
+          artworkColors: root.displayCfg.artworkColors === true
           artworkPalette: root.hostWidget ? root.hostWidget.artworkPalette : []
-          barColorCustom: root.customOn
-          barColorFrom: root.hcfg.barColorFrom || "#e68e0d"
-          barColorTo: root.hcfg.barColorTo || "#f59e0b"
-          barColorMiddle: root.hcfg.barColorMiddle || "#a855f7"
-          barColorMiddleEnabled: root.hcfg.barColorMiddleEnabled === true
-          gradientDir: root.gradDir
+          barColorCustom: root.displayCfg.barColorCustom === true
+          barColorFrom: root.displayCfg.barColorFrom || "#e68e0d"
+          barColorTo: root.displayCfg.barColorTo || "#f59e0b"
+          barColorMiddle: root.displayCfg.barColorMiddle || "#a855f7"
+          barColorMiddleEnabled: root.displayCfg.barColorMiddleEnabled === true
+          gradientDir: root.displayCfg.barGradientDir || "vertical"
           themeBottom: Qt.darker(Color.accent, 1.3)
           themeTop: Color.accent
         }

@@ -3,4 +3,4 @@
 #include <QVariantMap>
 #include <QVariantList>
 QSGNode *updateSpectrumNode(QSGNode *,const QVariantMap &,const QVariantList &,
-                            const QVariantList &,float,float,float);
+                            const QVariantList &,float,float,float,float);

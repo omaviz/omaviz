@@ -1,7 +1,7 @@
-# omaviz — Application Specification (v8.9.1)
+# omaviz — Application Specification (v8.10.0)
 
 > **Plugin id:** `org.omaviz.visualizer`
-> **Version:** 8.9.1 (spec + manifest, git tag)
+> **Version:** 8.10.0 (spec + manifest; release tag follows merge)
 > **Status:** Single-package Omarchy QML plugin. Audio analysis is bundled as
 > one native binary (`bin/omaviz-engine`) shipped **inside** the plugin
 > directory. No systemd service, no Unix socket, no `~/.local/bin` binaries.
@@ -150,7 +150,7 @@ The bar floor is unconditional (1px) — there is no `minBarHeight` setting.
 
 ## 5. Settings Panel (redesign)
 
-The panel uses an opaque theme background and Spectrum / Waveforms / Particles / Radial category choices. Waveforms contains Waves, Strings, and Siri; Particles contains Bokeh and Pixel Wave; Radial contains Orbit. Groups with fewer than five choices use direct buttons. Only relevant controls are shown.
+The panel uses an opaque theme background and Spectrum / Waveforms / Particles / Radial category choices. Waveforms contains Waves, Strings, and Siri; Particles contains Bokeh, Pixel Wave, and Cosmos; Radial contains Orbit, Spiral, and Tunnel. Groups with fewer than five choices use direct buttons. Only relevant controls are shown.
 
 - **LOOK** appears for Spectrum: geometry, peaks, and reflection.
 - **COLOR** offers Theme / Custom / Artwork / Flame for Spectrum and
@@ -245,21 +245,24 @@ gpu = true
 
 - **Single-click** the mini → settings panel; **single-click** the live
   preview inside the panel → detached desktop window (right-click removed)
-- Mini paused-state follows shared `desktop.active` + 2s heartbeat lease
-  in `desktop-state.toml` (6s expiry), separate from saved settings —
-  any launch path (bar, app launcher, `SUPER+V`) converges; close from any
-  path brings the mini back
+- Mini and desktop animate simultaneously. Shared `desktop.active` + a 2s
+  heartbeat lease in `desktop-state.toml` (6s expiry) tracks popout liveness.
+  The app launcher saves `enabled=true`, enables the plugin, and opens one
+  desktop instance; launching after Disable restores both surfaces.
 - Settings writes are serialized and remain optimistic until acknowledged.
   Explicit `stacks`/`artwork` settings override legacy aliases.
 - Desktop self-claims the flag on open; `onClosing` clears it with a flush
   delay then `Qt.quit()` (no zombie windowless processes)
 - Desktop window is 600×200; the visualization container is bottom-anchored
   and fills `max(100px, 95% of window height)`
-- No title bar: an inset 88px now-playing card fades in on hover, with 64px
-  artwork (independent of backdrop), source, title, artist, and close action.
+- No title bar: a compact now-playing card, at most 480px wide, fades in on pointer movement
+  at the bottom center. Track, artist, and album details sit beside the poster; square actions occupy the top-right corner. Narrow windows move the artwork/details row below the actions.
+  Track titles wrap to two lines on wide cards and elide on narrow cards; albums have their own line, and hovering over
+  the details exposes full metadata in a tooltip.
+  Cosmos image credits appear below the action buttons, inside the same panel.
   Play/pause appears only when the selected MPRIS player supports the current
   action. Actions have keyboard and accessibility support; the card fades
-  after leaving the window.
+  after 30 seconds without pointer activity, even while hovered. Moving again or pressing Tab reveals it; media actions restart the deadline.
 
 
 ---
@@ -318,7 +321,7 @@ binary targets Linux x86_64 and Qt 6.11+ public APIs. VisualCanvas.qml remains
 the only surface-facing rendering API; renderer/geometry.cpp implements its
 shared GPU drawing. The legacy `gpu` key does not switch rendering paths.
 
-`[desktop] visual = "Bars" | "Waves" | "Strings" | "Siri" | "Orbit" | "PixelWave" | "Bokeh"` selects the mode.
+`[desktop] visual = "Bars" | "Waves" | "Strings" | "Siri" | "Orbit" | "PixelWave" | "Bokeh" | "Tunnel" | "SolidTunnel" | "Cosmos"` selects the mode.
 When absent or invalid, legacy `scope = true` selects Waves, otherwise
 Bars. Explicit visual takes precedence. UI selection writes visual and the
 legacy scope flag atomically. All three waveform modes request the engine wave
@@ -416,7 +419,7 @@ between 600 and 1200px. Stack tiles leave one physical pixel of separation.
 The artwork blur is unloaded whenever leaving Bars, avoiding stale cached art.
 
 
-### Review corrections (unreleased)
+### Historical review corrections
 
 - Ingest each queued PCM chunk before rate-limited FFT analysis; do not reinsert
   old samples on heartbeat frames. Honor SPA valid-data offsets and stride.
@@ -452,7 +455,7 @@ Hex colors use bounded key-only entry, not Qt TextInput/TextEdit. Hidden or visi
 ## 8.9.0 — Particle and radial catalog additions
 
 The category selector includes Spectrum, Waveforms, Particles, and Radial.
-Particles offers Bokeh and Pixel Wave (`PixelWave` in configuration); Radial offers Orbit.
+Particles offers Bokeh, Pixel Wave (`PixelWave`), and Cosmos; Radial offers Orbit, Spiral (saved ID `Tunnel`), and Tunnel (saved ID `SolidTunnel`). Saved IDs and per-mode looks remain stable through the display-name changes.
 Each uses the existing category memory, per-visual look persistence, automatic saving,
 and Response control. Their color choices are Original, Theme, Custom, and Artwork; the mini
 also supports monochrome. Spectrum-only geometry, peak, flame, and dot-grid controls
@@ -492,16 +495,25 @@ Artwork. Fresh particle/radial looks default to Original with the existing cache
 artwork backdrop enabled; saved explicit looks remain intact. Original uses
 neutral silver for Pixel Wave, white/cool lens discs for Bokeh, and silver arcs
 with a warm inner accent for Orbit. Optional artwork backdrops reuse the existing
-cached blur Loader and unload completely when disabled or unsupported.
+cached blur Loader and unload completely when disabled or unsupported. Selecting
+a palette other than Artwork also clears the backdrop in the same settings write;
+the backdrop toggle can still be enabled independently afterward.
 
-Orbit groups outer arcs, articulates their lengths independently, and rotates
-faster with music. Bokeh distributes 64 discs through a rotating volume, mixing
-crisp and defocused discs with highlights rather than a sparse orbiting ring.
-Pixel Wave displays broad travelling contours with waveform modulation and
-closely receding delayed square rows, rather than isolated spectral lanes.
+Orbit sways its outer arc group while inner arcs articulate independently,
+with frequency-driven lengths and angular offsets. Bokeh distributes 64 discs
+through a drifting volume; PCM loudness expands the cloud, moves its focus plane,
+and changes highlights. Neither uses the old shared loudness-speed clock.
+Pixel Wave transports delayed square rows upward from a bright leading edge,
+shrinking and fading into depth. Spectral and waveform history advances every
+105ms with interpolation between updates. The contour is derived only from the
+recorded waveform and spectral shape; no clock-driven sine wave moves it sideways.
+This recreates the reference video's forward travel instead of in-place flutter.
 Mini geometry uses 4 arcs, 16 discs, or 12 columns / 4 rows.
 
-`ambientresponse-test` covers audio dynamics, frame batching, history clearing,
+Full-window PCM RMS drives Bokeh, Orbit, both tunnels, and Cosmos when supplied,
+with a spectral fallback for older frames. Pixel Wave retains its spectral response.
+
+`ambientresponse-test` covers PCM dynamic range, frame batching, history clearing,
 nonfinite inputs, and settling. `tests/ambient-benchmark.py` compares matched
 inputs against a saved runtime in alternating trials and asserts one retained
 mesh build during steady animation. Its CPU/frame results are measurements for
@@ -515,3 +527,118 @@ submission from 0.1651→0.0209 ms for Orbit, 0.0602→0.0228 ms for Pixel Wave,
 Average GPU p95 was 0.1522→0.1434 ms, 0.1959→0.2135 ms, and 0.2006→0.2169 ms,
 respectively. Pixel Wave and Bokeh spend slightly more GPU time on the refined effects;
 these measurements do not promise identical gains on other hardware or inputs.
+
+### Review hardening
+
+Installer updates preflight incoming runtime names before deleting managed
+files. An unowned file or directory collision fails without modifying the
+installation; `--force` backs up the existing tree before replacement.
+
+### Tunnel
+
+Radial → Spiral (saved ID `Tunnel`) uses the shared retained Ambient GPU renderer on mini, preview, and desktop surfaces. Perspective rings extend logarithmically into the distance around a drifting vanishing point; pearls float inside the pipe with no background stars or space layer. Integrated music energy controls travel speed, low bands gently breathe the walls, and high bands brighten the pearls. Original colors blend cyan, violet, and gold; Theme, Custom, Artwork, and monochrome use the existing color controls. Geometry is clipped to the viewport. Compact surfaces retain at most 12 rings and 4 pearls; larger surfaces retain at most 22 rings and 8 pearls. A smoothly gated ring population increases with PCM loudness, leaving roughly one third visible during quiet passages. Audio fades out and animation sleeps after silence, using the existing ambient envelope.
+
+### Renderer audio response
+
+Bokeh and Orbit loudness use a gentle power curve so quiet PCM remains visible
+while retaining contrast between passages; sensitivity still applies once.
+Pixel Wave retains its spectral envelope. Both tunnels and Cosmos use PCM RMS with a spectral fallback. The Rust DSP,
+file replay implementation, and engine binary remain the original v8.9.1 release.
+
+### Tunnel and app resume
+
+Radial → Tunnel (`SolidTunnel`) is separate from Spiral (`Tunnel`).
+A full-viewport opaque shader traces the inside of a curved cylindrical passage.
+A curved camera path, steady viewpoint, forward travel, diffuse lighting,
+staggered precast concrete segments, recessed joints, bolt pockets, and restrained
+depth haze create an immersive passage. Original uses concrete with warm/cool
+illumination; the other palettes tint the lining.
+Music intensity controls broad left/right turns through an 850ms smoothing envelope. Camera orbit and continuous roll are removed, and wall breathing is restrained. The passage has no fixed
+black end cap, and opaque shading prevents artwork from showing outside it.
+Music modulates travel and wall lighting. Bokeh adds modest per-band size and
+brightness response plus onset accents without changing its drift/focus design.
+The app entry point is Launch.qml; settings save before plugin enable, and
+Desktop opens with duplicate-instance protection. Mini capture stays active
+while Desktop is open. The Rust engine source and binary are unchanged.
+
+### Music-shaped wave and tunnel depth checks
+
+`tests/pixel-music.cjs` renders held uniform input to reject autonomous wave
+carriers, then compares equal-energy bass and treble spectra to verify the
+contour follows the input. The cached emitted shapes still recede and fade.
+The spiral uses logarithmic ring depth to approach a distant endpoint without
+the former large central gap. It has no background starfield.
+The segmented tunnel uses bounded interior tracing and filtered distant joints
+to keep its curved throat smooth. Both remain silent-settling and support
+existing palettes and monochrome. These changes do not alter Rust DSP or the
+original v8.9.1 engine artifact.
+
+### Cosmos and segmented tunnels
+
+Particles → Cosmos is an opaque, full-viewport flight through projected stars
+at multiple depths. The Milky Way backdrop uses the unmodified 4000×2000 ESO
+all-sky photograph (eso0932a, credit ESO/S. Brunier, CC BY 4.0), embedded in the
+native resource bundle and sampled with linear/mipmap filtering. A slow oblique
+projection preserves the real central bulge and dust lanes. Theme, Custom, and
+Artwork tint the central glow through the existing palette; Original retains
+natural color. There is no perimeter vignette or edge darkening. Foreground
+stars use circular halos that reach zero alpha before the quad boundary,
+leaving no rectangular background when stars approach. Three small spiral
+galaxies approach with parallax along the outer field, outside the
+central flight corridor. There is no black hole or lens.
+
+The retained star mesh has 320 stars in the mini and 3840 on larger surfaces.
+Population and luminosity do not respond to loudness or onsets. Music controls
+the integrated travel clock only; both star layers advance through depth,
+with the distant population travelling more slowly than nearby stars. All
+stars grow and brighten smoothly as they approach, with depth fades at recycling
+boundaries. Star sizes scale with
+desktop dimensions. The mode fades/settles during silence and supports existing
+palettes and monochrome. Stars keep their natural temperatures regardless of Theme, Custom, or Artwork
+palette changes; only explicit monochrome overrides star colors. Palette tinting
+is restricted to the diffuse core, retaining resolved photographic star highlights.
+The shared visualization has no text overlay. The photograph credit is linked
+below the desktop hover panel actions; the mini tooltip carries the same credit. Full asset
+provenance and runtime modifications are in renderer/textures/ATTRIBUTION.md.
+The native source stamp covers the photograph and its attribution as inputs.
+
+Tunnel uses eight staggered concrete segments per lining ring, antialiased
+recessed joints, bevel shading, bolt pockets, and diffuse illumination.
+Spiral has no stars and uses fewer luminous rings; its density, radius,
+width, light, and axis shift respond to music. Both tunnels and Cosmos use
+PCM RMS when supplied, with a spectral fallback. An integrated travel clock
+follows loudness without jumping when volume changes. Other modes and the
+Rust engine are unchanged. Display names are resolved through visualLabel,
+including desktop titles and the mini tooltip; saved IDs remain compatible.
+
+The rendering approach follows NVIDIA GPU Gems chapter 39's compositing model
+and Unreal Engine's distinction between scattering, extinction and emission:
+https://developer.nvidia.com/gpugems/gpugems/part-vi-beyond-triangles/chapter-39-volume-rendering-techniques
+https://dev.epicgames.com/documentation/en-us/unreal-engine/volumetric-fog-in-unreal-engine
+The segmented lining is inspired by precast tunnel liners:
+https://www.boringcompany.com/prufrock
+Motion reference supplied by the user: https://www.youtube.com/watch?v=UNOmaFs6KaY
+
+### Track-change shuffle and flame spectrum
+
+Shuffle is an accessible compact toggle at the right of the preview header, opposite the Preview label, without helper text. The bar owns
+MPRIS track-change detection and settings writes. A 500ms debounce coalesces
+track metadata; activation, player replacement, pause, and same-track metadata
+updates do not pick another look. A different mode is selected on each change.
+Mode-specific options vary Spectrum geometry/palettes and Siri style/travel,
+with Original/Theme/Custom palettes for ambient modes. No audio parameters change.
+The transient JSON look lives in `[shuffle].look`; `[desktop].shuffle` enables
+it. The saved mode, look profiles, and category selections remain underneath.
+Disabling Shuffle restores them, including after restart; manual mode selection
+also disables it. Mini, preview, and desktop use a shared transition controller:
+500ms fade-out, swap at zero opacity, 700ms fade-in. New settings arriving during
+a fade are coalesced, with a subsequent transition if needed.
+
+Spectrum Spikes now uses one transparent shader field fed by smoothly interpolated
+frequency energy, rather than bar triangles. Upward-advected multi-scale noise
+warps the flame tongues, opens rolling gaps, and shapes temperature-like cores.
+The selected palette and explicit monochrome remain supported, as does a subdued
+reflection. Silence extinguishes the field; flame geometry has no rigid peak caps.
+CPU bar/peak physics, other Spectrum geometries, and the v8.9.1 engine are unchanged.
+Research: NVIDIA GPU Gems, Chapter 6, Fire in the Vulcan Demo, section 6.1
+(https://developer.nvidia.com/gpugems/gpugems/part-i-natural-effects/chapter-6-fire-vulcan-demo).

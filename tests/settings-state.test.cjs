@@ -53,6 +53,7 @@ test('color modes are exclusive and preserve custom palette values', () => {
     assert.equal(opts.fire, mode === 'Flame');
     assert.equal(opts.bar_color_custom, mode === 'Custom');
     assert.equal(opts.artwork_colors, mode === 'Artwork');
+    assert.equal(opts.artwork, mode === 'Artwork', 'leaving Artwork clears its backdrop atomically');
     assert.equal('bar_color_from' in opts, false);
   }
   assert.equal(ctx.setColorMode('invalid'), false);
@@ -64,7 +65,7 @@ test('color modes are exclusive and preserve custom palette values', () => {
 // SettingsQueue and the bounded real-QML component harness cover asynchronous
 // writes and capture transitions shared by both surfaces.
 test('waveform selections and multi-stop palettes survive settings round trips', () => {
-  for (const visual of ['Bars','Waves','Strings','Siri','Orbit','PixelWave','Bokeh']) {
+  for (const visual of ['Bars','Waves','Strings','Siri','Orbit','PixelWave','Bokeh','Tunnel','SolidTunnel','Cosmos']) {
     const config = {...Store.defaultConfig(), visual, barColorMiddleEnabled:true,
       barColorMiddle:'#12abcd', artworkColors:true};
     const saved = Store.readConfigFromText(Store.toTOML(config));
@@ -73,4 +74,18 @@ test('waveform selections and multi-stop palettes survive settings round trips',
     assert.equal(saved.barColorMiddleEnabled,true);
     assert.equal(saved.artworkColors,true);
   }
+});
+
+test('leaving Artwork clears the saved backdrop and remembered look', () => {
+  let text = Store.selectVisual('', 'Bokeh');
+  const root = {writeVizMap: options => { text = Store.patchSettings(text, 'desktop', options); }};
+  const ctx = vm.createContext({root});
+  vm.runInContext(method(bar, 'setColorMode'), ctx);
+  ctx.setColorMode('Artwork');
+  assert.equal(Store.readConfigFromText(text).artwork, true);
+  ctx.setColorMode('Original');
+  assert.equal(Store.readConfigFromText(text).artwork, false);
+  assert.equal(Store.readConfigFromText(text).artworkColors, false);
+  text = Store.selectVisual(Store.selectVisual(text, 'Bars'), 'Bokeh');
+  assert.equal(Store.readConfigFromText(text).artwork, false);
 });

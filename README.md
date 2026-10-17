@@ -6,7 +6,7 @@ desktop visualizer window, and an oscilloscope that dances to whatever
 is playing. Same soul, zero nostalgia tax: native GPU rendering,
 theme-aware, and configured from the bar.
 
-![version](https://img.shields.io/badge/version-8.9.1-amber) ![license](https://img.shields.io/badge/license-MIT-blue)
+![version](https://img.shields.io/badge/version-8.10.0-amber) ![license](https://img.shields.io/badge/license-MIT-blue)
 
 ## Why omaviz
 
@@ -53,8 +53,9 @@ original proportions. Other examples below use controlled sample data.
 
 - **Mini** — 32 bars in the bar (128-band engine feed, max-downsampled),
   with a dotted-skin backdrop and a B&W Mono mode for tiny sizes
-- **Spectrum** — peaks + fall speed, dense Spikes, Fire flame gradient,
+- **Spectrum** — peaks + fall speed, Spikes rendered as turbulent rising flames, Fire flame gradient,
   Winamp Stacks, floor-mirror Reflection, album-art backdrop.
+  Spikes uses a continuous audio-fed flame field with rising multi-scale noise, curling tips, transparent edges, and a hot core. It preserves palette and monochrome support; peak caps belong to Bars/Stacks. The approach is informed by [NVIDIA’s distortion-based fire rendering](https://developer.nvidia.com/gpugems/gpugems/part-i-natural-effects/chapter-6-fire-vulcan-demo).
   The experimental retained renderer is enabled in this build (`OMAVIZ_SPECTRUM_RETAINED=0` disables it);
   it preserves peak physics and 60 Hz animation, but has not met the 50% performance target.
 - **Waves** — 128-point peak-preserving waveform envelope, adjustable
@@ -63,11 +64,13 @@ original proportions. Other examples below use controlled sample data.
   switches live), or custom From → To tones via presets or hex
 - **Strings** — gold and cream strands rotate around a uniform pipe that grows taller with music energy; some strands soften near the outer arcs, with broad blurred blue strands in front. Spectral bands pulse each strand's radius while waveform samples ripple the loops. Small surfaces use fewer strands to retain separation. The backdrop stays transparent.
   A retained GPU mesh preserves the existing curves and glow; the feed carries the 16 strand excitation values plus the full waveform.
-- **Particles** — **Bokeh** floats soft luminous discs through a cloud with changing focus; **Pixel Wave** sends spectral motion through receding rows of squares. Both simplify at mini sizes.
-- **Radial** — **Orbit** layers independently moving rounded arcs, with audio-driven length and brightness.
-  These three modes use retained GPU meshes and custom shaders, with Original, Theme, Custom, and Artwork colors, per-visual settings, Response, mini monochrome, and optional blurred artwork backdrops. Original matches the reference silver/white particles and warm-accented arcs. They fade and settle during silence.
+- **Particles** — **Bokeh** breathes with audio loudness, with drifting discs and changing focus; **Pixel Wave** shapes its front from the music waveform and spectrum, sending captured rows into a shrinking, fading tail. Both simplify at mini sizes.
+- **Cosmos** (Particles) — continuous forward flight through stars with parallax and restrained glow, a real Milky Way panorama with dust lanes, and small distant galaxies near the edges. Stars scale up for desktop windows and gradually brighten as they approach. The dense star population stays fixed; music controls travel speed. Both star layers move with depth, with distant stars drifting more slowly than nearby stars. Stars retain natural colors independently of the palette (except explicit monochrome). The central bulge follows the selected palette; Original preserves the photograph’s natural color. Photograph: [ESO/S. Brunier](https://www.eso.org/public/images/eso0932a/), [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/); projected, dimmed, and optionally tinted at runtime. There is no edge vignette. Foreground stars have soft circular halos with transparent outer bounds. The fixed population has 3840 stars on larger surfaces and 320 in the mini. Image credits appear below the right-hand actions in the compact, square desktop hover panel at the bottom center; artwork and track details occupy its left section. The panel is up to 480px wide, places track/artist/album details beside the poster, and puts actions in its top-right corner. It fades after 30 seconds without mouse activity and returns on pointer movement or Tab. Narrow windows put details beneath the action row; full metadata remains available in a tooltip.
+- **Radial** — **Orbit** sways an outer arc group with independently articulating inner arcs, audio-driven length and brightness. **Tunnel** travels through a curved passage lined with staggered concrete blocks, recessed joints, and bolt pockets, with diffuse light, a steady camera, and broad turns that grow with smoothed music intensity. **Spiral** descends through luminous rings and floating pearls without a background starfield; its ring population grows with music to a maximum of 22 (12 in the mini). Music energy drives the descent, bass gently breathes through the Spiral rings, and treble lights the pearls. Choose Original for cyan, violet, and warm gold, or use Theme, Custom, or Artwork colors.
+  These modes use retained GPU meshes and custom shaders, with Original, Theme, Custom, and Artwork colors, per-visual settings, Response, mini monochrome, and optional blurred artwork backdrops. Original matches the reference silver/white particles and warm-accented arcs. They fade and settle during silence.
 - **Siri** — the existing cyan/blue/violet ribbons remain the default. Select **Classic Siri** in the style selector, for independently appearing, mirrored color lobes on a fine neutral axis, based on the classic Siri reference. Red, green, blue, and cyan overlaps brighten toward white; custom palettes and monochrome remain supported.
   Six spectral envelopes control the response without a shared minimum height. Lobes have separate lifetimes, widths, and prominence, and disappear into the baseline during pauses. Their shape stays in GPU memory at 60 Hz. Enable **Left to right motion** under **Motion** to add sideways travel; default motion expands and contracts in place.
+- **Shuffle on track change** — in the preview header, with the label on the left and a compact Shuffle toggle on the right, without helper text. Track changes choose another mode with suitable palette, geometry, and Siri style variations, fading out for 500ms and in for 700ms. Temporary choices preserve saved looks; switching Shuffle off restores the prior selection. Selecting a mode manually also stops Shuffle.
 - **Motion** — Winamp-style linear fall by default, optional exponential easing,
   adjustable sensitivity
 - **Robust** — desktop lease stored separately from settings (no heartbeat overwrites),
@@ -79,7 +82,8 @@ Choose a category, then a visualization. Groups with fewer than five choices use
 selectable buttons; larger groups use a dropdown. There is no search field.
 Each category remembers its last selection, and each visualization restores its
 own palette, geometry and response. Every edit saves automatically and survives
-closing and reopening. There are no Save, Restore or Reset actions. Palette
+closing and reopening. Choosing a palette other than Artwork also removes
+the artwork backdrop; its separate toggle can re-enable it. There are no Save, Restore or Reset actions. Palette
 swatches change only the colors; selection buttons have square corners.
 
 The desktop has a subtle translucent panel with a poster thumbnail, track text,
@@ -161,9 +165,11 @@ Requires: Omarchy (quickshell), Qt 6.11+, PipeWire. Maintainer builds use Cargo,
 
 ```bash
 npm test              # all JS/QML suites (node >= 24)
-npm run test:rust     # engine unit tests (cargo)
+npm run test:rust     # engine unit and source integration tests (locked Cargo)
+npm run lint:rust     # Clippy, all targets, warnings are errors
 npm run verify        # JS, installer safety, and Rust
 npm run test:qml      # real settings, desktop, and catalog feed transitions
+npm run test:render   # native modes/transitions and cached-artwork pixel removal
 python tests/catalog-visual.py renderer/build/omaviz-render-probe /tmp/omaviz-catalog # bounded native captures
 ```
 
@@ -172,13 +178,17 @@ python tests/catalog-visual.py renderer/build/omaviz-render-probe /tmp/omaviz-ca
 | `tests/modelstore.test.cjs` | config defaults/schema, TOML round-trips, the store funnel (get/set/onChanged) |
 | `tests/physics.test.cjs` | the shared motion model: instant attack, rate-limited release, peak sustain + accelerating fall |
 | `tests/qml.test.cjs` | Qt 6 syntax check; real components/native controls cover runtime behavior |
-| `tests/engine.test.cjs` | drives the committed binary and asserts its frame contract (60 Hz, raw bands, faint-signal handling) |
-| `engine/` (cargo) | DSP + frame + source unit tests |
+| `tests/engine.test.cjs` | drives the committed binary and asserts its frame contract (finite samples, feed layouts, faint-signal handling) |
+| `tests/pixel-music.cjs` | verifies held audio stays flat and equal-energy frequency changes reshape Pixel Wave on the GPU backend |
+| `tests/artwork-backdrop.cjs` | executes the production palette action and verifies cached artwork pixels disappear on the GPU backend |
+| `engine/` (cargo) | DSP + frame + source unit tests and fresh-engine replay integration |
 
 **Safety:** the installer never deletes files it doesn't own. A plugin
 directory that isn't omaviz-managed (no `.omaviz-managed` marker) is left
 untouched unless you pass `--force` (which takes a timestamped backup
-first). Foreign files inside a managed install — and unrelated
+first). An incoming runtime filename that collides with an unowned file or directory
+is refused before any managed file is removed; `--force` backs up the entire
+old plugin directory. Foreign files inside a managed install — and unrelated
 `.desktop` launchers — always survive install, update, and uninstall.
 
 Single-click the mini for settings · single-click the preview inside it to
@@ -274,8 +284,7 @@ play/pause when the active media player supports it.
 Off pauses visualization and capture while keeping the plugin and desktop controls
 available. On resumes in place. Disable plugin closes the desktop, stops Omaviz capture,
 and unloads the plugin from the shared shell. Desktop settings apply on completed
-file loads, with a 250ms polling fallback. Hover controls remain stable while
-pointing at buttons, and the controlled media player stays selected after Pause.
+file loads, with a 250ms polling fallback. Hover controls fade after 30 seconds of pointer inactivity, including stationary hover over buttons, and the controlled media player stays selected after Pause.
 
 Native visual regression: after building with `OMAVIZ_RENDER_PROBE=ON`, run
 `tests/renderer-visual.sh /path/to/omaviz-render-probe` in a graphical session.
@@ -315,3 +324,6 @@ Local builds installed during development are not CI-attested release binaries.
 Hex colors accept six typed digits (Enter applies, Escape cancels). Clipboard paste
 is deliberately unavailable: no Qt text editor is instantiated or clipboard read
 performed, including while the settings panel is hidden.
+
+Launching **Omaviz** re-enables a disabled plugin before opening the desktop.
+The mini and desktop animate together. The Rust engine remains at v8.9.1.
