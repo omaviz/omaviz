@@ -18,14 +18,19 @@ foreach(input IN LISTS source_inputs)
 endforeach()
 string(SHA256 source_digest "${source_identity}")
 target_compile_definitions(omavizrenderer PRIVATE OMAVIZ_SOURCE_DIGEST="${source_digest}")
+# Qt on Wayland can hand Qt Quick an OpenGL ES 3.x context (observed with the
+# NVIDIA driver). Without an ES 3.x variant Qt falls back to the GLSL ES 1.00
+# output, where integer '%' is illegal and the shader fails to compile. Keep
+# the desktop GLSL targets for GL-based systems and add the ES 3 ones.
+set(OMAVIZ_GLSL_VERSIONS "100es,300es,310es,120,150,330,440")
 qt_add_shaders(omavizrenderer siri_shaders
-  PREFIX "/omaviz" FILES shaders/siri.vert shaders/siri.frag shaders/siri-ribbon.vert)
+  PREFIX "/omaviz" GLSL "${OMAVIZ_GLSL_VERSIONS}" FILES shaders/siri.vert shaders/siri.frag shaders/siri-ribbon.vert)
 qt_add_shaders(omavizrenderer strings_shaders
-  PREFIX "/omaviz" FILES shaders/strings.vert)
+  PREFIX "/omaviz" GLSL "${OMAVIZ_GLSL_VERSIONS}" FILES shaders/strings.vert)
 qt_add_shaders(omavizrenderer spectrum_shaders
-  PREFIX "/omaviz" FILES shaders/spectrum.vert shaders/spectrum.frag)
+  PREFIX "/omaviz" GLSL "${OMAVIZ_GLSL_VERSIONS}" FILES shaders/spectrum.vert shaders/spectrum.frag)
 qt_add_shaders(omavizrenderer ambient_shaders
-  PREFIX "/omaviz" FILES shaders/ambient.vert shaders/ambient.frag)
+  PREFIX "/omaviz" GLSL "${OMAVIZ_GLSL_VERSIONS}" FILES shaders/ambient.vert shaders/ambient.frag)
 qt_add_resources(omavizrenderer cosmos_texture
   PREFIX "/omaviz" FILES textures/milkyway.jpg textures/ATTRIBUTION.md)
 target_link_libraries(omavizrenderer PRIVATE Qt6::Quick Qt6::Qml Qt6::Network)
