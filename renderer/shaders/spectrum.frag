@@ -15,6 +15,10 @@ layout(std140,binding=0) uniform buf {
     vec4 flameInfo;
     vec4 bands[512];
 } u;
+// Integer % (and int clamp/min/max) are GLSL 1.30+, but Qt also bakes legacy GLSL 1.20 / ES 1.00 variants,
+// which an OpenGL compatibility context (e.g. NVIDIA) compiles strictly. Operands here are non-negative
+// indices, where this equals a % n.
+int imod(int a, int n) { return a - n * (a / n); }
 float hash(vec2 p) {
     vec3 q=fract(vec3(p.xyx)*vec3(0.1031,0.1030,0.0973));
     q+=dot(q,q.yzx+33.33);return fract((q.x+q.y)*q.z);
@@ -27,8 +31,9 @@ float turbulence(vec2 p) {
     return 0.55*noise(p)+0.28*noise(p*2.03+7.1)+0.12*noise(p*4.09+19.3)+0.05*noise(p*8.17);
 }
 float band(int index) {
-    int i=clamp(index,0,int(u.flameInfo.y)-1);
-    vec4 v=u.bands[i/2];return i%2==0?v.x:v.z;
+    int last=int(u.flameInfo.y)-1;
+    int i=index<0?0:index; i=i>last?last:i;   // clamp(int) is GLSL 1.30+
+    vec4 v=u.bands[i/2];return imod(i,2)==0?v.x:v.z;
 }
 float fuelAt(float x) {
     float b=clamp(x,0.0,1.0)*max(1.0,u.flameInfo.y-1.0);

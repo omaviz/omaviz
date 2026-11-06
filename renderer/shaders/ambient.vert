@@ -18,7 +18,13 @@ layout(std140,binding=0) uniform buf {
     vec4 history[160]; // spectral drive, waveform, emission clock, emission energy
 } u;
 const float PI=3.141592653589793;
-float band(int i) { vec4 v=u.levels[i/4];return v[i%4]; }
+// Integer % (and int clamp/min/max) are GLSL 1.30+, but Qt also bakes legacy GLSL 1.20 / ES 1.00 variants,
+// which an OpenGL compatibility context (e.g. NVIDIA) compiles strictly. Operands here are non-negative
+// indices, where this equals a % n.
+int imod(int a, int n) { return a - n * (a / n); }
+int imin(int a, int b) { return a < b ? a : b; }
+int imax(int a, int b) { return a > b ? a : b; }
+float band(int i) { vec4 v=u.levels[i/4];return v[imod(i,4)]; }
 vec4 palette(float t) {
     if(u.flags.z>0.5) {
         if(u.scene.w<0.5) return primitive.x<0.5?vec4(1.0,0.65,0.36,1.0):vec4(0.78,0.79,0.84,1.0);
@@ -33,7 +39,7 @@ void main() {
     vec2 corner=position/u.surface.yz*2.0-1.0;
     float id=primitive.x,time=u.scene.x,energy=u.scene.y,pulse=u.scene.z;
     float size=min(u.surface.y,u.surface.z),compact=u.layoutInfo.z;
-    float count=u.layoutInfo.x,level=band(int(id)%24);
+    float count=u.layoutInfo.x,level=band(imod(int(id),24));
     vec2 center=u.surface.yz*0.5,p=center;
     tint=palette(id/max(1.0,count-1.0));local=corner;shape=vec4(u.scene.w,0,primitive.z,0);
     float presence=smoothstep(0.0,u.scene.w>4.5?0.0005:0.025,energy);
@@ -96,10 +102,10 @@ void main() {
         // A new row enters as the oldest fades out at the vanishing side.
         float depth=(row+u.layoutInfo.w)/u.layoutInfo.y;
         float column=x*19.0;
-        int lo=int(column),hi=min(lo+1,19),r=int(row)*20;
+        int lo=int(column),hi=imin(lo+1,19),r=int(row)*20;
         vec4 snapshot=mix(u.history[r+lo],u.history[r+hi],fract(column));
         vec2 drive=snapshot.xy;
-        drive.y=drive.y*0.5+(u.history[r+max(0,lo-1)].y+u.history[r+min(19,hi+1)].y)*0.25;
+        drive.y=drive.y*0.5+(u.history[r+imax(0,lo-1)].y+u.history[r+imin(19,hi+1)].y)*0.25;
         float field=min(u.surface.z,u.surface.y*0.95);
         float rowEnergy=snapshot.w;
         // The emitted contour comes entirely from music, never a timed carrier.
@@ -147,7 +153,7 @@ void main() {
             p=axis+orbit*radius*(0.30+0.24*sin(id*1.7))*vec2(1,1)+corner*pearlRadius*1.12;
             local=corner*1.12;shape=vec4(2,0.10,-0.6,-0.8);
             tint=palette(0.75+0.25*sin(id));
-            tint.a*=presence*fade*(0.45+0.55*band(12+int(id)%12));
+            tint.a*=presence*fade*(0.45+0.55*band(12+imod(int(id),12)));
         }
     } else {
         float angle=time*0.70;

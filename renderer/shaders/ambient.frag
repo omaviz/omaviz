@@ -16,13 +16,17 @@ layout(std140,binding=0) uniform buf {
     vec4 history[160];
 } u;
 layout(binding=1) uniform sampler2D milkyWay;
+// Integer % (and int clamp/min/max) are GLSL 1.30+, but Qt also bakes legacy GLSL 1.20 / ES 1.00 variants,
+// which an OpenGL compatibility context (e.g. NVIDIA) compiles strictly. Operands here are non-negative
+// indices, where this equals a % n.
+int imod(int a, int n) { return a - n * (a / n); }
 vec3 wallColor(float t) {
     if(u.flags.x>0.5) return mix(vec3(1),vec3(0.12),u.flags.w);
     if(u.flags.z>0.5) return mix(vec3(0.08,0.50,0.75),vec3(0.75,0.16,0.55),t);
     return u.flags.y>0.5?(t<0.5?mix(u.bottomColor.rgb,u.middleColor.rgb,t*2.0):mix(u.middleColor.rgb,u.topColor.rgb,t*2.0-1.0))
                          :mix(u.bottomColor.rgb,u.topColor.rgb,t);
 }
-float band(int i) { vec4 v=u.levels[i/4];return v[i%4]; }
+float band(int i) { vec4 v=u.levels[i/4];return v[imod(i,4)]; }
 vec2 tunnelAxis(float z) {
     float bend=0.48+0.95*smoothstep(0.04,0.75,u.layoutInfo.w);
     return bend*vec2(0.64*sin(z*0.28),0.30*cos(z*0.20));

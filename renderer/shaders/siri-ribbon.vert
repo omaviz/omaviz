@@ -15,17 +15,24 @@ layout(std140, binding = 0) uniform buf {
     float pulse;
     vec4 levels[2];
 } u;
+// Integer % (and int clamp/min/max) are GLSL 1.30+, but Qt also bakes legacy GLSL 1.20 / ES 1.00 variants,
+// which an OpenGL compatibility context (e.g. NVIDIA) compiles strictly. Operands here are non-negative
+// indices, where this equals a % n.
+int imod(int a, int n) { return a - n * (a / n); }
+// Six-entry tables as vec3 pairs: SPIRV-Cross hoists a const float[6] to a global const array, which NVIDIA
+// rejects in the legacy GLSL variants ("OpenGL does not allow constant arrays"). Same values, same index.
+float pick6(vec3 lo, vec3 hi, int i) { return i < 3 ? lo[i] : hi[i - 3]; }
 vec2 pointAt(float x) {
     float layer=shape.x;
     float center=.28+.085*layer;
     int sheet=int(layer);
-    float amplitude=u.levels[sheet/4][sheet%4];
-    const float widths[6]=float[6](.22,.13,.19,.12,.17,.10);
-    const float frequencies[6]=float[6](9.0,13.5,10.5,17.0,12.0,19.5);
-    float spread=widths[sheet]+.05*amplitude+.02*u.pulse;
+    float amplitude=u.levels[sheet/4][imod(sheet,4)];
+    float width=pick6(vec3(.22,.13,.19),vec3(.12,.17,.10),sheet);
+    float frequency=pick6(vec3(9.0,13.5,10.5),vec3(17.0,12.0,19.5),sheet);
+    float spread=width+.05*amplitude+.02*u.pulse;
     float z=(x-center)/spread;
     float phase=layer*.83+(u.levels[1].z>.5?u.phase*(1.8+.27*layer):.8*amplitude+.35*u.pulse);
-    float y=sin(x*3.14159265)*exp(-z*z*.65)*(.24+.76*abs(sin(x*frequencies[sheet]-phase)))
+    float y=sin(x*3.14159265)*exp(-z*z*.65)*(.24+.76*abs(sin(x*frequency-phase)))
         *u.height*.47*amplitude*(1.0-.045*layer);
     if(shape.y<.5)y=-y;else if(shape.y<1.5)y=0;
     return vec2(x*u.width,u.height*.5+y);

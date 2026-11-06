@@ -17,6 +17,10 @@ layout(std140,binding=0) uniform buf {
     vec4 flameInfo; // time, band count, monochrome, light monochrome
     vec4 bands[512];
 } u;
+// Integer % (and int clamp/min/max) are GLSL 1.30+, but Qt also bakes legacy GLSL 1.20 / ES 1.00 variants,
+// which an OpenGL compatibility context (e.g. NVIDIA) compiles strictly. Operands here are non-negative
+// indices, where this equals a % n.
+int imod(int a, int n) { return a - n * (a / n); }
 vec4 palette(float t,float opacity) {
     t=clamp(t,0.0,1.0);
     vec4 c=u.flags.y>0.5 ? (t<u.geometry.w?mix(u.bottomColor,u.middleColor,t/u.geometry.w)
@@ -36,7 +40,7 @@ void main() {
         return;
     }
     int i=int(shape.x);vec4 pair=u.bands[i/2];
-    vec2 values=(i%2==0)?pair.xy:pair.zw;
+    vec2 values=(imod(i,2)==0)?pair.xy:pair.zw;
     float area=u.geometry.x,base=u.geometry.y,pixel=u.metrics.w;
     float bh=max(pixel,values.x*area),top=base-bh,bottom=base;
     float tip=min(bh,u.flags.w),kind=shape.y;

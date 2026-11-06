@@ -33,3 +33,4 @@ cmake -S "$SRC/renderer" -B "$SRC/renderer/build" -DCMAKE_BUILD_TYPE=Release
 cmake --build "$SRC/renderer/build" --parallel 2
 ctest --test-dir "$SRC/renderer/build" --output-on-failure
 python "$SRC/tools/render/check-bundle.py"
+python "$SRC/tools/render/check-glsl.py"
